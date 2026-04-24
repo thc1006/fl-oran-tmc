@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fl-oran"
 version = "0.1.0"
-description = "Local PyTorch re-implementation of the Colosseum-ORAN Federated Slicing notebooks, tuned for a single RTX 4080 workstation."
-readme = "README_LOCAL.md"
+description = "v5 FL algorithm sweep for IEEE TMC submission — Colosseum-ORAN slice SLA forecasting across FedAvg / FedProx / FedAdam / SCAFFOLD / FedDyn / MOON."
+readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "thc1006", email = "hctsai1006@cs.nctu.edu.tw"}]
 license = {text = "AGPL-3.0"}

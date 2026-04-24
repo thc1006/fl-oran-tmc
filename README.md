@@ -1,70 +1,135 @@
-# Colosseum-ORAN Federated Slicing: Offline FL for 5G/6G RAN Resource Allocation
+# fl-oran-tmc
 
-<p align="center">
-  <!-- Latest release -->
-  <a href="https://github.com/thc1006/colosseum-oran-federated-slicing/releases">
-    <img alt="GitHub release" src="https://img.shields.io/github/v/release/thc1006/colosseum-oran-federated-slicing?style=for-the-badge">
-  </a>
-  <!-- Release date -->
-  <a href="https://github.com/thc1006/colosseum-oran-federated-slicing/releases">
-    <img alt="Release date" src="https://img.shields.io/github/release-date/thc1006/colosseum-oran-federated-slicing?style=for-the-badge">
-  <!-- Licence -->
-  <a href="https://github.com/thc1006/colosseum-oran-federated-slicing/blob/main/LICENSE">
-    <img alt="Licence" src="https://img.shields.io/github/license/thc1006/colosseum-oran-federated-slicing?style=for-the-badge">
-  </a>
-  <!-- Zenodo DOI (replace with real DOI once minted) -->
-  <a href="https://doi.org/10.5281/zenodo.15849833">
-    <img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.15849833-blue?logo=zenodo&style=for-the-badge">
-</p>
+Local PyTorch federated-learning pipeline for ColO-RAN O-RAN slice SLA
+forecasting. Built as the experimental substrate for an IEEE TMC submission
+on multi-algorithm FL under realistic non-IID splits.
 
+> **Status: private during review.** The repository is kept private until
+> camera-ready. Badges, release tags, and DOI will be added at submission
+> acceptance.
 
-> **Colosseum-ORAN Federated Slicing** is an end-to-end Google Colab notebook that trains a federated deep learning model to optimize PRB re-allocation, scheduler switching, and load balancing across RAN slices.  
-> It uses the **ColO-RAN dataset** released by WINES Lab and provides GPU-ready diagnostics plus optional Differential Privacy.
+## What this is
 
-## Why this project?
-The notebook splits **`coloran_processed_features.parquet`** into seven base-station clients and, using TensorFlow Federated’s FedAvg, trains a four-layer fully connected network to regress **`allocation_efficiency`**. The resulting model and its scalers are saved as a `.keras` file alongside a `.pkl`, so they can be embedded directly into a gNB or xApp for sub-20 ms-cycle inference—driving dynamic slice PRB reallocation, scheduler switching, and cross-cell load balancing.
+A clean-history reboot of the v1–v4 exploratory codebase (`colosseum-oran-federated-slicing`), scoped down to what the TMC paper needs:
 
-* **Real RAN traces** – built on the Colosseum/ORAN “ColO-RAN” dataset 【[Dataset link](https://github.com/wineslab/colosseum-oran-coloran-dataset)】  
-* **One-click Colab** – no local CUDA setup needed  
-* **Full reproducibility** – random seeds fixed, artifacts serialized  
-* **Differential Privacy ready** – clipping norm, noise multiplier, and TFF DP aggregators exposed as flags  
+- **6 FL algorithms** in a unified registry: `FedAvg`, `FedProx`, `FedAdam`,
+  `SCAFFOLD`, `FedDyn`, `MOON`.
+- **Dirichlet non-IID partition** over the `slice_id` column (NIID-Bench
+  convention; alpha sweep planned).
+- **OOD split** by `training_config` id (tr0-21 train / tr22-24 val /
+  tr25-27 test) to prevent the target-leakage that invalidated v1.
+- **PyTorch-native**, single-machine (RTX 4080, 16 GiB VRAM, Python 3.12,
+  PyTorch 2.10 + CUDA 12.8). **No Flower, no TFF.**
 
-## Quick start
-1. Open the notebook in Colab
-  * **DP-Enabled(Manual implementation) FL for O-RAN Slicing v1.0.2**：[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1l_sfn29npZRbG6vuYu2amyAkt1vie4Jk)
-  * **Fixing TFF API Compatibility Issues v1.0.3**：[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1K9-dCreaXi6Y6ZwHnXLIn6faK_O6qKVR)
-  * **Robust DP Implementation & Final Optimizations v1.0.4**：[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/14fACJjqyXi9PgG0icLTjNIH9B0-SjBEw)
-2. [Download](https://github.com/thc1006/coloran-dynamic-slice-optimizer/blob/main/coloran_processed_features.parquet) `coloran_processed_features.parquet` (≈ 400 MB) and upload it to Colab **files**(temp) or mount GDrive.
-3. Press **▶ Run all**. Training logs and plots appear inline; a Keras model and pickle artifacts are saved.
+The v1–v4 code is preserved under `src/fl_oran/` untouched; v5 extensions
+live alongside it. See `docs/ADR-001-v5-tmc-paper-plan.md` for the full
+design record.
+
+## Current milestone state
+
+| Milestone | Scope | Status |
+|-----------|-------|--------|
+| M1 | Dirichlet partition, `FLAlgorithm` registry, FedAvg, FedProx | done |
+| M2 | FedAdam, SCAFFOLD, FedDyn + `run_local_sgd` helper | done |
+| M3a | MOON with caller-supplied `encode_fn` | done |
+| M3b | Sweep orchestrator + ForecasterV2 encode_fn + pilot | in progress |
+| M4 | Multi-seed × alpha × algorithm sweep + aggregation + tables | pending |
+
+**124 tests passing.** No v1–v4 regression (89/89 legacy tests preserved).
+
+## Algorithm registry
+
+```python
+from fl_oran.federated.algorithms import get_algorithm
+
+algo = get_algorithm("fedprox")(max_steps=50, batch_size=64, mu=0.01)
+# Algorithms share this contract:
+#   algo.client_update(client_id, local_model, client_tensors, loss_fn,
+#                      current_lr, device, round_idx) -> ClientUpdate
+#   algo.server_aggregate(global_state, updates) -> dict[str, Tensor]
+# Stateful algorithms (SCAFFOLD, FedDyn, FedAdam, MOON) carry their own
+# persistent state on the instance.
+```
+
+See `src/fl_oran/federated/algorithms/__init__.py` for the `FLAlgorithm`
+Protocol and the rationale for which kwargs were intentionally omitted.
+
+## Quick start (development)
+
+```bash
+# The venv is shared with the upstream colosseum-oran-federated-slicing
+# repo via a symlink so PyTorch isn't installed twice.
+source .venv/bin/activate
+
+# Run the test suite (~4 s; no training, no GPU required):
+pytest
+
+# Run v5-only tests:
+pytest tests/test_v5_*.py
+
+# Coverage report (html in artifacts/coverage/):
+pytest --cov=src/fl_oran
+```
+
+**Training runs are not yet wired up** — the M3b orchestrator is in
+progress. `experiments/run_v3_centralized.py`, `run_v3_fl_iid.py`,
+`run_v3_fl_noniid.py`, `run_v4_all_seeds.py` replay the v3/v4 baselines
+and will be kept as-is for TMC baseline comparisons.
+
+## Data
+
+ColO-RAN raw dataset (8.9 GB) is symlinked as `raw/`; the unified
+processed parquet (18M rows) is symlinked as
+`data/coloran_raw_unified.parquet`. Neither is tracked by git. The
+symlinks resolve to the upstream `colosseum-oran-federated-slicing` repo
+— see `.gitignore` for the full exclusion list.
+
+Dataset citation (and the reason the target was reformulated in v2 after a
+leakage audit):
+
+> M. Polese *et al.*, "ColO-RAN: Developing Machine Learning-based xApps
+> for Open RAN Closed-loop Control," **IEEE TMC**, 2022.
+> <https://github.com/wineslab/colosseum-oran-coloran-dataset>
 
 ## Repository layout
-| Path | Purpose |
-|------|---------|
-| `notebook.ipynb` | Main workflow – data prep, GPU diagnostics, TensorFlow Federated setup, training loop, plotting. |
-| `coloran_processed_features.parquet` | Pre-processed features derived from the ColO-RAN traces. |
-| `README.md` | You are here. |
 
-## Dataset
-ColO-RAN traces are provided by WINES Lab.：<https://github.com/wineslab/colosseum-oran-coloran-dataset>
-* If you use this code or original dataset, u need to use license: AGPL-3.0 license
-* Below is thier research:
-> M. Polese *et al.*, “ColO-RAN: Developing Machine Learning-based xApps for Open RAN Closed-loop Control,” **IEEE TMC**, 2022.
+```
+src/fl_oran/               Main package (v1–v4 preserved, v5 additive)
+├── data_v2/                Dirichlet partition, OOD split, target builder v2
+├── federated/
+│   ├── aggregation.py      Shared FedAvg weighted-average primitive
+│   ├── client.py           ClientUpdate dataclass
+│   └── algorithms/         FLAlgorithm Protocol + 6 algorithm classes
+├── models/                 ForecasterV2 (embeddings + LSTM)
+├── training/               v3/v4 trainers (do not modify)
+└── utils/                  seed, device, AMP helpers
 
-## Training details
-| Hyper-parameter | Default |
-|-----------------|---------|
-| Total clients | 7 |
-| Rounds | 30 |
-| Clients per round | 7 |
-| Local epochs | 2 |
-| Client LR | 5e-4 |
-| Server LR (Adam) | 0.01 |
-| Clipping norm (DP) | 1.0 (configurable) |
-| Noise multiplier (DP) | 0.0 (disabled by default) |
+tests/                     124 tests; conftest.py has shared fixtures
+docs/
+├── ADR-001-v5-tmc-paper-plan.md   Full v5 plan + 16 decisions + history
+└── README.md                      ADR index
+experiments/
+├── run_v3_*.py             v3 baselines (kept for comparison)
+└── run_v4_all_seeds.py     v4 multi-seed baseline
+artifacts/
+├── RESULTS_V3.md           v3 centralized/IID/non-IID numbers
+└── RESULTS_V4.md           v4 multi-seed numbers (baseline of record)
+```
+
+New contributors (and Claude) should read `CLAUDE.md` at the root first
+— it captures the naming conventions and the seven hard rules that keep
+v5 work from regressing v1–v4.
 
 ## License
-Released under the AGPL-3.0 license – see `LICENSE`.
+
+Released under **AGPL-3.0** — see `LICENSE`. The ColO-RAN dataset is
+distributed by WINES Lab under AGPL-3.0; derivative work on the dataset
+inherits the license obligation.
 
 ## Acknowledgements
-* This notebook builds on TensorFlow Federated tutorials and the Colosseum/ORAN open dataset.
-* NTSC and my liver.
+
+- The ColO-RAN dataset and the TMC 2022 paper that introduced it (Polese
+  et al.) are the substrate this work builds on.
+- The v5 algorithm set was refined against NIID-Bench, ERFO-2025, and
+  the Reddi/Acar/Karimireddy/Li papers — full citations in
+  `docs/ADR-001-v5-tmc-paper-plan.md`.
