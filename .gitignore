@@ -12,6 +12,9 @@ artifacts/models/
 artifacts/logs/
 artifacts/plots/
 artifacts/coverage/
+# v5 sweep outputs: per-cell directories + matrix summary CSVs. Large
+# binary .pt files should not be tracked; summaries are regenerable.
+artifacts/v5_sweep/
 !artifacts/.gitkeep
 .ipynb_checkpoints/
 .DS_Store
