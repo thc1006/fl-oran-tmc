@@ -1,15 +1,15 @@
 """TDD tests for FedDyn (Acar et al. 2021, ICLR) — ADR-001 §3.6.
 
 FedDyn augments each client's local objective with a linear term
-``-<h_i, w>`` and a quadratic penalty ``(α/2)·‖w - w_t‖²``. The gradient
-correction applied every local step is thus ``-h_i + α·(w - w_t)``, and at
-the end of training ``h_i ← h_i - α·(w_l - w_t)``. Δh_i is reported via
-``ClientUpdate.aux`` so the server can keep an accumulator.
+``-<h_i, w>`` and a quadratic penalty ``(alpha/2)*||w - w_t||^2``. The
+gradient correction applied every local step is ``-h_i + alpha*(w - w_t)``,
+and at the end of training ``h_i <- h_i - alpha*(w_l - w_t)``. delta_h_i is
+reported via ``ClientUpdate.aux`` so the server can keep an accumulator.
 
 Tests:
 1. Registered.
-2. ``alpha=0`` + first round (h_i=0) ⇒ grad correction is identically zero
-   ⇒ trajectory is bit-identical to FedAvg.
+2. ``alpha=0`` + first round (h_i=0) ==> grad correction is identically
+   zero ==> trajectory is bit-identical to FedAvg.
 3. ``ClientUpdate.aux`` contains ``delta_h_i``.
 4. Per-client ``h_i`` state persists across rounds.
 5. Server's ``h_accum`` accumulates.
@@ -17,28 +17,8 @@ Tests:
 from __future__ import annotations
 
 import torch
-from torch import nn
 
-
-def _build_trio(seed: int = 42, n: int = 64, seq_len: int = 3,
-                n_cat: int = 2, n_cont: int = 2):
-    torch.manual_seed(seed)
-
-    class TinyDualInput(nn.Module):
-        def __init__(self, n_in: int) -> None:
-            super().__init__()
-            self.linear = nn.Linear(n_in, 1)
-
-        def forward(self, cat: torch.Tensor, cont: torch.Tensor) -> torch.Tensor:
-            cat_f = cat.float().mean(dim=1)
-            cont_f = cont.mean(dim=1)
-            return self.linear(torch.cat([cat_f, cont_f], dim=-1))
-
-    model = TinyDualInput(n_cat + n_cont)
-    cat = torch.randint(0, 5, (n, seq_len, n_cat), dtype=torch.long)
-    cont = torch.randn(n, seq_len, n_cont, dtype=torch.float32)
-    y = torch.randint(0, 2, (n, 1)).float()
-    return model, (cat, cont, y), nn.BCEWithLogitsLoss()
+from conftest import build_trio as _build_trio
 
 
 def test_feddyn_registered():

@@ -3,13 +3,14 @@
 SCAFFOLD carries a global control variate ``c`` and per-client ``c_i`` across
 rounds. Client training adds ``c - c_i`` as a variance-reduction correction
 to every gradient step. At the end of local training the client computes a
-new ``c_i+`` (Option I from the paper): ``c_i - c + (w_g - w_l)/(K·η)``, and
-reports ``Δc_i = c_i+ - c_i`` via ``ClientUpdate.aux``. The server aggregates
-both the weights (plain FedAvg) and the control-variate delta (mean of Δc_i).
+new ``c_i+`` (Option I from the paper): ``c_i - c + (w_g - w_l)/(K*eta)``,
+and reports ``delta_c_i = c_i+ - c_i`` via ``ClientUpdate.aux``. The server
+aggregates both the weights (plain FedAvg) and the control-variate delta
+(mean of delta_c_i).
 
 Tests:
 1. Registered.
-2. First round with ``c=c_i=0`` ⇒ client_update reduces to FedAvg trajectory
+2. First round with ``c=c_i=0`` == client_update reduces to FedAvg trajectory
    (no grad correction when both control variates are zero).
 3. ``aux["delta_c_i"]`` is non-empty after a client_update.
 4. After ``server_aggregate``, the algorithm's global ``c`` accumulates
@@ -19,31 +20,9 @@ Tests:
 """
 from __future__ import annotations
 
-import copy
-
 import torch
-from torch import nn
 
-
-def _build_trio(seed: int = 42, n: int = 64, seq_len: int = 3,
-                n_cat: int = 2, n_cont: int = 2):
-    torch.manual_seed(seed)
-
-    class TinyDualInput(nn.Module):
-        def __init__(self, n_in: int) -> None:
-            super().__init__()
-            self.linear = nn.Linear(n_in, 1)
-
-        def forward(self, cat: torch.Tensor, cont: torch.Tensor) -> torch.Tensor:
-            cat_f = cat.float().mean(dim=1)
-            cont_f = cont.mean(dim=1)
-            return self.linear(torch.cat([cat_f, cont_f], dim=-1))
-
-    model = TinyDualInput(n_cat + n_cont)
-    cat = torch.randint(0, 5, (n, seq_len, n_cat), dtype=torch.long)
-    cont = torch.randn(n, seq_len, n_cont, dtype=torch.float32)
-    y = torch.randint(0, 2, (n, 1)).float()
-    return model, (cat, cont, y), nn.BCEWithLogitsLoss()
+from conftest import build_trio as _build_trio
 
 
 def test_scaffold_registered():

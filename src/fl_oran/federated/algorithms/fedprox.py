@@ -1,11 +1,11 @@
-"""FedProx (Li et al. 2020, MLSys) — adds a proximal term ``(μ/2)·‖w-w_g‖²``
-to each client's local objective.
+"""FedProx (Li et al. 2020, MLSys) — adds a proximal term
+``(mu / 2) * ||w - w_g|| ** 2`` to each client's local objective.
 
-Implementation choice: inject ``μ·(w - w_g)`` directly into ``p.grad`` after
-``loss.backward()`` and before ``clip_grad_norm_`` + ``optimizer.step()``.
-This is mathematically equivalent to adding the prox term to the loss but
-avoids building autograd nodes over every parameter — for a ~1M-param model
-this is visibly faster per step.
+Implementation choice: inject ``mu * (w - w_g)`` directly into ``p.grad``
+after ``loss.backward()`` and before ``clip_grad_norm_`` +
+``optimizer.step()``. This is mathematically equivalent to adding the prox
+term to the loss but avoids building autograd nodes over every parameter —
+for a ~1M-param model this is visibly faster per step.
 """
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ class FedProx:
     """FedProx with proximal coefficient ``mu``.
 
     When ``mu == 0`` this is identical to FedAvg (bit-wise, given the same
-    RNG / data / optimizer init).
+    RNG / data / optimizer init). ``run_local_sgd`` expects the caller to
+    have moved the model to ``device``; we do so before snapshotting the
+    initial weights.
     """
 
     name = "fedprox"

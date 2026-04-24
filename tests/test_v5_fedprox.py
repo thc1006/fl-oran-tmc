@@ -1,14 +1,14 @@
 """TDD red-phase tests for FedProx (Li et al. 2020) — ADR-001 §3.3.
 
-FedProx adds a proximal term (μ/2)·‖w - w_global‖² to the client's local
-objective. The gradient of the prox term is μ·(w - w_global), which we inject
+FedProx adds a proximal term (mu/2)*||w - w_global||^2 to the client's local
+objective. The gradient of the prox term is mu*(w - w_global), which we inject
 into p.grad directly (cheaper than adding to the loss; standard impl choice).
 
 Tests:
 1. ``fedprox`` is registered.
 2. Missing ``mu`` raises TypeError (keyword-only, no default).
 3. ``mu=0`` is a bit-identical trajectory to FedAvg — pure identity check
-   (grad injection of 0 ≡ no injection).
+   (grad injection of 0 == no injection).
 4. ``mu>0`` keeps local weights closer to the global snapshot than ``mu=0``
    for the same init / data / batch sequence.
 """
@@ -18,41 +18,8 @@ import copy
 
 import pytest
 import torch
-from torch import nn
 
-
-# --------------------------------------------------------------------------
-# Helpers local to this test module.
-# --------------------------------------------------------------------------
-
-
-def _build_trio(seed: int = 42, n: int = 64, seq_len: int = 3,
-                n_cat: int = 2, n_cont: int = 2):
-    """Build (model, client_tensors, loss_fn) deterministically from ``seed``.
-
-    The model mimics ForecasterV2's dual (cat, cont) input signature so the
-    same ``client_update(local_model=..., client_tensors=(cat, cont, y))``
-    interface drives it. Tiny so tests run in <1 s.
-    """
-    torch.manual_seed(seed)
-
-    class TinyDualInput(nn.Module):
-        def __init__(self, n_in: int) -> None:
-            super().__init__()
-            self.linear = nn.Linear(n_in, 1)
-
-        def forward(self, cat: torch.Tensor, cont: torch.Tensor) -> torch.Tensor:
-            cat_f = cat.float().mean(dim=1)   # (B, n_cat)
-            cont_f = cont.mean(dim=1)          # (B, n_cont)
-            x = torch.cat([cat_f, cont_f], dim=-1)  # (B, n_cat + n_cont)
-            return self.linear(x)              # (B, 1)
-
-    model = TinyDualInput(n_cat + n_cont)
-    cat = torch.randint(0, 5, (n, seq_len, n_cat), dtype=torch.long)
-    cont = torch.randn(n, seq_len, n_cont, dtype=torch.float32)
-    y = torch.randint(0, 2, (n, 1)).float()
-    loss_fn = nn.BCEWithLogitsLoss()
-    return model, (cat, cont, y), loss_fn
+from conftest import build_trio as _build_trio
 
 
 def _l2_to(sd_a: dict, sd_b: dict) -> float:
@@ -121,10 +88,11 @@ def test_fedprox_mu_zero_matches_fedavg_trajectory():
 
 
 def test_fedprox_mu_positive_keeps_weights_closer_to_global():
-    """Sanity: μ>0 pulls local weights toward the global snapshot.
+    """Sanity: mu>0 pulls local weights toward the global snapshot.
 
-    With identical init/data/batch-RNG, running FedProx at μ=1.0 should leave
-    the local weights closer (in L2) to the pre-training snapshot than μ=0.0.
+    With identical init/data/batch-RNG, running FedProx at mu=1.0 should
+    leave the local weights closer (in L2) to the pre-training snapshot
+    than mu=0.0.
     """
     from fl_oran.federated.algorithms import REGISTRY
 
@@ -153,6 +121,6 @@ def test_fedprox_mu_positive_keeps_weights_closer_to_global():
     d_zero = _l2_to(u_zero.state_dict, global_state)
     d_pos = _l2_to(u_pos.state_dict, global_state)
     assert d_pos < d_zero, (
-        f"expected μ=1.0 drift {d_pos:.4g} < μ=0.0 drift {d_zero:.4g} "
+        f"expected mu=1.0 drift {d_pos:.4g} < mu=0.0 drift {d_zero:.4g} "
         "(prox term should pull weights back toward global)"
     )

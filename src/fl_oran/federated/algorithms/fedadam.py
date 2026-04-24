@@ -1,12 +1,12 @@
 """FedAdam (Reddi et al. 2020, ICLR) — Adam at the server over the aggregated
 client delta.
 
-Client side is identical to FedAvg (inheritance). Server side:
+Client side is identical to FedAvg (inheritance). Server side::
 
-    Δ      = Σ_i p_i · (w_i - w_g)           (weighted mean of client deltas)
-    m      = β1·m + (1-β1)·Δ
-    v      = β2·v + (1-β2)·Δ²                (element-wise square)
-    w_new  = w_g + server_lr · m / (√v + τ)
+    delta = sum_i p_i * (w_i - w_g)       # weighted mean of client deltas
+    m     = beta1 * m + (1 - beta1) * delta
+    v     = beta2 * v + (1 - beta2) * delta ** 2     # element-wise square
+    w_new = w_g + server_lr * m / (sqrt(v) + tau)
 
 ``m`` and ``v`` are persistent across rounds and allocated lazily on the
 first ``server_aggregate`` call so they match the global-state shape.
@@ -63,11 +63,22 @@ class FedAdam(FedAvg):
         global_state: dict[str, torch.Tensor],
         updates: list[ClientUpdate],
     ) -> dict[str, torch.Tensor]:
-        # Weighted average of client states → implied delta = avg_state - global_state.
+        # Weighted average of client states -> implied delta = avg_state - global_state.
         avg_state = weighted_average_state_dicts(
             [u.state_dict for u in updates],
             [u.num_examples for u in updates],
         )
+        # Sanity: clients should produce state_dicts with the same keys as
+        # the global_state they were initialised from. A mismatch here means
+        # a client silently added/dropped a buffer — surface it instead of
+        # letting the subsequent global_state loop discard it.
+        if set(avg_state.keys()) != set(global_state.keys()):
+            missing = set(global_state.keys()) - set(avg_state.keys())
+            extra = set(avg_state.keys()) - set(global_state.keys())
+            raise ValueError(
+                f"FedAdam: client state_dict keys diverge from global_state. "
+                f"missing={sorted(missing)} extra={sorted(extra)}"
+            )
         new_state: dict[str, torch.Tensor] = {}
         for key, w_g in global_state.items():
             if not w_g.dtype.is_floating_point:

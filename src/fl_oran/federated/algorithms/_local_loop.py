@@ -31,7 +31,11 @@ def run_local_sgd(
 
     ``grad_correction(model)`` is invoked after ``loss.backward()`` and before
     ``clip_grad_norm_`` on every step. Pass ``None`` for vanilla FedAvg. Used
-    by FedProx (prox term), SCAFFOLD (c - c_i) and FedDyn (α·(w-w_g) - h_i).
+    by FedProx (prox term), SCAFFOLD (c - c_i) and FedDyn (alpha*(w-w_g) - h_i).
+
+    Preconditions: caller has already moved ``local_model`` to ``device``
+    (FedProx/SCAFFOLD/FedDyn do this to snapshot parameters before training
+    starts; FedAvg also moves so the move happens exactly once per round).
 
     Returns ``(cpu_state_dict, avg_loss)``. Model is left on ``device`` in
     train mode at the end.
@@ -41,7 +45,7 @@ def run_local_sgd(
     cont_g = cont_c.to(device, non_blocking=True)
     y_g = y_c.to(device, non_blocking=True)
 
-    local_model.to(device).train()
+    local_model.train()
     optimizer = torch.optim.Adam(local_model.parameters(), lr=current_lr)
     n_local = cat_g.shape[0]
     total_loss = 0.0

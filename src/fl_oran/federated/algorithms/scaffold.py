@@ -3,13 +3,14 @@ client-specific control variates.
 
 Per-client ``c_i`` and server ``c`` persist across rounds. During local SGD,
 every step's gradient is corrected by ``(c - c_i)``. At the end of local
-training, ``c_i`` is updated by Option I of the paper:
+training, ``c_i`` is updated by Option I of the paper::
 
-    c_i⁺ = c_i - c + (w_g - w_l) / (K · η)
+    c_i_plus = c_i - c + (w_g - w_l) / (K * eta)
 
-where K = ``max_steps``, η = client ``current_lr``, w_g = pre-training global
-weights, w_l = post-training local weights. Δc_i = c_i⁺ - c_i is reported
-via ``ClientUpdate.aux["delta_c_i"]`` for server aggregation.
+where K = ``max_steps``, eta = client ``current_lr``, w_g = pre-training
+global weights, w_l = post-training local weights. ``delta_c_i = c_i_plus
+- c_i`` is reported via ``ClientUpdate.aux["delta_c_i"]`` for server
+aggregation.
 
 Note: original paper assumes SGD; we use Adam locally. The formula above
 remains the standard Option-I generalization (effective LR approximation).
@@ -116,7 +117,7 @@ class SCAFFOLD:
         )
 
         # Option I update of c_i.
-        # c_i⁺ = c_i - c + (w_g - w_l) / (K · η)
+        # c_i_plus = c_i - c + (w_g - w_l) / (K * eta)
         K = self.max_steps
         eta = current_lr
         new_c_i: dict[str, torch.Tensor] = {}
@@ -144,24 +145,40 @@ class SCAFFOLD:
         global_state: dict[str, torch.Tensor],
         updates: list[ClientUpdate],
     ) -> dict[str, torch.Tensor]:
+        """Invariant: at least one ``client_update`` must run before this call,
+        so that ``self.c`` is lazily initialized (shape inferred from the
+        model). Calling ``server_aggregate`` with only ``delta_c_i`` payloads
+        but no prior client_update would leave the global control variate
+        uninitialized and the deltas would be silently dropped.
+        """
         del global_state
         # Weights: standard FedAvg over client states.
         new_w = weighted_average_state_dicts(
             [u.state_dict for u in updates],
             [u.num_examples for u in updates],
         )
-        # Control variate: c ← c + mean(Δc_i) over the participating clients.
-        # Paper form is c + (|S|/N) * (1/|S|) * Σ Δc_i = (1/N) * Σ Δc_i. We
-        # approximate N by |S| (exact when all clients participate); partial
-        # participation accounting is a known simplification.
-        if not self.c:
-            return new_w
-        n_updates = len(updates)
         deltas_present = [u.aux.get("delta_c_i") for u in updates if u.aux]
-        if not deltas_present:
+        deltas_present = [d for d in deltas_present if d]
+        # Detect accidental misuse: deltas are present but self.c wasn't
+        # initialized by a prior client_update. Warn loudly so the silent
+        # drop is observable.
+        if not self.c and deltas_present:
+            log.warning(
+                "scaffold.server_aggregate: self.c is empty but %d updates "
+                "carry delta_c_i — dropping them (call client_update first)",
+                len(deltas_present),
+            )
             return new_w
+        if not self.c or not deltas_present:
+            return new_w
+        # Control variate: c <- c + mean(delta_c_i) over the participating
+        # clients. Paper form is c + (|S|/N) * (1/|S|) * sum(delta_c_i) =
+        # (1/N) * sum(delta_c_i). We approximate N by |S| (exact when all
+        # clients participate); partial participation accounting is a known
+        # simplification that the M3 orchestrator will revisit.
         for name in self.c:
             stack = torch.stack([d[name] for d in deltas_present if name in d])
             self.c[name] = self.c[name].cpu() + stack.mean(dim=0)
-        log.debug("scaffold aggregate: updated c from %d delta_c_i", n_updates)
+        log.debug("scaffold aggregate: updated c from %d delta_c_i",
+                  len(deltas_present))
         return new_w

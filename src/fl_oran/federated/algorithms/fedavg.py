@@ -56,6 +56,8 @@ class FedAvg:
         round_idx: int,
     ) -> ClientUpdate:
         del round_idx  # FedAvg doesn't vary behavior by round
+        # Helper requires caller to move model to device (see _local_loop docs).
+        local_model.to(device)
         state, avg_loss = run_local_sgd(
             local_model=local_model,
             client_tensors=client_tensors,

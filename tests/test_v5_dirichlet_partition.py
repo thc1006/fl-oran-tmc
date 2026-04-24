@@ -4,7 +4,7 @@ These tests fail before the implementation in
 ``src/fl_oran/data_v2/partition.py`` is extended with ``mode="dirichlet"``.
 
 Test assertions per ADR-001 §3.1:
-1. alpha concentration — large α → near-uniform; small α → concentrated
+1. alpha concentration — large alpha -> near-uniform; small alpha -> concentrated
 2. total rows preserved — sum of shard sizes equals input row count
 3. seed reproducible — same seed → bit-equivalent partition
 4. n_clients respected — returns up to n_clients shards
@@ -45,22 +45,22 @@ def _make_df(n_rows: int = 3000, n_slices: int = 3, seed: int = 0) -> pd.DataFra
 # --------------------------------------------------------------------------
 
 def test_dirichlet_partition_respects_alpha_concentration():
-    """Large α → near-uniform shard sizes. Small α → concentrated (some sparse)."""
+    """Large alpha -> near-uniform shard sizes. Small alpha -> concentrated."""
     df = _make_df(n_rows=3000)
 
-    # Large α = 100 → approximately equal shard sizes
+    # Large alpha = 100 -> approximately equal shard sizes
     uniform = partition_clients(df, mode="dirichlet", alpha=100.0, n_clients=5, seed=42)
     target = len(df) / 5
     for shard in uniform.values():
         assert 0.6 * target < len(shard) < 1.4 * target, \
-            f"at α=100, shard size {len(shard)} drifts too far from uniform target {target:.0f}"
+            f"at alpha=100, shard size {len(shard)} drifts too far from uniform target {target:.0f}"
 
-    # Small α = 0.01 → highly concentrated (at least one client gets << average)
+    # Small alpha = 0.01 -> highly concentrated (at least one client gets << average)
     concentrated = partition_clients(df, mode="dirichlet", alpha=0.01, n_clients=5, seed=42)
     avg = len(df) / 5
     sparse_clients = sum(1 for s in concentrated.values() if len(s) < 0.1 * avg)
     assert sparse_clients >= 1, \
-        f"at α=0.01, expected ≥1 sparse client, got {sparse_clients}"
+        f"at alpha=0.01, expected at least 1 sparse client, got {sparse_clients}"
 
 
 def test_dirichlet_partition_preserves_total_rows():

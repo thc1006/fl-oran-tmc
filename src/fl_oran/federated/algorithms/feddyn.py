@@ -1,19 +1,20 @@
 """FedDyn (Acar et al. 2021, ICLR) — dynamic regularization for FL.
 
-Each client's local objective is
+Each client's local objective is::
 
-    L_i(w) - ⟨h_i, w⟩ + (α/2)·‖w - w_t‖²
+    L_i(w) - <h_i, w> + (alpha / 2) * ||w - w_t|| ** 2
 
-yielding the gradient correction ``-h_i + α·(w - w_t)`` applied on every
-local step. At the end of local training:
+yielding the gradient correction ``-h_i + alpha*(w - w_t)`` applied on every
+local step. At the end of local training::
 
-    h_i ← h_i - α·(w_l - w_t)
+    h_i <- h_i - alpha * (w_l - w_t)
 
-The server maintains a cumulative ``h_accum`` (summed Δh_i across rounds)
-that would enter the canonical server update ``w_new = mean(w_i) + h_accum/(α·N)``.
-For M2 we report Δh_i via ``ClientUpdate.aux["delta_h_i"]`` and accumulate
-on the server; wiring the full ``h_accum`` correction into the returned
-weights is deferred until the v5 orchestrator lands (it also decides N).
+The server maintains a cumulative ``h_accum`` (summed delta_h_i across
+rounds) that would enter the canonical server update
+``w_new = mean(w_i) + h_accum / (alpha * N)``. For M2 we report delta_h_i
+via ``ClientUpdate.aux["delta_h_i"]`` and accumulate on the server; wiring
+the full ``h_accum`` correction into the returned weights is deferred until
+the v5 orchestrator lands (it also decides N).
 """
 from __future__ import annotations
 
@@ -86,7 +87,7 @@ class FedDyn:
         alpha = self.alpha
 
         def feddyn_correction(model: nn.Module) -> None:
-            # grad ← grad - h_i + α·(w - w_t).
+            # grad <- grad - h_i + alpha*(w - w_t).
             # With alpha=0 AND h_i=0 this is a no-op (= FedAvg trajectory).
             for name, p in model.named_parameters():
                 if p.grad is None:
@@ -109,7 +110,7 @@ class FedDyn:
             grad_correction=feddyn_correction,
         )
 
-        # Update h_i: h_i ← h_i - α·(w_l - w_t).
+        # Update h_i: h_i <- h_i - alpha*(w_l - w_t).
         new_h_i: dict[str, torch.Tensor] = {}
         delta_h_i: dict[str, torch.Tensor] = {}
         for name, p in local_model.named_parameters():
@@ -140,7 +141,7 @@ class FedDyn:
             [u.state_dict for u in updates],
             [u.num_examples for u in updates],
         )
-        # Accumulate Δh_i across participating clients.
+        # Accumulate delta_h_i across participating clients.
         deltas = [u.aux.get("delta_h_i") for u in updates if u.aux]
         deltas = [d for d in deltas if d]
         if not deltas:
@@ -154,4 +155,10 @@ class FedDyn:
                     self.h_accum[name] = self.h_accum[name] + d[name]
         log.debug("feddyn aggregate: accumulated %d delta_h_i into h_accum",
                   len(deltas))
+        # TODO(M3): paper-faithful server step is
+        #   new_w[name] += h_accum[name] / (alpha * N)
+        # where N is the total number of clients ever seen. That requires the
+        # sweep orchestrator to thread through N. Today we return plain FedAvg
+        # weights and keep h_accum as a side accumulator that downstream
+        # analysis can inspect.
         return new_w

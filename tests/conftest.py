@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import torch
+from torch import nn
 
 # Ensure the source package is importable without install.
 ROOT = Path(__file__).resolve().parent.parent
@@ -55,3 +57,44 @@ def small_dataframe(synthetic_parquet) -> pd.DataFrame:
 @pytest.fixture(autouse=True)
 def _set_log_level(monkeypatch):
     monkeypatch.setenv("FL_ORAN_LOG_LEVEL", "WARNING")
+
+
+# --------------------------------------------------------------------------
+# Algorithm-level helpers (used by test_v5_fedprox / fedadam / scaffold /
+# feddyn). Shared here once instead of duplicated per file.
+# --------------------------------------------------------------------------
+
+
+class _TinyDualInput(nn.Module):
+    """Minimal 2-input (cat, cont) model mimicking ForecasterV2's signature."""
+
+    def __init__(self, n_in: int) -> None:
+        super().__init__()
+        self.linear = nn.Linear(n_in, 1)
+
+    def forward(self, cat: torch.Tensor, cont: torch.Tensor) -> torch.Tensor:
+        cat_f = cat.float().mean(dim=1)
+        cont_f = cont.mean(dim=1)
+        return self.linear(torch.cat([cat_f, cont_f], dim=-1))
+
+
+def build_trio(
+    seed: int = 42,
+    n: int = 64,
+    seq_len: int = 3,
+    n_cat: int = 2,
+    n_cont: int = 2,
+):
+    """Build ``(model, (cat, cont, y), loss_fn)`` deterministically from ``seed``.
+
+    Used by algorithm-level tests (FedProx, FedAdam, SCAFFOLD, FedDyn) to
+    exercise client_update against a tiny model that matches ForecasterV2's
+    dual-input signature. Tests typically seed once to get identical init
+    across runs with the same seed.
+    """
+    torch.manual_seed(seed)
+    model = _TinyDualInput(n_cat + n_cont)
+    cat = torch.randint(0, 5, (n, seq_len, n_cat), dtype=torch.long)
+    cont = torch.randn(n, seq_len, n_cont, dtype=torch.float32)
+    y = torch.randint(0, 2, (n, 1)).float()
+    return model, (cat, cont, y), nn.BCEWithLogitsLoss()

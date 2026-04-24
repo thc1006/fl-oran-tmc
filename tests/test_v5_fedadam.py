@@ -3,45 +3,25 @@
 FedAdam = FedOpt with Adam at server. Client is identical to FedAvg; the
 difference is the server-side update:
 
-    Δ = Σ p_i · (w_i - w_global)
-    m = β1·m + (1-β1)·Δ
-    v = β2·v + (1-β2)·Δ²
-    w_new = w_global + server_lr · m / (√v + τ)
+    delta = sum_i p_i * (w_i - w_global)
+    m     = beta1 * m + (1 - beta1) * delta
+    v     = beta2 * v + (1 - beta2) * delta^2
+    w_new = w_global + server_lr * m / (sqrt(v) + tau)
 
 Tests:
 1. Registered.
 2. Missing ``server_lr`` raises.
 3. Client output matches FedAvg bit-wise (FedAdam inherits FedAvg's client).
-4. Server with β1=β2=0, lr=1.0, small τ reduces to ``w + sign(Δ)`` —
-   distinguishes FedAdam from FedAvg's plain averaging.
+4. Server with beta1=beta2=0, lr=1.0, small tau reduces to ``w + sign(delta)``
+   — distinguishes FedAdam from FedAvg's plain averaging.
 5. Moment buffers persist across calls (second call reuses prior m/v).
 """
 from __future__ import annotations
 
 import pytest
 import torch
-from torch import nn
 
-
-def _build_trio(seed: int = 42, n: int = 64, seq_len: int = 3,
-                n_cat: int = 2, n_cont: int = 2):
-    torch.manual_seed(seed)
-
-    class TinyDualInput(nn.Module):
-        def __init__(self, n_in: int) -> None:
-            super().__init__()
-            self.linear = nn.Linear(n_in, 1)
-
-        def forward(self, cat: torch.Tensor, cont: torch.Tensor) -> torch.Tensor:
-            cat_f = cat.float().mean(dim=1)
-            cont_f = cont.mean(dim=1)
-            return self.linear(torch.cat([cat_f, cont_f], dim=-1))
-
-    model = TinyDualInput(n_cat + n_cont)
-    cat = torch.randint(0, 5, (n, seq_len, n_cat), dtype=torch.long)
-    cont = torch.randn(n, seq_len, n_cont, dtype=torch.float32)
-    y = torch.randint(0, 2, (n, 1)).float()
-    return model, (cat, cont, y), nn.BCEWithLogitsLoss()
+from conftest import build_trio as _build_trio
 
 
 def test_fedadam_registered():
@@ -80,7 +60,7 @@ def test_fedadam_client_matches_fedavg():
 
 
 def test_fedadam_server_beta_zero_reduces_to_sign_delta():
-    """With β1=β2=0, server_lr=1.0, τ→0: w_new = w + Δ / |Δ| = w + sign(Δ)."""
+    """beta1=beta2=0, server_lr=1.0, tau -> 0: w_new = w + delta/|delta| = w + sign(delta)."""
     from fl_oran.federated.algorithms import REGISTRY
     from fl_oran.federated.client import ClientUpdate
 
@@ -114,7 +94,7 @@ def test_fedadam_moments_persist_across_rounds():
     assert "w" in algo.v
     m_after_round1 = algo.m["w"].clone()
     v_after_round1 = algo.v["w"].clone()
-    # Second call with same update: m, v should move (β*prev + (1-β)*new)
+    # Second call with same update: m, v should move (beta*prev + (1-beta)*new)
     _ = algo.server_aggregate(global_state=global_state, updates=[u])
     assert not torch.allclose(algo.m["w"], m_after_round1), "m should evolve"
     assert not torch.allclose(algo.v["w"], v_after_round1), "v should evolve"
