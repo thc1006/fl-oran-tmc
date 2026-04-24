@@ -1,8 +1,8 @@
 """Per-client local training step."""
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 import torch
 from torch import nn
@@ -36,6 +36,9 @@ class ClientUpdate:
     num_examples: int
     train_loss: float
     train_metric: float | None = None
+    # Algorithm-specific auxiliary payload (SCAFFOLD control-variate delta,
+    # FedDyn gradient residual, etc.). Empty dict for FedAvg/FedProx/FedAdam.
+    aux: dict[str, Any] = field(default_factory=dict)
 
 
 def train_one_client_cuda_graph(

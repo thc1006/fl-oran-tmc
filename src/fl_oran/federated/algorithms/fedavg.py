@@ -14,6 +14,7 @@ from ..aggregation import weighted_average_state_dicts
 from ..client import ClientUpdate
 from ...logging_utils import get_logger
 from . import register
+from ._local_loop import run_local_sgd
 
 log = get_logger(__name__)
 
@@ -55,34 +56,19 @@ class FedAvg:
         round_idx: int,
     ) -> ClientUpdate:
         del round_idx  # FedAvg doesn't vary behavior by round
-        cat_c, cont_c, y_c = client_tensors
-        cat_g = cat_c.to(device, non_blocking=True)
-        cont_g = cont_c.to(device, non_blocking=True)
-        y_g = y_c.to(device, non_blocking=True)
-
-        local_model.to(device).train()
-        optimizer = torch.optim.Adam(local_model.parameters(), lr=current_lr)
-        n_local = cat_g.shape[0]
-        total_loss = 0.0
-
-        amp_ctx = torch.autocast(
-            device_type=device.type,
-            dtype=self.amp_dtype or torch.bfloat16,
-            enabled=self.amp_enabled,
+        state, avg_loss = run_local_sgd(
+            local_model=local_model,
+            client_tensors=client_tensors,
+            loss_fn=loss_fn,
+            current_lr=current_lr,
+            max_steps=self.max_steps,
+            batch_size=self.batch_size,
+            grad_clip=self.grad_clip,
+            amp_enabled=self.amp_enabled,
+            amp_dtype=self.amp_dtype,
+            device=device,
+            grad_correction=None,
         )
-        for _ in range(self.max_steps):
-            idx = torch.randint(0, n_local, (self.batch_size,), device=device)
-            optimizer.zero_grad(set_to_none=True)
-            with amp_ctx:
-                logits = local_model(cat_g[idx], cont_g[idx])
-                loss = loss_fn(logits, y_g[idx])
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(local_model.parameters(), self.grad_clip)
-            optimizer.step()
-            total_loss += loss.item()
-
-        state = {k: v.detach().cpu() for k, v in local_model.state_dict().items()}
-        avg_loss = total_loss / max(self.max_steps, 1)
         log.debug("fedavg client %s: steps=%d batch=%d loss=%.4f",
                   client_id, self.max_steps, self.batch_size, avg_loss)
         return ClientUpdate(

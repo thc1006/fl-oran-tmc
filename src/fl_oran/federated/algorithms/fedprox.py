@@ -18,6 +18,7 @@ from ..aggregation import weighted_average_state_dicts
 from ..client import ClientUpdate
 from ...logging_utils import get_logger
 from . import register
+from ._local_loop import run_local_sgd
 
 log = get_logger(__name__)
 
@@ -61,47 +62,35 @@ class FedProx:
         round_idx: int,
     ) -> ClientUpdate:
         del round_idx
-        cat_c, cont_c, y_c = client_tensors
-        cat_g = cat_c.to(device, non_blocking=True)
-        cont_g = cont_c.to(device, non_blocking=True)
-        y_g = y_c.to(device, non_blocking=True)
-
-        local_model.to(device).train()
-        # Snapshot global weights *after* .to(device) so the prox term's
-        # arithmetic stays on the same device as p.grad.
+        # Move model to device before snapshotting so the snapshot is co-resident
+        # with p.grad during the correction step.
+        local_model.to(device)
         global_snapshot = {
             name: p.detach().clone()
             for name, p in local_model.named_parameters()
         }
+        mu = self.mu
 
-        optimizer = torch.optim.Adam(local_model.parameters(), lr=current_lr)
-        n_local = cat_g.shape[0]
-        total_loss = 0.0
+        def prox_correction(model: nn.Module) -> None:
+            if mu == 0.0:
+                return  # bit-identical to FedAvg
+            for name, p in model.named_parameters():
+                if p.grad is not None:
+                    p.grad.add_(p.data - global_snapshot[name], alpha=mu)
 
-        amp_ctx = torch.autocast(
-            device_type=device.type,
-            dtype=self.amp_dtype or torch.bfloat16,
-            enabled=self.amp_enabled,
+        state, avg_loss = run_local_sgd(
+            local_model=local_model,
+            client_tensors=client_tensors,
+            loss_fn=loss_fn,
+            current_lr=current_lr,
+            max_steps=self.max_steps,
+            batch_size=self.batch_size,
+            grad_clip=self.grad_clip,
+            amp_enabled=self.amp_enabled,
+            amp_dtype=self.amp_dtype,
+            device=device,
+            grad_correction=prox_correction,
         )
-        for _ in range(self.max_steps):
-            idx = torch.randint(0, n_local, (self.batch_size,), device=device)
-            optimizer.zero_grad(set_to_none=True)
-            with amp_ctx:
-                logits = local_model(cat_g[idx], cont_g[idx])
-                loss = loss_fn(logits, y_g[idx])
-            loss.backward()
-            # Prox term: ∇_w (μ/2)‖w - w_g‖² = μ·(w - w_g).
-            # Skip when μ==0 so FedProx(mu=0) is numerically identical to FedAvg.
-            if self.mu != 0.0:
-                for name, p in local_model.named_parameters():
-                    if p.grad is not None:
-                        p.grad.add_(p.data - global_snapshot[name], alpha=self.mu)
-            torch.nn.utils.clip_grad_norm_(local_model.parameters(), self.grad_clip)
-            optimizer.step()
-            total_loss += loss.item()
-
-        state = {k: v.detach().cpu() for k, v in local_model.state_dict().items()}
-        avg_loss = total_loss / max(self.max_steps, 1)
         log.debug("fedprox client %s: steps=%d batch=%d mu=%.4f loss=%.4f",
                   client_id, self.max_steps, self.batch_size, self.mu, avg_loss)
         return ClientUpdate(

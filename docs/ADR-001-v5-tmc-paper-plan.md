@@ -11,6 +11,29 @@
 | 2026-04-25 a.m. | Initial draft (4 algorithms, 3 seeds, 60 runs) | Planning for TMC submission |
 | 2026-04-25 p.m. | Literature review: extended to 6 algorithms, 5 α values, 5 seeds, 150 runs; added D-11 through D-15 | ERFO 2025 benchmarks against 9 baselines; NIID-Bench default α=0.5; reviewers expect FedDyn + FedAdam in 2025+ |
 | 2026-04-25 late | Clarify D-4 (algorithm reuse mechanism), D-11 (scaler sharing implementation); add FedAvg dispatch-regression test to §3 | Pre-M1 review pass found 2 ambiguities + 1 missing regression test |
+| 2026-04-25 eve | M1 complete (Dirichlet partition, FLAlgorithm registry, FedAvg, FedProx). Migrated to fresh repo `fl-oran-tmc`. | M1 deliverables done; clean-history repo for TMC supplementary material |
+| 2026-04-25 night | M2 partial: FedAdam, SCAFFOLD, FedDyn landed (3/4). MOON deferred to M3. See D-16 below. | Rule-of-three refactor done via `run_local_sgd` helper; MOON is not pure plumbing |
+
+### D-16. MOON deferred from M2 to M3
+
+MOON (Li et al. 2021) requires a client-side contrastive loss on model
+**representations**, not on raw weights. This needs the model to expose a
+dedicated ``encode(x) → z`` method (or an intermediate-layer hook) with a
+stable output shape and a documented projection head. That is a
+paper-level design decision — different choices (penultimate layer vs a
+separate projection MLP; detached vs through-graph previous-round
+representation) materially change the result.
+
+Shipping MOON without that decision would bake in an arbitrary interface
+that downstream tests and the sweep script would depend on. Instead: M2
+ships the four algorithms whose contracts are purely plumbing (FedAvg,
+FedProx, FedAdam, SCAFFOLD, FedDyn — five once we count FedAvg).
+**MOON moves to M3** alongside the orchestrator work, where the
+representation API can be designed and reviewed together.
+
+Sweep count stays at 5 algorithms × 5 α values × 5 seeds = 125 runs for
+M3; MOON adds the 6th algorithm for a final 150-run matrix if the
+representation API lands cleanly.
 
 For full decision-by-decision audit trail see `git log --follow docs/ADR-001-v5-tmc-paper-plan.md`.
 

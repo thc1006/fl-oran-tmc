@@ -105,3 +105,6 @@ def get_algorithm(name: str) -> type:
 # REGISTRY/register are already defined when submodules import them.
 from . import fedavg  # noqa: E402,F401
 from . import fedprox  # noqa: E402,F401
+from . import fedadam  # noqa: E402,F401
+from . import scaffold  # noqa: E402,F401
+from . import feddyn  # noqa: E402,F401

@@ -1,0 +1,167 @@
+"""SCAFFOLD (Karimireddy et al. 2020, ICML) — variance-reduced FedAvg via
+client-specific control variates.
+
+Per-client ``c_i`` and server ``c`` persist across rounds. During local SGD,
+every step's gradient is corrected by ``(c - c_i)``. At the end of local
+training, ``c_i`` is updated by Option I of the paper:
+
+    c_i⁺ = c_i - c + (w_g - w_l) / (K · η)
+
+where K = ``max_steps``, η = client ``current_lr``, w_g = pre-training global
+weights, w_l = post-training local weights. Δc_i = c_i⁺ - c_i is reported
+via ``ClientUpdate.aux["delta_c_i"]`` for server aggregation.
+
+Note: original paper assumes SGD; we use Adam locally. The formula above
+remains the standard Option-I generalization (effective LR approximation).
+"""
+from __future__ import annotations
+
+from typing import Callable
+
+import torch
+from torch import nn
+
+from ..aggregation import weighted_average_state_dicts
+from ..client import ClientUpdate
+from ...logging_utils import get_logger
+from . import register
+from ._local_loop import run_local_sgd
+
+log = get_logger(__name__)
+
+
+@register
+class SCAFFOLD:
+    """SCAFFOLD (Option I).
+
+    Stateful: ``self.c`` holds the global control variate (lazy-init on first
+    use), ``self.c_i[client_id]`` holds per-client control variates.
+    """
+
+    name = "scaffold"
+
+    def __init__(
+        self,
+        *,
+        max_steps: int,
+        batch_size: int,
+        grad_clip: float = 1.0,
+        amp_enabled: bool = False,
+        amp_dtype: torch.dtype | None = None,
+    ) -> None:
+        self.max_steps = max_steps
+        self.batch_size = batch_size
+        self.grad_clip = grad_clip
+        self.amp_enabled = amp_enabled
+        self.amp_dtype = amp_dtype
+        self.c: dict[str, torch.Tensor] = {}
+        self.c_i: dict[int, dict[str, torch.Tensor]] = {}
+
+    def _ensure_c(self, model: nn.Module, device: torch.device) -> None:
+        if not self.c:
+            self.c = {
+                name: torch.zeros_like(p, device=device)
+                for name, p in model.named_parameters()
+            }
+
+    def _ensure_c_i(self, client_id: int, model: nn.Module,
+                     device: torch.device) -> None:
+        if client_id not in self.c_i:
+            self.c_i[client_id] = {
+                name: torch.zeros_like(p, device=device)
+                for name, p in model.named_parameters()
+            }
+
+    def client_update(
+        self,
+        *,
+        client_id: int,
+        local_model: nn.Module,
+        client_tensors: tuple[torch.Tensor, ...],
+        loss_fn: Callable,
+        current_lr: float,
+        device: torch.device,
+        round_idx: int,
+    ) -> ClientUpdate:
+        del round_idx
+        local_model.to(device)
+        global_snapshot = {
+            name: p.detach().clone()
+            for name, p in local_model.named_parameters()
+        }
+        self._ensure_c(local_model, device)
+        self._ensure_c_i(client_id, local_model, device)
+        # Pin references for the closure — device-coherent with p.grad.
+        c = {k: v.to(device) for k, v in self.c.items()}
+        c_i = {k: v.to(device) for k, v in self.c_i[client_id].items()}
+
+        def scaffold_correction(model: nn.Module) -> None:
+            # grad ← grad + (c - c_i). When c = c_i = 0 (first round), no-op.
+            for name, p in model.named_parameters():
+                if p.grad is not None:
+                    p.grad.add_(c[name] - c_i[name])
+
+        state, avg_loss = run_local_sgd(
+            local_model=local_model,
+            client_tensors=client_tensors,
+            loss_fn=loss_fn,
+            current_lr=current_lr,
+            max_steps=self.max_steps,
+            batch_size=self.batch_size,
+            grad_clip=self.grad_clip,
+            amp_enabled=self.amp_enabled,
+            amp_dtype=self.amp_dtype,
+            device=device,
+            grad_correction=scaffold_correction,
+        )
+
+        # Option I update of c_i.
+        # c_i⁺ = c_i - c + (w_g - w_l) / (K · η)
+        K = self.max_steps
+        eta = current_lr
+        new_c_i: dict[str, torch.Tensor] = {}
+        delta_c_i: dict[str, torch.Tensor] = {}
+        for name, p in local_model.named_parameters():
+            diff = global_snapshot[name] - p.detach()  # w_g - w_l
+            c_i_plus = c_i[name] - c[name] + diff / (K * eta)
+            new_c_i[name] = c_i_plus.detach().cpu()
+            delta_c_i[name] = (c_i_plus - c_i[name]).detach().cpu()
+        self.c_i[client_id] = new_c_i
+
+        log.debug("scaffold client %s: steps=%d batch=%d loss=%.4f",
+                  client_id, self.max_steps, self.batch_size, avg_loss)
+        return ClientUpdate(
+            client_id=client_id,
+            state_dict=state,
+            num_examples=self.max_steps * self.batch_size,
+            train_loss=avg_loss,
+            aux={"delta_c_i": delta_c_i},
+        )
+
+    def server_aggregate(
+        self,
+        *,
+        global_state: dict[str, torch.Tensor],
+        updates: list[ClientUpdate],
+    ) -> dict[str, torch.Tensor]:
+        del global_state
+        # Weights: standard FedAvg over client states.
+        new_w = weighted_average_state_dicts(
+            [u.state_dict for u in updates],
+            [u.num_examples for u in updates],
+        )
+        # Control variate: c ← c + mean(Δc_i) over the participating clients.
+        # Paper form is c + (|S|/N) * (1/|S|) * Σ Δc_i = (1/N) * Σ Δc_i. We
+        # approximate N by |S| (exact when all clients participate); partial
+        # participation accounting is a known simplification.
+        if not self.c:
+            return new_w
+        n_updates = len(updates)
+        deltas_present = [u.aux.get("delta_c_i") for u in updates if u.aux]
+        if not deltas_present:
+            return new_w
+        for name in self.c:
+            stack = torch.stack([d[name] for d in deltas_present if name in d])
+            self.c[name] = self.c[name].cpu() + stack.mean(dim=0)
+        log.debug("scaffold aggregate: updated c from %d delta_c_i", n_updates)
+        return new_w
