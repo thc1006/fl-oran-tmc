@@ -5,16 +5,32 @@ Each client's local objective is::
     L_i(w) - <h_i, w> + (alpha / 2) * ||w - w_t|| ** 2
 
 yielding the gradient correction ``-h_i + alpha*(w - w_t)`` applied on every
-local step. At the end of local training::
+local step. Two modes for the ``h_i`` update after local training:
 
-    h_i <- h_i - alpha * (w_l - w_t)
+- ``update_mode="option_ii"`` (**default, Adam-friendly**)::
+
+      h_i <- h_i - alpha * grad_{L_i}(w_t)
+
+  Uses a deterministic mini-batch gradient at ``w_t`` so ``h_i`` scales
+  with the true data gradient — magnitude is invariant to the local
+  optimiser choice. Recommended whenever the client uses Adam (as we do).
+
+- ``update_mode="option_i"`` (**paper-faithful, assumes SGD**)::
+
+      h_i <- h_i - alpha * (w_l - w_t)
+
+  Accumulates weight drift. Under Adam, drift scales as ``eta`` per
+  step (Adam normalises per-dim), which is ~100x larger than gradient
+  magnitude; ``h_i`` then dominates the gradient correction and the
+  client effectively minimises the regulariser, not the loss. Kept for
+  paper-faithful SGD baselines only.
 
 The server maintains a cumulative ``h_accum`` (summed delta_h_i across
 rounds) that would enter the canonical server update
 ``w_new = mean(w_i) + h_accum / (alpha * N)``. For M2 we report delta_h_i
 via ``ClientUpdate.aux["delta_h_i"]`` and accumulate on the server; wiring
-the full ``h_accum`` correction into the returned weights is deferred until
-the v5 orchestrator lands (it also decides N).
+the full ``h_accum`` correction into the returned weights is deferred
+until the v5 orchestrator decides N.
 """
 from __future__ import annotations
 
@@ -44,13 +60,19 @@ class FedDyn:
         max_steps: int,
         batch_size: int,
         alpha: float,
+        update_mode: str = "option_ii",
         grad_clip: float = 1.0,
         amp_enabled: bool = False,
         amp_dtype: torch.dtype | None = None,
     ) -> None:
+        if update_mode not in ("option_i", "option_ii"):
+            raise ValueError(
+                f"update_mode must be 'option_i' or 'option_ii', got {update_mode!r}"
+            )
         self.max_steps = max_steps
         self.batch_size = batch_size
         self.alpha = float(alpha)
+        self.update_mode = update_mode
         self.grad_clip = grad_clip
         self.amp_enabled = amp_enabled
         self.amp_dtype = amp_dtype
@@ -64,6 +86,43 @@ class FedDyn:
                 name: torch.zeros_like(p, device=device)
                 for name, p in model.named_parameters()
             }
+
+    def _compute_gradient_at(
+        self,
+        model: nn.Module,
+        cat: torch.Tensor,
+        cont: torch.Tensor,
+        y: torch.Tensor,
+        loss_fn: Callable,
+        device: torch.device,
+    ) -> dict[str, torch.Tensor]:
+        """Grad of loss_fn at model's current weights on a deterministic batch.
+
+        Eval mode + arange index → does not perturb global torch RNG.
+        """
+        bs = min(self.batch_size, cat.shape[0])
+        det_idx = torch.arange(bs, device=device)
+        was_training = model.training
+        model.eval()
+        model.zero_grad(set_to_none=True)
+        amp_ctx = torch.autocast(
+            device_type=device.type,
+            dtype=self.amp_dtype or torch.bfloat16,
+            enabled=self.amp_enabled,
+        )
+        with amp_ctx:
+            logits = model(cat[det_idx], cont[det_idx])
+            loss = loss_fn(logits, y[det_idx])
+        loss.backward()
+        grads = {
+            name: p.grad.detach().clone()
+            for name, p in model.named_parameters()
+            if p.grad is not None
+        }
+        model.zero_grad(set_to_none=True)
+        if was_training:
+            model.train()
+        return grads
 
     def client_update(
         self,
@@ -81,6 +140,10 @@ class FedDyn:
         global_snapshot = {
             name: p.detach().clone()
             for name, p in local_model.named_parameters()
+        }
+        global_snapshot_state = {
+            k: v.detach().clone()
+            for k, v in local_model.state_dict().items()
         }
         self._ensure_h_i(client_id, local_model, device)
         h_i = {k: v.to(device) for k, v in self.h_i[client_id].items()}
@@ -110,14 +173,33 @@ class FedDyn:
             grad_correction=feddyn_correction,
         )
 
-        # Update h_i: h_i <- h_i - alpha*(w_l - w_t).
+        # Update h_i.
         new_h_i: dict[str, torch.Tensor] = {}
         delta_h_i: dict[str, torch.Tensor] = {}
-        for name, p in local_model.named_parameters():
-            diff = p.detach() - global_snapshot[name]  # w_l - w_t
-            h_i_plus = h_i[name] - alpha * diff
-            new_h_i[name] = h_i_plus.detach().cpu()
-            delta_h_i[name] = (h_i_plus - h_i[name]).detach().cpu()
+        if self.update_mode == "option_ii":
+            # h_i <- h_i - alpha * grad_{L_i}(w_t). Compute grad at w_t on a
+            # deterministic batch (optimizer-agnostic magnitude).
+            cat_c, cont_c, y_c = client_tensors
+            cat_g = cat_c.to(device, non_blocking=True)
+            cont_g = cont_c.to(device, non_blocking=True)
+            y_g = y_c.to(device, non_blocking=True)
+            local_model.load_state_dict(global_snapshot_state, strict=True)
+            grad_at_wt = self._compute_gradient_at(
+                local_model, cat_g, cont_g, y_g, loss_fn, device,
+            )
+            local_model.load_state_dict(
+                {k: v.to(device) for k, v in state.items()}, strict=True,
+            )
+            for name in grad_at_wt:
+                h_i_plus = h_i[name] - alpha * grad_at_wt[name]
+                new_h_i[name] = h_i_plus.detach().cpu()
+                delta_h_i[name] = (h_i_plus - h_i[name]).detach().cpu()
+        else:  # option_i — paper-faithful for SGD only
+            for name, p in local_model.named_parameters():
+                diff = p.detach() - global_snapshot[name]  # w_l - w_t
+                h_i_plus = h_i[name] - alpha * diff
+                new_h_i[name] = h_i_plus.detach().cpu()
+                delta_h_i[name] = (h_i_plus - h_i[name]).detach().cpu()
         self.h_i[client_id] = new_h_i
 
         log.debug("feddyn client %s: steps=%d batch=%d alpha=%.4f loss=%.4f",

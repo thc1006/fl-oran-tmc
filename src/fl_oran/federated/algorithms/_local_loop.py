@@ -21,6 +21,8 @@ from typing import Callable
 import torch
 from torch import nn
 
+from ..client import _make_optimizer
+
 
 def run_local_sgd(
     *,
@@ -65,7 +67,9 @@ def run_local_sgd(
     y_g = y_c.to(device, non_blocking=True)
 
     local_model.train()
-    optimizer = torch.optim.Adam(local_model.parameters(), lr=current_lr)
+    # Fused Adam on CUDA (bit-equivalent to non-fused; 1.5-2x faster on
+    # small models). Falls back to plain Adam on CPU / older PyTorch.
+    optimizer = _make_optimizer(local_model.parameters(), current_lr, device)
     n_local = cat_g.shape[0]
     total_loss = 0.0
 
@@ -92,6 +96,10 @@ def run_local_sgd(
         optimizer.step()
         total_loss += loss.item()
 
-    state = {k: v.detach().cpu() for k, v in local_model.state_dict().items()}
+    # ``.detach().cpu()`` on a CPU tensor does NOT copy — it returns a view on
+    # the same storage. Callers that subsequently mutate ``local_model`` (e.g.
+    # SCAFFOLD reloads w_g for its Option-II gradient) would then see their
+    # "saved" state change under them. Explicit clone breaks the aliasing.
+    state = {k: v.detach().cpu().clone() for k, v in local_model.state_dict().items()}
     avg_loss = total_loss / max(max_steps, 1)
     return state, avg_loss

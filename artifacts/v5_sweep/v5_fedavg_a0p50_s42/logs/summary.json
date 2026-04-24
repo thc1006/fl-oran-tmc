@@ -1,0 +1,115 @@
+{
+  "config": {
+    "name": "v5_fedavg_a0p50_s42",
+    "algorithm": "fedavg",
+    "algo_kwargs": {},
+    "partition_mode": "dirichlet",
+    "alpha": 0.5,
+    "n_clients": 5,
+    "num_rounds": 5,
+    "clients_per_round": 5,
+    "max_steps_per_round": 50,
+    "batch_size": 256,
+    "lr": 0.0005,
+    "lr_warmup_rounds": 1,
+    "grad_clip": 1.0,
+    "unified_parquet": "data/coloran_raw_unified.parquet",
+    "sample_ratio": 1.0,
+    "threshold": 0.1,
+    "seq_len": 5,
+    "train_tr": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ],
+    "val_tr": [
+      22,
+      23,
+      24
+    ],
+    "test_tr": [
+      25,
+      26,
+      27
+    ],
+    "seed": 42,
+    "device": "cuda",
+    "mixed_precision": "bf16",
+    "compile_model": "reduce-overhead",
+    "output_dir": "/home/thc1006/dev/fl-oran-tmc/artifacts/v5_sweep"
+  },
+  "history": [
+    {
+      "round": 1,
+      "train_loss": 0.9470157191753387,
+      "val_auc": 0.644107250619865,
+      "val_acc": 0.6222088791284871,
+      "val_f1": 0.4643489312518604,
+      "lr": 0.0005,
+      "duration_s": 2.402926206588745
+    },
+    {
+      "round": 2,
+      "train_loss": 0.9126933450698853,
+      "val_auc": 0.6711595149152868,
+      "val_acc": 0.5142350569963189,
+      "val_f1": 0.5128727913225708,
+      "lr": 0.0005,
+      "duration_s": 1.7466394901275635
+    },
+    {
+      "round": 3,
+      "train_loss": 0.8909743523597717,
+      "val_auc": 0.6801243659703956,
+      "val_acc": 0.5398600292847668,
+      "val_f1": 0.5182023867122717,
+      "lr": 0.0005,
+      "duration_s": 1.7599692344665527
+    },
+    {
+      "round": 4,
+      "train_loss": 0.8785901355743407,
+      "val_auc": 0.6923632616390429,
+      "val_acc": 0.5852054768176508,
+      "val_f1": 0.5258461711321119,
+      "lr": 0.0005,
+      "duration_s": 1.74192476272583
+    },
+    {
+      "round": 5,
+      "train_loss": 0.8774343385696411,
+      "val_auc": 0.7068372189357163,
+      "val_acc": 0.6006550343142466,
+      "val_f1": 0.5376079113217432,
+      "lr": 0.0005,
+      "duration_s": 1.7511866092681885
+    }
+  ],
+  "best_val_auc": 0.7068372189357163,
+  "test": {
+    "accuracy": 0.6062155166329704,
+    "f1": 0.5477111350717299,
+    "positive_rate_pred": 0.5644322621088771,
+    "positive_rate_true": 0.30621593178261103,
+    "auc": 0.7136281277263963
+  }
+}

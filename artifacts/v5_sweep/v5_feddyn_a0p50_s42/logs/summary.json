@@ -1,0 +1,117 @@
+{
+  "config": {
+    "name": "v5_feddyn_a0p50_s42",
+    "algorithm": "feddyn",
+    "algo_kwargs": {
+      "alpha": 0.01
+    },
+    "partition_mode": "dirichlet",
+    "alpha": 0.5,
+    "n_clients": 5,
+    "num_rounds": 5,
+    "clients_per_round": 5,
+    "max_steps_per_round": 50,
+    "batch_size": 256,
+    "lr": 0.0005,
+    "lr_warmup_rounds": 1,
+    "grad_clip": 1.0,
+    "unified_parquet": "data/coloran_raw_unified.parquet",
+    "sample_ratio": 1.0,
+    "threshold": 0.1,
+    "seq_len": 5,
+    "train_tr": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ],
+    "val_tr": [
+      22,
+      23,
+      24
+    ],
+    "test_tr": [
+      25,
+      26,
+      27
+    ],
+    "seed": 42,
+    "device": "cuda",
+    "mixed_precision": "bf16",
+    "compile_model": "reduce-overhead",
+    "output_dir": "/home/thc1006/dev/fl-oran-tmc/artifacts/v5_sweep"
+  },
+  "history": [
+    {
+      "round": 1,
+      "train_loss": 0.9503322157859803,
+      "val_auc": 0.6367630513209194,
+      "val_acc": 0.6405099887123837,
+      "val_f1": 0.4249403963323449,
+      "lr": 0.0005,
+      "duration_s": 1.836014747619629
+    },
+    {
+      "round": 2,
+      "train_loss": 0.929787365436554,
+      "val_auc": 0.6514544808455218,
+      "val_acc": 0.5497726183690597,
+      "val_f1": 0.4986791991563054,
+      "lr": 0.0005,
+      "duration_s": 1.8557114601135254
+    },
+    {
+      "round": 3,
+      "train_loss": 0.9086878402233124,
+      "val_auc": 0.657921878263917,
+      "val_acc": 0.5464493689244926,
+      "val_f1": 0.5041656787317368,
+      "lr": 0.0005,
+      "duration_s": 1.902437686920166
+    },
+    {
+      "round": 4,
+      "train_loss": 0.8930959136486054,
+      "val_auc": 0.6645026062087509,
+      "val_acc": 0.5626403940676178,
+      "val_f1": 0.5063351131022548,
+      "lr": 0.0005,
+      "duration_s": 1.8399584293365479
+    },
+    {
+      "round": 5,
+      "train_loss": 0.8901723079681396,
+      "val_auc": 0.668074450228769,
+      "val_acc": 0.5648973831213544,
+      "val_f1": 0.5092628965982624,
+      "lr": 0.0005,
+      "duration_s": 1.853642225265503
+    }
+  ],
+  "best_val_auc": 0.668074450228769,
+  "test": {
+    "accuracy": 0.5713979541425707,
+    "f1": 0.5161016656208567,
+    "positive_rate_pred": 0.5795115349327665,
+    "positive_rate_true": 0.30621593178261103,
+    "auc": 0.6735714380571537
+  }
+}

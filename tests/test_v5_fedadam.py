@@ -78,6 +78,35 @@ def test_fedadam_server_beta_zero_reduces_to_sign_delta():
     torch.testing.assert_close(new_state["w"], expected, atol=1e-4, rtol=1e-4)
 
 
+def test_fedadam_bias_correction_t1_amplifies_update():
+    """At t=1 with beta=0.9 and bias_correction=True, m_hat = m / (1 - 0.9)
+    = 10 * m = 10 * 0.1 * Delta = Delta (vs m = 0.1*Delta without bias).
+    So the round-1 update magnitude is ~10x larger with bias correction.
+    """
+    from fl_oran.federated.algorithms import REGISTRY
+    from fl_oran.federated.client import ClientUpdate
+
+    no_bias = REGISTRY["fedadam"](
+        max_steps=1, batch_size=1, server_lr=0.01, beta1=0.9, beta2=0.99,
+        tau=1e-3, bias_correction=False,
+    )
+    with_bias = REGISTRY["fedadam"](
+        max_steps=1, batch_size=1, server_lr=0.01, beta1=0.9, beta2=0.99,
+        tau=1e-3, bias_correction=True,
+    )
+    gs = {"w": torch.zeros(3)}
+    u = ClientUpdate(
+        client_id=1, state_dict={"w": torch.tensor([1.0, 1.0, 1.0])},
+        num_examples=1, train_loss=0.0,
+    )
+    a = no_bias.server_aggregate(global_state=gs, updates=[u])
+    b = with_bias.server_aggregate(global_state=gs, updates=[u])
+    # With bias correction, update magnitude is larger at t=1.
+    assert b["w"].abs().sum() > a["w"].abs().sum(), (
+        "bias_correction=True should yield a larger t=1 update than False"
+    )
+
+
 def test_fedadam_moments_persist_across_rounds():
     from fl_oran.federated.algorithms import REGISTRY
     from fl_oran.federated.client import ClientUpdate

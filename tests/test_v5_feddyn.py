@@ -16,6 +16,7 @@ Tests:
 """
 from __future__ import annotations
 
+import pytest
 import torch
 
 from conftest import build_trio as _build_trio
@@ -82,6 +83,29 @@ def test_feddyn_client_h_i_persists():
     assert any(
         not torch.allclose(feddyn.h_i[5][k], snap[k]) for k in snap
     ), "h_i should evolve between rounds"
+
+
+def test_feddyn_update_mode_option_i_still_works():
+    """Option-I (drift-based) remains available for paper-faithful SGD runs."""
+    from fl_oran.federated.algorithms import REGISTRY
+    model, tensors, loss_fn = _build_trio(seed=42)
+    feddyn = REGISTRY["feddyn"](
+        max_steps=3, batch_size=4, alpha=0.01, update_mode="option_i",
+    )
+    u = feddyn.client_update(
+        client_id=1, local_model=model, client_tensors=tensors,
+        loss_fn=loss_fn, current_lr=0.01, device=torch.device("cpu"), round_idx=1,
+    )
+    assert "delta_h_i" in u.aux
+    any_nonzero = any(float(v.abs().sum()) > 0 for v in u.aux["delta_h_i"].values())
+    assert any_nonzero
+
+
+def test_feddyn_update_mode_invalid_raises():
+    from fl_oran.federated.algorithms import REGISTRY
+    with pytest.raises(ValueError, match="update_mode"):
+        REGISTRY["feddyn"](max_steps=1, batch_size=1, alpha=0.01,
+                            update_mode="bogus")
 
 
 def test_feddyn_server_h_accum_accumulates():

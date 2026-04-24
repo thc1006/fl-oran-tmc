@@ -88,27 +88,36 @@ def test_scaffold_server_aggregates_control_variate():
     assert any_nonzero, "global c should accumulate nonzero after the first round"
 
 
-def test_scaffold_client_c_i_persists():
+def test_scaffold_client_c_i_tracks_global_model():
+    """Option-II: c_i = grad_{L_i}(w_g). If w_g changes, c_i must change.
+
+    The server-side aggregation + re-init flow would supply a different w_g
+    in round 2. We simulate that by perturbing the local_model's weights
+    before the second client_update call.
+    """
     from fl_oran.federated.algorithms import REGISTRY
     model_1, tensors, loss_fn = _build_trio(seed=42)
-    model_2, _, _ = _build_trio(seed=42)
     scaffold = REGISTRY["scaffold"](max_steps=3, batch_size=4)
     device = torch.device("cpu")
-    # First round
     _ = scaffold.client_update(
         client_id=7, local_model=model_1, client_tensors=tensors,
         loss_fn=loss_fn, current_lr=0.01, device=device, round_idx=1,
     )
     assert 7 in scaffold.c_i
     c_i_after_round1 = {k: v.clone() for k, v in scaffold.c_i[7].items()}
-    # Second round (same client)
+
+    # Simulate server update: load a perturbed "new global state" into
+    # a fresh local_model, then call client_update round 2.
+    model_2, _, _ = _build_trio(seed=42)
+    with torch.no_grad():
+        for p in model_2.parameters():
+            p.add_(0.1)  # non-trivial perturbation to w_g
     _ = scaffold.client_update(
         client_id=7, local_model=model_2, client_tensors=tensors,
         loss_fn=loss_fn, current_lr=0.01, device=device, round_idx=2,
     )
-    # c_i for client 7 should evolve between rounds
     changed = any(
         not torch.allclose(scaffold.c_i[7][k], c_i_after_round1[k])
         for k in c_i_after_round1
     )
-    assert changed, "c_i should evolve across rounds"
+    assert changed, "c_i should evolve when the global model changes"

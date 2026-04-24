@@ -2,18 +2,26 @@
 client-specific control variates.
 
 Per-client ``c_i`` and server ``c`` persist across rounds. During local SGD,
-every step's gradient is corrected by ``(c - c_i)``. At the end of local
-training, ``c_i`` is updated by Option I of the paper::
+every step's gradient is corrected by ``(c - c_i)``. We use the paper's
+**Option-II** update for ``c_i`` — set ``c_i`` to the gradient of L_i at
+the server model (on a mini-batch)::
 
-    c_i_plus = c_i - c + (w_g - w_l) / (K * eta)
+    c_i_plus = grad_{L_i}(w_g)
 
-where K = ``max_steps``, eta = client ``current_lr``, w_g = pre-training
-global weights, w_l = post-training local weights. ``delta_c_i = c_i_plus
-- c_i`` is reported via ``ClientUpdate.aux["delta_c_i"]`` for server
-aggregation.
+Option-II is **optimizer-agnostic**: the magnitude of ``c_i`` matches the
+data-gradient magnitude regardless of whether the client optimiser is SGD
+or Adam. The original paper's Option-I derives ``c_i_plus`` from the
+weight drift ``(w_g - w_l)/(K*eta)``, which implicitly assumes SGD
+dynamics (where drift scales linearly with ``grad * eta``). Under Adam,
+per-step drift is ``~eta`` regardless of gradient magnitude (Adam
+normalises), so ``(w_g - w_l)/(K*eta) ~ O(1)`` — ~100x the true gradient
+magnitude. Option-II side-steps this entirely.
 
-Note: original paper assumes SGD; we use Adam locally. The formula above
-remains the standard Option-I generalization (effective LR approximation).
+Determinism note: the mini-batch for the Option-II gradient uses a
+deterministic ``arange`` index and runs the model in eval mode (dropout
+off) so it does not perturb the global torch RNG state consumed by the
+training loop. This preserves the ``SCAFFOLD first-round ==
+FedAvg trajectory`` bit-equivalence when ``c = c_i = 0``.
 """
 from __future__ import annotations
 
@@ -73,6 +81,44 @@ class SCAFFOLD:
                 for name, p in model.named_parameters()
             }
 
+    def _compute_gradient_at(
+        self,
+        model: nn.Module,
+        cat: torch.Tensor,
+        cont: torch.Tensor,
+        y: torch.Tensor,
+        loss_fn: Callable,
+        device: torch.device,
+    ) -> dict[str, torch.Tensor]:
+        """Compute per-parameter gradient of loss_fn at model's current weights.
+
+        Uses a deterministic mini-batch (``arange(0, batch_size)``) and eval
+        mode (dropout off) so this call does not perturb global torch RNG.
+        """
+        bs = min(self.batch_size, cat.shape[0])
+        det_idx = torch.arange(bs, device=device)
+        was_training = model.training
+        model.eval()
+        model.zero_grad(set_to_none=True)
+        amp_ctx = torch.autocast(
+            device_type=device.type,
+            dtype=self.amp_dtype or torch.bfloat16,
+            enabled=self.amp_enabled,
+        )
+        with amp_ctx:
+            logits = model(cat[det_idx], cont[det_idx])
+            loss = loss_fn(logits, y[det_idx])
+        loss.backward()
+        grads = {
+            name: p.grad.detach().clone()
+            for name, p in model.named_parameters()
+            if p.grad is not None
+        }
+        model.zero_grad(set_to_none=True)
+        if was_training:
+            model.train()
+        return grads
+
     def client_update(
         self,
         *,
@@ -86,18 +132,20 @@ class SCAFFOLD:
     ) -> ClientUpdate:
         del round_idx
         local_model.to(device)
-        global_snapshot = {
-            name: p.detach().clone()
-            for name, p in local_model.named_parameters()
+        # Snapshot w_g as a state_dict *before* training so we can reload it
+        # later for the Option-II gradient computation.
+        global_snapshot_state = {
+            k: v.detach().clone()
+            for k, v in local_model.state_dict().items()
         }
         self._ensure_c(local_model, device)
         self._ensure_c_i(client_id, local_model, device)
-        # Pin references for the closure — device-coherent with p.grad.
         c = {k: v.to(device) for k, v in self.c.items()}
         c_i = {k: v.to(device) for k, v in self.c_i[client_id].items()}
 
         def scaffold_correction(model: nn.Module) -> None:
-            # grad ← grad + (c - c_i). When c = c_i = 0 (first round), no-op.
+            # grad += (c - c_i). When c = c_i = 0 (first round), no-op
+            # so SCAFFOLD first-round trajectory == FedAvg bit-wise.
             for name, p in model.named_parameters():
                 if p.grad is not None:
                     p.grad.add_(c[name] - c_i[name])
@@ -116,15 +164,26 @@ class SCAFFOLD:
             grad_correction=scaffold_correction,
         )
 
-        # Option I update of c_i.
-        # c_i_plus = c_i - c + (w_g - w_l) / (K * eta)
-        K = self.max_steps
-        eta = current_lr
+        # Option-II: c_i_plus = grad_{L_i}(w_g) on a deterministic mini-batch.
+        # Reload w_g (training mutated local_model) — state_dict move is
+        # cheap and avoids keeping a second full model resident.
+        cat_c, cont_c, y_c = client_tensors
+        cat_g = cat_c.to(device, non_blocking=True)
+        cont_g = cont_c.to(device, non_blocking=True)
+        y_g = y_c.to(device, non_blocking=True)
+        local_model.load_state_dict(global_snapshot_state, strict=True)
+        grad_at_wg = self._compute_gradient_at(
+            local_model, cat_g, cont_g, y_g, loss_fn, device,
+        )
+        # Restore post-training weights so the returned state matches ``state``.
+        local_model.load_state_dict(
+            {k: v.to(device) for k, v in state.items()}, strict=True,
+        )
+
         new_c_i: dict[str, torch.Tensor] = {}
         delta_c_i: dict[str, torch.Tensor] = {}
-        for name, p in local_model.named_parameters():
-            diff = global_snapshot[name] - p.detach()  # w_g - w_l
-            c_i_plus = c_i[name] - c[name] + diff / (K * eta)
+        for name in grad_at_wg:
+            c_i_plus = grad_at_wg[name]
             new_c_i[name] = c_i_plus.detach().cpu()
             delta_c_i[name] = (c_i_plus - c_i[name]).detach().cpu()
         self.c_i[client_id] = new_c_i

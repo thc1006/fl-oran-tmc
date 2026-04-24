@@ -39,6 +39,7 @@ class FedAdam(FedAvg):
         beta1: float = 0.9,
         beta2: float = 0.99,
         tau: float = 1e-3,
+        bias_correction: bool = False,
         grad_clip: float = 1.0,
         amp_enabled: bool = False,
         amp_dtype: torch.dtype | None = None,
@@ -54,8 +55,13 @@ class FedAdam(FedAvg):
         self.beta1 = float(beta1)
         self.beta2 = float(beta2)
         self.tau = float(tau)
+        # bias_correction=False matches Reddi et al. 2020 paper Algorithm 2
+        # exactly. True applies m/(1-beta1^t), v/(1-beta2^t) — useful when
+        # running few rounds (t<=5) to avoid the momentum ramp-up lag.
+        self.bias_correction = bool(bias_correction)
         self.m: dict[str, torch.Tensor] = {}
         self.v: dict[str, torch.Tensor] = {}
+        self._step_count = 0
 
     def server_aggregate(
         self,
@@ -79,6 +85,8 @@ class FedAdam(FedAvg):
                 f"FedAdam: client state_dict keys diverge from global_state. "
                 f"missing={sorted(missing)} extra={sorted(extra)}"
             )
+        self._step_count += 1
+        t = self._step_count
         new_state: dict[str, torch.Tensor] = {}
         for key, w_g in global_state.items():
             if not w_g.dtype.is_floating_point:
@@ -92,6 +100,13 @@ class FedAdam(FedAvg):
                 self.v[key] = torch.zeros_like(w_g)
             self.m[key] = self.beta1 * self.m[key] + (1.0 - self.beta1) * delta
             self.v[key] = self.beta2 * self.v[key] + (1.0 - self.beta2) * (delta * delta)
-            new_state[key] = w_g + self.server_lr * self.m[key] / (self.v[key].sqrt() + self.tau)
-        log.debug("fedadam aggregate: %d updates, keys=%d", len(updates), len(new_state))
+            if self.bias_correction:
+                m_hat = self.m[key] / (1.0 - self.beta1 ** t)
+                v_hat = self.v[key] / (1.0 - self.beta2 ** t)
+            else:
+                m_hat = self.m[key]
+                v_hat = self.v[key]
+            new_state[key] = w_g + self.server_lr * m_hat / (v_hat.sqrt() + self.tau)
+        log.debug("fedadam aggregate (t=%d, bias_correction=%s): %d updates",
+                  t, self.bias_correction, len(updates))
         return new_state

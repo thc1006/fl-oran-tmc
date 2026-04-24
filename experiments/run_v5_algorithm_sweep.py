@@ -61,6 +61,16 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", default="cuda")
     p.add_argument("--mixed-precision", default="bf16")
+    p.add_argument("--compile-model", default=None,
+                   choices=[None, "default", "reduce-overhead", "max-autotune"],
+                   help=("torch.compile mode for local_model (CUDA only). "
+                         "None=eager. 'reduce-overhead' uses CUDA graphs "
+                         "— fastest for small static-shape models."))
+    p.add_argument("--pos-weight-split", default="train",
+                   choices=["train", "test"],
+                   help="Which split drives pos_weight for BCEWithLogitsLoss.")
+    p.add_argument("--cudnn-nondeterministic", action="store_true",
+                   help="Disable cudnn.deterministic (recover ~5-15% speed).")
     p.add_argument("--output-dir", default="artifacts/v5_sweep")
     p.add_argument("--name", default="",
                    help="Run name (auto-generated if empty)")
@@ -91,6 +101,9 @@ def main() -> None:
         seed=args.seed,
         device=args.device,
         mixed_precision=args.mixed_precision,
+        compile_model=args.compile_model,
+        pos_weight_split=args.pos_weight_split,
+        cudnn_deterministic=not args.cudnn_nondeterministic,
         output_dir=Path(args.output_dir),
     )
     run_v5_sweep(cfg)

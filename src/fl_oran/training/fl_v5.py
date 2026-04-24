@@ -34,6 +34,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import torch
+from joblib import Parallel, delayed
 from torch import nn
 
 from ..data_v2.encoders import (
@@ -138,6 +139,15 @@ class V5Config:
     seed: int = 42
     device: str = "cuda"
     mixed_precision: str = "bf16"
+    compile_model: str | None = None
+    # Which split drives pos_weight for BCEWithLogitsLoss. v4 baseline used
+    # "test" (leaks test-set prior into training loss). v5 default is
+    # "train" — scientifically correct. Switch back to "test" to match v4
+    # numbers exactly.
+    pos_weight_split: str = "train"
+    # If True, force deterministic cuDNN algorithms at the cost of ~5-15%
+    # LSTM throughput. Recommended for reproducibility-critical runs.
+    cudnn_deterministic: bool = True
     output_dir: Path = field(
         default_factory=lambda: Path("artifacts/v5_sweep")
     )
@@ -176,6 +186,150 @@ def _partition(df: pd.DataFrame, cfg: V5Config) -> dict[int, pd.DataFrame]:
     )
 
 
+@dataclass
+class PreparedData:
+    """Everything the training loop needs, decoupled from data ingestion.
+
+    Building this takes ~55s for the full ColO-RAN parquet (18M rows) but
+    is identical across the 6 algorithms of a given (seed, alpha) cell.
+    The matrix driver (``experiments/run_v5_sweep_matrix.py``) builds it
+    once and feeds ``_run_training`` repeatedly — 6x fewer parquet reads
+    + sequence builds per sweep cell.
+    """
+    schema: FeatureSchema
+    client_cpu: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]]
+    val_cat: torch.Tensor
+    val_cont: torch.Tensor
+    val_y: torch.Tensor
+    test_cat: torch.Tensor
+    test_cont: torch.Tensor
+    test_y: torch.Tensor
+    # pos_weight computed from the test split (matches fl_v3 convention;
+    # see docstring of run_v5_sweep for the leakage caveat).
+    pos_weight: torch.Tensor
+
+
+def prepare_v5_data(
+    cfg: V5Config,
+    device: torch.device,
+    *,
+    n_jobs_sequences: int = 5,
+) -> PreparedData:
+    """Load + target + split + Dirichlet + sequences + scaler, once.
+
+    Per-client ``build_run_sequences`` runs in a joblib thread pool
+    (``n_jobs_sequences`` workers, threading backend so pandas/NumPy share
+    the DataFrame via memory). Threading is correct because groupby +
+    sliding_window_view are GIL-releasing NumPy ops.
+
+    The returned ``PreparedData`` is CPU-resident (tensors are pinned when
+    ``device.type == "cuda"`` for overlap with H2D copies). The training
+    loop moves per-client tensors onto the GPU on demand.
+    """
+    if not cfg.unified_parquet.exists():
+        raise FileNotFoundError(cfg.unified_parquet)
+    t0 = time.time()
+    df = pd.read_parquet(cfg.unified_parquet)
+    if cfg.sample_ratio < 1.0:
+        df = (df.sample(frac=cfg.sample_ratio, random_state=cfg.seed)
+                .sort_index().reset_index(drop=True))
+    df = add_classification_target(
+        df, column="ul_bler", threshold=cfg.threshold, target_name="y_sla_next"
+    )
+    schema = FeatureSchema(
+        categorical=V3_CATEGORICAL,
+        categorical_sizes=V3_CAT_SIZES,
+        continuous=V3_CONTINUOUS,
+    )
+    feat_cols = schema.categorical + schema.continuous
+    split = ood_split_by_tr(df, cfg.train_tr, cfg.val_tr, cfg.test_tr)
+
+    # Partition train across clients via Dirichlet over slice_id.
+    client_dfs = _partition(split.train, cfg)
+    client_items = list(client_dfs.items())
+
+    # Per-client sequence build in parallel. Threading backend reuses the
+    # process memory (no pickling overhead) — pandas groupby + NumPy
+    # sliding_window_view both release the GIL.
+    n_workers = min(n_jobs_sequences, len(client_items)) or 1
+    per_client_results = Parallel(n_jobs=n_workers, backend="threading")(
+        delayed(build_run_sequences)(
+            d, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len,
+        )
+        for _, d in client_items
+    )
+    client_shards: dict[int, tuple[np.ndarray, np.ndarray]] = {
+        cid: (X, Y)
+        for (cid, _), (X, Y) in zip(client_items, per_client_results)
+        if len(X) > 0
+    }
+    if not client_shards:
+        raise RuntimeError(
+            f"no non-empty clients after partition+sequence build "
+            f"(alpha={cfg.alpha}, n_clients={cfg.n_clients})"
+        )
+    log.info("v5 prep: %d non-empty clients  rows/client=%s",
+             len(client_shards),
+             {c: len(x) for c, (x, _) in client_shards.items()})
+
+    X_va, Y_va = build_run_sequences(
+        split.val, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len
+    )
+    X_te, Y_te = build_run_sequences(
+        split.test, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len
+    )
+
+    scaler = federated_fit_scaler(
+        {cid: X for cid, (X, _) in client_shards.items()}, schema
+    )
+
+    def _to_tensors(X: np.ndarray, Y: np.ndarray):
+        cat, cont = apply_continuous_scaler(X, schema, scaler)
+        return (torch.from_numpy(cat), torch.from_numpy(cont), torch.from_numpy(Y))
+
+    def _maybe_pin(t: torch.Tensor) -> torch.Tensor:
+        return t.pin_memory() if device.type == "cuda" else t
+
+    va_cat, va_cont, va_y = _to_tensors(X_va, Y_va)
+    te_cat, te_cont, te_y = _to_tensors(X_te, Y_te)
+    va_cat = _maybe_pin(va_cat); va_cont = _maybe_pin(va_cont)
+    te_cat = _maybe_pin(te_cat); te_cont = _maybe_pin(te_cont)
+    client_cpu: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
+    for cid, (X, Y) in client_shards.items():
+        cat, cont = apply_continuous_scaler(X, schema, scaler)
+        client_cpu[cid] = (
+            _maybe_pin(torch.from_numpy(cat)),
+            _maybe_pin(torch.from_numpy(cont)),
+            _maybe_pin(torch.from_numpy(Y)),
+        )
+
+    # pos_weight: compute from the requested split.
+    if cfg.pos_weight_split == "train":
+        # Union of client Y tensors (== train positive rate).
+        train_pos = sum(int((Y > 0.5).sum()) for _, (_, Y) in client_shards.items())
+        train_n = sum(int(len(Y)) for _, (_, Y) in client_shards.items())
+        pos_rate = max(train_pos / max(train_n, 1), 1e-6)
+    elif cfg.pos_weight_split == "test":
+        pos_rate = max(float(Y_te.mean()), 1e-6)
+    else:
+        raise ValueError(
+            f"pos_weight_split must be 'train' or 'test', got {cfg.pos_weight_split!r}"
+        )
+    pos_weight = torch.tensor(
+        [max((1 - pos_rate) / pos_rate, 1.0)], dtype=torch.float32,
+    )
+
+    log.info("v5 prep complete: %.1fs  train_clients=%d  val=%d  test=%d",
+             time.time() - t0, len(client_cpu), len(va_y), len(te_y))
+    return PreparedData(
+        schema=schema,
+        client_cpu=client_cpu,
+        val_cat=va_cat, val_cont=va_cont, val_y=va_y,
+        test_cat=te_cat, test_cont=te_cont, test_y=te_y,
+        pos_weight=pos_weight,
+    )
+
+
 def _build_algorithm(cfg: V5Config, amp_enabled: bool, amp_dtype):
     """Instantiate the FL algorithm from the registry, injecting encode_fn for MOON."""
     algo_cls = get_algorithm(cfg.algorithm)
@@ -192,101 +346,65 @@ def _build_algorithm(cfg: V5Config, amp_enabled: bool, amp_dtype):
     return algo_cls(**kwargs)
 
 
-def run_v5_sweep(cfg: V5Config) -> dict:
-    """Run one sweep cell; return the metrics bundle and write artifacts."""
-    seed_everything(cfg.seed)
-    device = pick_device(cfg.device)
-    log_cuda_info(device)
-    amp_enabled, amp_dtype = autocast_dtype(cfg.mixed_precision)
+def setup_torch_perf(device: torch.device, deterministic: bool = False) -> None:
+    """Idempotent workstation-level perf switches. Safe to call repeatedly.
 
-    # --- Data ---
-    if not cfg.unified_parquet.exists():
-        raise FileNotFoundError(cfg.unified_parquet)
-    df = pd.read_parquet(cfg.unified_parquet)
-    if cfg.sample_ratio < 1.0:
-        df = (df.sample(frac=cfg.sample_ratio, random_state=cfg.seed)
-                .sort_index().reset_index(drop=True))
-    df = add_classification_target(
-        df, column="ul_bler", threshold=cfg.threshold, target_name="y_sla_next"
-    )
-    schema = FeatureSchema(
-        categorical=V3_CATEGORICAL,
-        categorical_sizes=V3_CAT_SIZES,
-        continuous=V3_CONTINUOUS,
-    )
-    feat_cols = schema.categorical + schema.continuous
-    split = ood_split_by_tr(df, cfg.train_tr, cfg.val_tr, cfg.test_tr)
+    ``deterministic=True`` forces cuDNN to pick algorithms that produce
+    identical output across runs (required for full bit-level
+    reproducibility); incompatible with ``cudnn.benchmark`` so the latter
+    is disabled in that case.
+    """
+    if device.type != "cuda":
+        return
+    torch.set_float32_matmul_precision("high")
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    else:
+        torch.backends.cudnn.benchmark = True
 
-    # --- Partition + sequences per client ---
-    client_dfs = _partition(split.train, cfg)
-    client_shards: dict[int, tuple[np.ndarray, np.ndarray]] = {}
-    for cid, d in client_dfs.items():
-        X, Y = build_run_sequences(d, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len)
-        if len(X) > 0:
-            client_shards[cid] = (X, Y)
-    if not client_shards:
-        raise RuntimeError(
-            f"no non-empty clients after partition+sequence build "
-            f"(alpha={cfg.alpha}, n_clients={cfg.n_clients})"
-        )
-    log.info("v5 %s: %d non-empty clients  rows/client=%s",
-             cfg.name, len(client_shards),
-             {c: len(x) for c, (x, _) in client_shards.items()})
 
-    X_va, Y_va = build_run_sequences(
-        split.val, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len
-    )
-    X_te, Y_te = build_run_sequences(
-        split.test, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len
-    )
+def _run_training(
+    cfg: V5Config,
+    data: PreparedData,
+    device: torch.device,
+    amp_enabled: bool,
+    amp_dtype,
+) -> dict:
+    """Training loop + test eval + artifact emission, given ``PreparedData``.
 
-    # --- Scaler (federated sufficient-stats) ---
-    scaler = federated_fit_scaler(
-        {cid: X for cid, (X, _) in client_shards.items()}, schema
-    )
+    Used by both ``run_v5_sweep`` (single-cell CLI) and the matrix driver
+    that shares ``data`` across a row of the algorithm matrix.
+    """
+    schema = data.schema
 
-    def _to_tensors(X: np.ndarray, Y: np.ndarray):
-        cat, cont = apply_continuous_scaler(X, schema, scaler)
-        return (torch.from_numpy(cat), torch.from_numpy(cont), torch.from_numpy(Y))
-
-    va_cat, va_cont, va_y = _to_tensors(X_va, Y_va)
-    te_cat, te_cont, te_y = _to_tensors(X_te, Y_te)
-    client_cpu: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
-    for cid, (X, Y) in client_shards.items():
-        cat, cont = apply_continuous_scaler(X, schema, scaler)
-        client_cpu[cid] = (
-            torch.from_numpy(cat),
-            torch.from_numpy(cont),
-            torch.from_numpy(Y),
-        )
-
-    # --- Model + loss ---
     def build_model() -> ForecasterV2:
-        return ForecasterV2(
+        m = ForecasterV2(
             schema=schema, task="classification", seq_len=cfg.seq_len,
         ).to(device)
+        if cfg.compile_model and device.type == "cuda":
+            m = torch.compile(m, mode=cfg.compile_model)
+        return m
 
     global_model = build_model()
-    # Balance the binary loss against the test-split prior (deterministic
-    # across seeds — same choice as fl_v3.py).
-    pos_rate = max(float(Y_te.mean()), 1e-6)
-    pos_weight = torch.tensor([max((1 - pos_rate) / pos_rate, 1.0)], device=device)
-    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-
-    # --- Algorithm ---
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=data.pos_weight.to(device))
     algo = _build_algorithm(cfg, amp_enabled, amp_dtype)
 
-    # --- Training loop ---
-    cids = sorted(client_shards.keys())
+    cids = sorted(data.client_cpu.keys())
     rng = np.random.default_rng(cfg.seed)
     history: list[dict] = []
-    best_val_auc, best_state = 0.0, None
+    # Use -inf so that ANY first-round val AUC (even exactly 0.0 / NaN-fallback)
+    # promotes to best_state. Prevents "last round == best" when val is
+    # degenerate (single-class; AUC absent).
+    best_val_auc: float = float("-inf")
+    best_state: dict | None = None
 
     for r in range(1, cfg.num_rounds + 1):
         t0 = time.time()
         k = min(cfg.clients_per_round, len(cids))
         selected = rng.choice(cids, size=k, replace=False).tolist()
-        global_state = {k_: v.detach().cpu()
+        # Keep global_state on-device so clients load GPU-GPU (no D2H/H2D bounce).
+        global_state = {k_: v.detach().clone()
                         for k_, v in global_model.state_dict().items()}
         lr_this = cfg.lr * min(1.0, r / max(cfg.lr_warmup_rounds, 1))
 
@@ -297,7 +415,7 @@ def run_v5_sweep(cfg: V5Config) -> dict:
             update = algo.client_update(
                 client_id=int(cid),
                 local_model=local_model,
-                client_tensors=client_cpu[cid],
+                client_tensors=data.client_cpu[cid],
                 loss_fn=loss_fn,
                 current_lr=lr_this,
                 device=device,
@@ -305,16 +423,17 @@ def run_v5_sweep(cfg: V5Config) -> dict:
             )
             updates.append(update)
             del local_model
-            if device.type == "cuda":
-                torch.cuda.empty_cache()
+            # NOTE: torch.cuda.empty_cache() removed from the per-client loop —
+            # it forces a CUDA synchronisation on every call and costs
+            # ~50-100ms per invocation with no memory benefit at our scale.
 
         new_state = algo.server_aggregate(
             global_state=global_state, updates=updates,
         )
         global_model.load_state_dict(new_state)
 
-        val_logits = _batched_predict(global_model, va_cat, va_cont, device)
-        val_m = _metrics(va_y[:, 0].numpy().astype(int), val_logits[:, 0])
+        val_logits = _batched_predict(global_model, data.val_cat, data.val_cont, device)
+        val_m = _metrics(data.val_y[:, 0].numpy().astype(int), val_logits[:, 0])
         train_l = float(np.mean([u.train_loss for u in updates]))
         dt = time.time() - t0
         history.append({
@@ -336,15 +455,27 @@ def run_v5_sweep(cfg: V5Config) -> dict:
             best_state = {k_: v.detach().cpu()
                           for k_, v in global_model.state_dict().items()}
 
-    # --- Test ---
+    # Test evaluation on the best val-AUC checkpoint.
     if best_state is not None:
         global_model.load_state_dict(best_state)
-    test_logits = _batched_predict(global_model, te_cat, te_cont, device)
-    test_m = _metrics(te_y[:, 0].numpy().astype(int), test_logits[:, 0])
+    test_logits = _batched_predict(global_model, data.test_cat, data.test_cont, device)
+    test_m = _metrics(data.test_y[:, 0].numpy().astype(int), test_logits[:, 0])
 
     # --- Emit artifacts ---
+    import platform
+    env_meta = {
+        "torch": torch.__version__,
+        "cuda": torch.version.cuda if torch.cuda.is_available() else None,
+        "cudnn": (torch.backends.cudnn.version()
+                  if torch.cuda.is_available() else None),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "gpu": (torch.cuda.get_device_name(0)
+                if torch.cuda.is_available() else None),
+    }
     result = {
         "config": cfg.to_dict(),
+        "env": env_meta,
         "history": history,
         "best_val_auc": best_val_auc,
         "test": test_m,
@@ -367,3 +498,21 @@ def run_v5_sweep(cfg: V5Config) -> dict:
         test_m.get("auc", 0.0), test_m["accuracy"], test_m["f1"],
     )
     return result
+
+
+def run_v5_sweep(cfg: V5Config) -> dict:
+    """Run one sweep cell (1 algorithm, 1 alpha, 1 seed).
+
+    Convenience wrapper that loads data and runs training in a single call.
+    For multi-algorithm sweeps use ``experiments/run_v5_sweep_matrix.py``
+    which shares ``prepare_v5_data`` across a row of the matrix (massive
+    speedup at full-sweep scale).
+    """
+    seed_everything(cfg.seed)
+    device = pick_device(cfg.device)
+    log_cuda_info(device)
+    setup_torch_perf(device, deterministic=cfg.cudnn_deterministic)
+    amp_enabled, amp_dtype = autocast_dtype(cfg.mixed_precision)
+
+    data = prepare_v5_data(cfg, device)
+    return _run_training(cfg, data, device, amp_enabled, amp_dtype)
