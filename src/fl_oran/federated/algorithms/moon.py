@@ -4,15 +4,26 @@ Each client training step mixes cross-entropy with a contrastive term on
 learned representations::
 
     z      = encode(w_local, x)
-    z_g    = encode(w_global, x)       # positive — frozen
-    z_prev = encode(w_prev_round, x)   # negative — frozen
+    z_g    = encode(w_global, x)       # positive, frozen
+    z_prev = encode(w_prev_round, x)   # negative, frozen
     L_contrastive = -log( exp(sim(z, z_g) / tau)
                           / (exp(sim(z, z_g) / tau) + exp(sim(z, z_prev) / tau)) )
     L_total = L_CE + mu * L_contrastive
 
-Representation extraction is delegated to a caller-supplied ``encode_fn``
-to keep MOON model-agnostic. The orchestrator is responsible for providing
-an ``encode_fn`` that matches the target model (ForecasterV2 in v5).
+Implementation notes:
+
+- Representation extraction is delegated to a caller-supplied
+  ``encode_fn(model, cat, cont) -> Tensor`` to keep MOON model-agnostic.
+  The orchestrator is responsible for providing an encode_fn that matches
+  the target architecture (ForecasterV2 in v5).
+- The contrastive term is injected via ``run_local_sgd``'s
+  ``loss_modifier`` hook so MOON shares the single canonical training
+  loop with the other algorithms — no per-algorithm training-loop copy.
+- Cold-start (first round for a client): ``prev_model`` is aliased to the
+  frozen global snapshot, which makes sim_pos == sim_neg and collapses
+  L_contrastive to log(2) with zero gradient. This matches the paper's
+  treatment of the round-1 case; behaviour becomes nontrivial from
+  round 2 onwards.
 
 Server aggregation is standard FedAvg.
 """
@@ -29,6 +40,7 @@ from ..aggregation import weighted_average_state_dicts
 from ..client import ClientUpdate
 from ...logging_utils import get_logger
 from . import register
+from ._local_loop import run_local_sgd
 
 log = get_logger(__name__)
 
@@ -38,9 +50,9 @@ class MOON:
     """MOON — FedAvg aggregation with a local contrastive loss.
 
     ``encode_fn(model, cat, cont) -> Tensor`` should return a per-sample
-    representation (shape ``(B, repr_dim)``). The same function is invoked
-    on the current local model (grad-tracked) and on frozen snapshots of
-    the global and previous-local models.
+    representation of shape ``(B, repr_dim)``. It is called on the current
+    local model (grad-tracked) and on frozen snapshots of the global and
+    previous-local models.
     """
 
     name = "moon"
@@ -66,7 +78,7 @@ class MOON:
         self.amp_enabled = amp_enabled
         self.amp_dtype = amp_dtype
         # {client_id: state_dict on CPU} — previous-round local model, used
-        # as the contrastive negative. Lazily set on first client_update.
+        # as the contrastive negative. Lazily populated after round 1.
         self.prev_models: dict[int, dict[str, torch.Tensor]] = {}
 
     def _contrastive_loss(
@@ -75,11 +87,20 @@ class MOON:
         z_g: torch.Tensor,
         z_prev: torch.Tensor,
     ) -> torch.Tensor:
-        # Row-wise cosine similarity.
+        # Row-wise cosine similarity, scaled by temperature.
         sim_pos = F.cosine_similarity(z, z_g, dim=-1) / self.tau
         sim_neg = F.cosine_similarity(z, z_prev, dim=-1) / self.tau
-        # -log( exp(pos) / (exp(pos) + exp(neg)) ) = log(1 + exp(neg - pos)) = softplus(neg - pos)
+        # -log( exp(pos) / (exp(pos) + exp(neg)) ) = softplus(neg - pos).
+        # Single softplus call is numerically stable and equivalent to the
+        # paper's log-softmax form.
         return F.softplus(sim_neg - sim_pos).mean()
+
+    @staticmethod
+    def _freeze_(model: nn.Module) -> nn.Module:
+        model.eval()
+        for p in model.parameters():
+            p.requires_grad_(False)
+        return model
 
     def client_update(
         self,
@@ -93,70 +114,63 @@ class MOON:
         round_idx: int,
     ) -> ClientUpdate:
         del round_idx
-        cat_c, cont_c, y_c = client_tensors
-        cat_g = cat_c.to(device, non_blocking=True)
-        cont_g = cont_c.to(device, non_blocking=True)
-        y_g_tensor = y_c.to(device, non_blocking=True)
-
-        local_model.to(device).train()
+        local_model.to(device)
 
         mu = self.mu
+        loss_modifier = None
         if mu != 0.0:
-            # Frozen global model (positive) — clone at the start of training.
-            global_model = copy.deepcopy(local_model).eval()
-            for p in global_model.parameters():
-                p.requires_grad_(False)
-            # Frozen previous-local model (negative). First round: use global
-            # as the negative; then the contrastive numerator and denominator
-            # would collapse, but our softplus formulation handles it cleanly
-            # (returns log(2)) and mu-weighted gradient is still well-defined.
+            # Frozen global model (positive). One deepcopy at the start of
+            # training; reused for every step's z_g computation.
+            global_model = self._freeze_(copy.deepcopy(local_model))
+            # Frozen previous-local model (negative). On the first round for
+            # this client we alias to the global snapshot — the contrastive
+            # term then collapses to log(2) with zero gradient (see module
+            # docstring). From round 2 onwards prev_model carries the
+            # post-training state from the client's previous round.
             if client_id in self.prev_models:
                 prev_model = copy.deepcopy(local_model)
                 prev_model.load_state_dict(self.prev_models[client_id])
+                self._freeze_(prev_model)
             else:
-                prev_model = copy.deepcopy(local_model)
-            prev_model.eval()
-            for p in prev_model.parameters():
-                p.requires_grad_(False)
-        else:
-            global_model = None
-            prev_model = None
+                prev_model = global_model  # alias — both are frozen & identical
 
-        optimizer = torch.optim.Adam(local_model.parameters(), lr=current_lr)
-        n_local = cat_g.shape[0]
-        total_loss = 0.0
-        amp_ctx = torch.autocast(
-            device_type=device.type,
-            dtype=self.amp_dtype or torch.bfloat16,
-            enabled=self.amp_enabled,
+            encode_fn = self.encode_fn
+            contrastive_loss = self._contrastive_loss
+
+            def loss_modifier(
+                model: nn.Module,
+                cb: torch.Tensor,
+                ob: torch.Tensor,
+                base_loss: torch.Tensor,
+            ) -> torch.Tensor:
+                z = encode_fn(model, cb, ob)
+                with torch.no_grad():
+                    z_g = encode_fn(global_model, cb, ob)
+                    z_prev = encode_fn(prev_model, cb, ob)
+                return base_loss + mu * contrastive_loss(z, z_g, z_prev)
+
+        state, avg_loss = run_local_sgd(
+            local_model=local_model,
+            client_tensors=client_tensors,
+            loss_fn=loss_fn,
+            current_lr=current_lr,
+            max_steps=self.max_steps,
+            batch_size=self.batch_size,
+            grad_clip=self.grad_clip,
+            amp_enabled=self.amp_enabled,
+            amp_dtype=self.amp_dtype,
+            device=device,
+            loss_modifier=loss_modifier,
+            grad_correction=None,
         )
-        for _ in range(self.max_steps):
-            idx = torch.randint(0, n_local, (self.batch_size,), device=device)
-            cb = cat_g[idx]
-            ob = cont_g[idx]
-            yb = y_g_tensor[idx]
-            optimizer.zero_grad(set_to_none=True)
-            with amp_ctx:
-                logits = local_model(cb, ob)
-                loss = loss_fn(logits, yb)
-                if mu != 0.0:
-                    z = self.encode_fn(local_model, cb, ob)
-                    with torch.no_grad():
-                        z_g = self.encode_fn(global_model, cb, ob)
-                        z_prev = self.encode_fn(prev_model, cb, ob)
-                    loss = loss + mu * self._contrastive_loss(z, z_g, z_prev)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(local_model.parameters(), self.grad_clip)
-            optimizer.step()
-            total_loss += loss.item()
 
-        # Persist post-training local state as this client's "prev" for next round.
-        state = {k: v.detach().cpu() for k, v in local_model.state_dict().items()}
+        # Persist post-training local state as this client's "prev" for
+        # next round. Keyed per-client so concurrent clients don't collide.
         self.prev_models[client_id] = {k: v.clone() for k, v in state.items()}
 
-        avg_loss = total_loss / max(self.max_steps, 1)
         log.debug("moon client %s: steps=%d batch=%d mu=%.4f tau=%.3f loss=%.4f",
-                  client_id, self.max_steps, self.batch_size, self.mu, self.tau, avg_loss)
+                  client_id, self.max_steps, self.batch_size,
+                  self.mu, self.tau, avg_loss)
         return ClientUpdate(
             client_id=client_id,
             state_dict=state,

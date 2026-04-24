@@ -1,9 +1,18 @@
 """Shared client-side training loop.
 
 Rule-of-three trigger: FedAvg, FedProx, SCAFFOLD, FedDyn, (FedAdam inherits)
-all share the same per-step structure (sample batch → forward → backward →
-optional grad correction → clip → Adam step). Extracted to avoid drift
-across copies as M2 algorithms land.
+and MOON all share the same per-step structure (sample batch -> forward
+-> optional loss modification -> backward -> optional grad correction ->
+clip -> Adam step). Two hook points:
+
+- ``loss_modifier(model, cat_batch, cont_batch, base_loss) -> new_loss``
+  runs inside the autocast context before ``backward()``. MOON uses this
+  for the model-contrastive term.
+- ``grad_correction(model)`` runs after ``backward()`` and before
+  ``clip_grad_norm_``. FedProx / SCAFFOLD / FedDyn use this to inject
+  proximal / variance-reduction / dynamic-reg corrections into ``p.grad``.
+
+FedAvg passes both as ``None`` and gets the vanilla loop.
 """
 from __future__ import annotations
 
@@ -25,17 +34,27 @@ def run_local_sgd(
     amp_enabled: bool,
     amp_dtype: torch.dtype | None,
     device: torch.device,
+    loss_modifier: Callable[
+        [nn.Module, torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor
+    ] | None = None,
     grad_correction: Callable[[nn.Module], None] | None = None,
 ) -> tuple[dict[str, torch.Tensor], float]:
     """Run ``max_steps`` Adam steps on ``local_model`` against ``client_tensors``.
 
-    ``grad_correction(model)`` is invoked after ``loss.backward()`` and before
-    ``clip_grad_norm_`` on every step. Pass ``None`` for vanilla FedAvg. Used
-    by FedProx (prox term), SCAFFOLD (c - c_i) and FedDyn (alpha*(w-w_g) - h_i).
+    ``loss_modifier(model, cat_batch, cont_batch, base_loss)`` is invoked
+    inside the autocast context; return the modified loss. Pass ``None``
+    for algorithms that only need cross-entropy. Used by MOON for the
+    contrastive term.
+
+    ``grad_correction(model)`` is invoked after ``loss.backward()`` and
+    before ``clip_grad_norm_`` on every step. Pass ``None`` for vanilla
+    FedAvg. Used by FedProx (prox term), SCAFFOLD (c - c_i), and FedDyn
+    (alpha*(w-w_g) - h_i).
 
     Preconditions: caller has already moved ``local_model`` to ``device``
-    (FedProx/SCAFFOLD/FedDyn do this to snapshot parameters before training
-    starts; FedAvg also moves so the move happens exactly once per round).
+    (FedProx/SCAFFOLD/FedDyn/MOON do this to snapshot parameters before
+    training starts; FedAvg also moves so the move happens exactly once
+    per round).
 
     Returns ``(cpu_state_dict, avg_loss)``. Model is left on ``device`` in
     train mode at the end.
@@ -57,10 +76,15 @@ def run_local_sgd(
     )
     for _ in range(max_steps):
         idx = torch.randint(0, n_local, (batch_size,), device=device)
+        cb = cat_g[idx]
+        ob = cont_g[idx]
+        yb = y_g[idx]
         optimizer.zero_grad(set_to_none=True)
         with amp_ctx:
-            logits = local_model(cat_g[idx], cont_g[idx])
-            loss = loss_fn(logits, y_g[idx])
+            logits = local_model(cb, ob)
+            loss = loss_fn(logits, yb)
+            if loss_modifier is not None:
+                loss = loss_modifier(local_model, cb, ob, loss)
         loss.backward()
         if grad_correction is not None:
             grad_correction(local_model)

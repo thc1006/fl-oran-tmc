@@ -131,6 +131,36 @@ def test_moon_mu_positive_diverges_from_fedavg():
     assert diverged, "mu=1.0 MOON with a populated prev_model should diverge from FedAvg"
 
 
+def test_moon_prev_models_isolated_across_clients():
+    """Client-side state must be keyed per client — prev_models[A] should
+    be untouched by a client_update on client B.
+    """
+    from fl_oran.federated.algorithms import REGISTRY
+    model_a, tensors, loss_fn = _build_trio(seed=42)
+    model_b, _, _ = _build_trio(seed=42)
+    moon = REGISTRY["moon"](max_steps=3, batch_size=4,
+                             mu=0.1, tau=0.5, encode_fn=_tiny_encode)
+    device = torch.device("cpu")
+    # Train client A first; capture its prev_models snapshot.
+    _ = moon.client_update(
+        client_id=1, local_model=model_a, client_tensors=tensors,
+        loss_fn=loss_fn, current_lr=0.01, device=device, round_idx=1,
+    )
+    prev_a = {k: v.clone() for k, v in moon.prev_models[1].items()}
+    # Now train client B. prev_models[1] must not be mutated.
+    _ = moon.client_update(
+        client_id=2, local_model=model_b, client_tensors=tensors,
+        loss_fn=loss_fn, current_lr=0.01, device=device, round_idx=1,
+    )
+    assert 2 in moon.prev_models, "client 2 should register its own prev_model"
+    assert 1 in moon.prev_models, "client 1's entry must remain registered"
+    # Client A's prev must be bit-identical to what we saved.
+    for k in prev_a:
+        assert torch.equal(moon.prev_models[1][k], prev_a[k]), (
+            f"prev_models[1][{k!r}] mutated after client 2 trained"
+        )
+
+
 def test_moon_prev_models_persists():
     from fl_oran.federated.algorithms import REGISTRY
     model_1, tensors, loss_fn = _build_trio(seed=42)
