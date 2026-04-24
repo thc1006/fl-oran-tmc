@@ -187,6 +187,61 @@ def _partition(df: pd.DataFrame, cfg: V5Config) -> dict[int, pd.DataFrame]:
 
 
 @dataclass
+class SharedSplits:
+    """(seed, alpha)-invariant data: parquet + classification target + OOD
+    split + val/test sequences. Computed once per matrix sweep and reused
+    across all (seed, alpha) combinations; saves ~35 s per combo.
+
+    WARNING: only valid when ``sample_ratio == 1.0``. With ``sample_ratio <
+    1.0``, the pandas ``sample(random_state=cfg.seed)`` call is seed-
+    dependent, so the raw ``df`` is too — sharing across seeds would be
+    incorrect. The matrix driver warns when it detects this case.
+    """
+    schema: FeatureSchema
+    train_df: pd.DataFrame
+    X_va: np.ndarray
+    Y_va: np.ndarray
+    X_te: np.ndarray
+    Y_te: np.ndarray
+
+
+def prepare_shared_splits(cfg: V5Config) -> SharedSplits:
+    """Build the ``SharedSplits`` bundle: everything a sweep cell needs from
+    the raw parquet that does NOT depend on (seed, alpha)."""
+    if not cfg.unified_parquet.exists():
+        raise FileNotFoundError(cfg.unified_parquet)
+    t0 = time.time()
+    df = pd.read_parquet(cfg.unified_parquet)
+    if cfg.sample_ratio < 1.0:
+        df = (df.sample(frac=cfg.sample_ratio, random_state=cfg.seed)
+                .sort_index().reset_index(drop=True))
+    df = add_classification_target(
+        df, column="ul_bler", threshold=cfg.threshold, target_name="y_sla_next",
+    )
+    schema = FeatureSchema(
+        categorical=V3_CATEGORICAL,
+        categorical_sizes=V3_CAT_SIZES,
+        continuous=V3_CONTINUOUS,
+    )
+    feat_cols = schema.categorical + schema.continuous
+    split = ood_split_by_tr(df, cfg.train_tr, cfg.val_tr, cfg.test_tr)
+    # val/test sequences in parallel (threading — numpy ops release GIL).
+    (X_va, Y_va), (X_te, Y_te) = Parallel(n_jobs=2, backend="threading")(
+        delayed(build_run_sequences)(
+            getattr(split, which), feat_cols, ["y_sla_next"], seq_len=cfg.seq_len,
+        )
+        for which in ("val", "test")
+    )
+    log.info("shared splits built in %.1fs  train_rows=%s val_seq=%s test_seq=%s",
+             time.time() - t0, f"{len(split.train):,}",
+             f"{len(X_va):,}", f"{len(X_te):,}")
+    return SharedSplits(
+        schema=schema, train_df=split.train,
+        X_va=X_va, Y_va=Y_va, X_te=X_te, Y_te=Y_te,
+    )
+
+
+@dataclass
 class PreparedData:
     """Everything the training loop needs, decoupled from data ingestion.
 
@@ -213,44 +268,35 @@ def prepare_v5_data(
     cfg: V5Config,
     device: torch.device,
     *,
+    shared: SharedSplits | None = None,
     n_jobs_sequences: int = 5,
 ) -> PreparedData:
-    """Load + target + split + Dirichlet + sequences + scaler, once.
+    """Partition + per-client sequences + federated scaler + pinned tensors.
 
-    Per-client ``build_run_sequences`` runs in a joblib thread pool
-    (``n_jobs_sequences`` workers, threading backend so pandas/NumPy share
-    the DataFrame via memory). Threading is correct because groupby +
-    sliding_window_view are GIL-releasing NumPy ops.
+    When ``shared`` is supplied, the (seed, alpha)-invariant parts (parquet
+    read, classification target, OOD split, val/test sequences) are reused.
+    The matrix driver passes ``shared`` so those steps run once per sweep
+    instead of once per (seed, alpha).
 
-    The returned ``PreparedData`` is CPU-resident (tensors are pinned when
-    ``device.type == "cuda"`` for overlap with H2D copies). The training
-    loop moves per-client tensors onto the GPU on demand.
+    Parallelism:
+      - ``build_run_sequences`` over clients (threading, 5 workers)
+      - ``federated_fit_scaler`` over clients (threading, n_clients workers)
+      - ``apply_continuous_scaler`` + ``torch.from_numpy`` + ``pin_memory``
+        over {val, test, each client} (threading, up to 8 workers)
+
+    All parallelised ops are NumPy/pandas primitives that release the GIL.
     """
-    if not cfg.unified_parquet.exists():
-        raise FileNotFoundError(cfg.unified_parquet)
     t0 = time.time()
-    df = pd.read_parquet(cfg.unified_parquet)
-    if cfg.sample_ratio < 1.0:
-        df = (df.sample(frac=cfg.sample_ratio, random_state=cfg.seed)
-                .sort_index().reset_index(drop=True))
-    df = add_classification_target(
-        df, column="ul_bler", threshold=cfg.threshold, target_name="y_sla_next"
-    )
-    schema = FeatureSchema(
-        categorical=V3_CATEGORICAL,
-        categorical_sizes=V3_CAT_SIZES,
-        continuous=V3_CONTINUOUS,
-    )
+    if shared is None:
+        shared = prepare_shared_splits(cfg)
+    schema = shared.schema
     feat_cols = schema.categorical + schema.continuous
-    split = ood_split_by_tr(df, cfg.train_tr, cfg.val_tr, cfg.test_tr)
 
-    # Partition train across clients via Dirichlet over slice_id.
-    client_dfs = _partition(split.train, cfg)
+    # Dirichlet partition (seed + alpha dependent).
+    client_dfs = _partition(shared.train_df, cfg)
     client_items = list(client_dfs.items())
 
-    # Per-client sequence build in parallel. Threading backend reuses the
-    # process memory (no pickling overhead) — pandas groupby + NumPy
-    # sliding_window_view both release the GIL.
+    # Per-client sequence build in parallel.
     n_workers = min(n_jobs_sequences, len(client_items)) or 1
     per_client_results = Parallel(n_jobs=n_workers, backend="threading")(
         delayed(build_run_sequences)(
@@ -272,45 +318,48 @@ def prepare_v5_data(
              len(client_shards),
              {c: len(x) for c, (x, _) in client_shards.items()})
 
-    X_va, Y_va = build_run_sequences(
-        split.val, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len
-    )
-    X_te, Y_te = build_run_sequences(
-        split.test, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len
-    )
-
+    # Federated scaler fit — per-client stats computed in parallel.
     scaler = federated_fit_scaler(
-        {cid: X for cid, (X, _) in client_shards.items()}, schema
+        {cid: X for cid, (X, _) in client_shards.items()},
+        schema,
+        n_jobs=len(client_shards),
     )
-
-    def _to_tensors(X: np.ndarray, Y: np.ndarray):
-        cat, cont = apply_continuous_scaler(X, schema, scaler)
-        return (torch.from_numpy(cat), torch.from_numpy(cont), torch.from_numpy(Y))
 
     def _maybe_pin(t: torch.Tensor) -> torch.Tensor:
         return t.pin_memory() if device.type == "cuda" else t
 
-    va_cat, va_cont, va_y = _to_tensors(X_va, Y_va)
-    te_cat, te_cont, te_y = _to_tensors(X_te, Y_te)
-    va_cat = _maybe_pin(va_cat); va_cont = _maybe_pin(va_cont)
-    te_cat = _maybe_pin(te_cat); te_cont = _maybe_pin(te_cont)
-    client_cpu: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
-    for cid, (X, Y) in client_shards.items():
+    def _scale_and_tensorise(X: np.ndarray, Y: np.ndarray):
         cat, cont = apply_continuous_scaler(X, schema, scaler)
-        client_cpu[cid] = (
+        return (
             _maybe_pin(torch.from_numpy(cat)),
             _maybe_pin(torch.from_numpy(cont)),
             _maybe_pin(torch.from_numpy(Y)),
         )
 
+    # Scale + tensorise + pin across {val, test, each client} in parallel.
+    scale_tasks: list[tuple[object, np.ndarray, np.ndarray]] = [
+        ("val", shared.X_va, shared.Y_va),
+        ("test", shared.X_te, shared.Y_te),
+    ]
+    for cid, (X, Y) in client_shards.items():
+        scale_tasks.append((cid, X, Y))
+    scaled = Parallel(n_jobs=min(len(scale_tasks), 8), backend="threading")(
+        delayed(_scale_and_tensorise)(X, Y) for _, X, Y in scale_tasks
+    )
+    lookup = {key: tensors for (key, _, _), tensors in zip(scale_tasks, scaled)}
+    va_cat, va_cont, va_y = lookup["val"]
+    te_cat, te_cont, te_y = lookup["test"]
+    client_cpu: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {
+        cid: lookup[cid] for cid in client_shards
+    }
+
     # pos_weight: compute from the requested split.
     if cfg.pos_weight_split == "train":
-        # Union of client Y tensors (== train positive rate).
         train_pos = sum(int((Y > 0.5).sum()) for _, (_, Y) in client_shards.items())
         train_n = sum(int(len(Y)) for _, (_, Y) in client_shards.items())
         pos_rate = max(train_pos / max(train_n, 1), 1e-6)
     elif cfg.pos_weight_split == "test":
-        pos_rate = max(float(Y_te.mean()), 1e-6)
+        pos_rate = max(float(shared.Y_te.mean()), 1e-6)
     else:
         raise ValueError(
             f"pos_weight_split must be 'train' or 'test', got {cfg.pos_weight_split!r}"

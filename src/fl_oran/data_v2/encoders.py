@@ -95,16 +95,27 @@ def aggregate_client_stats(stats_list: list[dict]) -> AggregatedStats:
 def federated_fit_scaler(
     client_data: Mapping[int, np.ndarray],
     schema: FeatureSchema,
+    n_jobs: int = 1,
 ) -> ContinuousScaler:
     """FL-compatible scaler fit via sufficient-stats aggregation.
 
     Each client emits (n, sum_x, sum_x²); server aggregates. Mathematically
     identical to pooling but the server never sees raw rows.
+
+    ``n_jobs > 1`` parallelises ``compute_client_stats`` across clients via
+    joblib threading. NumPy reductions release the GIL, so threading gives
+    near-linear speedup with no copy overhead.
     """
-    client_stats = [compute_client_stats(x, schema) for x in client_data.values()]
+    if n_jobs > 1 and len(client_data) > 1:
+        from joblib import Parallel, delayed
+        client_stats = Parallel(
+            n_jobs=min(n_jobs, len(client_data)), backend="threading",
+        )(delayed(compute_client_stats)(x, schema) for x in client_data.values())
+    else:
+        client_stats = [compute_client_stats(x, schema) for x in client_data.values()]
     agg = aggregate_client_stats(client_stats)
-    log.info("federated_fit_scaler over %s rows, %d continuous features",
-             f"{agg.n_total:,}", schema.n_continuous)
+    log.info("federated_fit_scaler over %s rows, %d continuous features (n_jobs=%d)",
+             f"{agg.n_total:,}", schema.n_continuous, n_jobs)
     return ContinuousScaler(mean=agg.mean, std=agg.std)
 
 

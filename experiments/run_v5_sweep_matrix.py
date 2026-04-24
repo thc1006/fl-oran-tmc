@@ -39,6 +39,7 @@ from fl_oran.logging_utils import get_logger
 from fl_oran.training.fl_v5 import (
     V5Config,
     _run_training,
+    prepare_shared_splits,
     prepare_v5_data,
     setup_torch_perf,
 )
@@ -137,15 +138,30 @@ def main() -> None:
     latest_link = out_dir / "_matrix_summary_latest.csv"
 
     t_matrix_start = time.time()
+    # Build (seed, alpha)-invariant parts ONCE. With sample_ratio=1.0 this
+    # is truly shared across the entire matrix. With sample_ratio<1.0 the
+    # parquet sample is seed-dependent, so we warn and fall back to
+    # per-combo prep inside the loop.
+    base_cfg_for_shared = _base_cfg_for(args.seeds[0], args.alphas[0], args)
+    use_shared = args.sample_ratio >= 1.0
+    if use_shared:
+        log.info("=== building shared splits (one-time) ===")
+        seed_everything(args.seeds[0])
+        shared = prepare_shared_splits(base_cfg_for_shared)
+    else:
+        log.warning("sample_ratio=%.3f < 1.0 — disabling SharedSplits "
+                    "(sample is seed-dependent)", args.sample_ratio)
+        shared = None
+
     for seed in args.seeds:
         for alpha in args.alphas:
-            # Re-seed per (seed, alpha) so data-prep RNG is deterministic.
+            # Re-seed per (seed, alpha) so partition + scaler are deterministic.
             seed_everything(seed)
             base = _base_cfg_for(seed, alpha, args)
-            log.info("=== prep for seed=%d alpha=%.3f ===", seed, alpha)
+            log.info("=== per-combo prep for seed=%d alpha=%.3f ===", seed, alpha)
             t_prep = time.time()
-            data = prepare_v5_data(base, device)
-            log.info("prep took %.1fs", time.time() - t_prep)
+            data = prepare_v5_data(base, device, shared=shared)
+            log.info("per-combo prep took %.1fs", time.time() - t_prep)
 
             for algo_name, algo_kwargs in specs:
                 # Re-seed before each training cell so that two cells with
