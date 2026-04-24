@@ -1,0 +1,28 @@
+.venv
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.log
+artifacts/models/
+artifacts/logs/
+artifacts/plots/
+artifacts/coverage/
+!artifacts/.gitkeep
+.ipynb_checkpoints/
+.DS_Store
+*.pkl
+*.keras
+*.h5
+
+# raw ColO-RAN dataset (8.9 GB, do not commit).
+# No trailing slash — this path is a symlink in fl-oran-tmc, not a real directory,
+# and gitignore patterns ending in '/' do not match symlinks.
+raw
+
+# processed parquet files (hundreds of MB) — same symlink caveat as raw above.
+data
