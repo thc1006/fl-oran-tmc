@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# v5 pilot: 6 algorithms x 1 seed x 1 alpha via the matrix driver so data
-# prep runs once and is reused across the algorithm row. Output:
-# artifacts/v5_sweep/<auto_name>/{summary.json, history.csv, best.pt}
-# plus _matrix_summary.csv with one row per cell.
+# v5 validation pilot (post-adversarial-review). 6 algorithms x 1 seed x 1
+# alpha x 20 rounds — long enough for SCAFFOLD / FedDyn / MOON to stabilise
+# under Option-II / contrastive corrections. Uses the scientifically-correct
+# defaults baked into V5Config: pos_weight_split=train, cudnn_deterministic=True,
+# FedDyn update_mode=option_ii. FedAdam is called with bias_correction=True
+# to avoid the t<=5 momentum-ramp under-training the paper-default incurs.
 
 set -euo pipefail
 
@@ -21,12 +23,12 @@ T0=$(date +%s)
     --alphas 0.5 \
     --partition-mode dirichlet \
     --n-clients 5 \
-    --num-rounds 5 \
+    --num-rounds 20 \
     --clients-per-round 5 \
     --max-steps-per-round 50 \
     --batch-size 256 \
     --lr 5e-4 \
-    --lr-warmup-rounds 1 \
+    --lr-warmup-rounds 3 \
     --sample-ratio 1.0 \
     --seq-len 5 \
     --device cuda \
@@ -35,7 +37,7 @@ T0=$(date +%s)
     --output-dir "$REPO/artifacts/v5_sweep" \
     --algo-spec 'fedavg:{}' \
     --algo-spec 'fedprox:{"mu": 0.01}' \
-    --algo-spec 'fedadam:{"server_lr": 0.01}' \
+    --algo-spec 'fedadam:{"server_lr": 0.01, "bias_correction": true}' \
     --algo-spec 'scaffold:{}' \
     --algo-spec 'feddyn:{"alpha": 0.01}' \
     --algo-spec 'moon:{"mu": 1.0, "tau": 0.5}' \
@@ -45,4 +47,5 @@ TOTAL=$(( $(date +%s) - T0 ))
 echo "" | tee -a "$LOG_DIR/_summary.txt"
 echo "pilot end: $(date -Iseconds) total=${TOTAL}s" | tee -a "$LOG_DIR/_summary.txt"
 echo "" | tee -a "$LOG_DIR/_summary.txt"
-cat "$REPO/artifacts/v5_sweep/_matrix_summary.csv" | tee -a "$LOG_DIR/_summary.txt"
+cat "$REPO/artifacts/v5_sweep/_matrix_summary_latest.csv" 2>/dev/null \
+    | tee -a "$LOG_DIR/_summary.txt" || true

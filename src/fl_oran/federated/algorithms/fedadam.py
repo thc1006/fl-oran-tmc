@@ -93,7 +93,11 @@ class FedAdam(FedAvg):
                 # Non-float buffers (e.g. BN num_batches_tracked) — copy through.
                 new_state[key] = avg_state[key].clone()
                 continue
-            delta = avg_state[key] - w_g
+            # avg_state comes from weighted_average_state_dicts on CPU client
+            # state_dicts, so it's CPU. w_g may be CUDA (orchestrator keeps
+            # global_state on-device to avoid D2H/H2D bouncing). Align.
+            avg_val = avg_state[key].to(w_g.device, non_blocking=True)
+            delta = avg_val - w_g
             # Lazy-init moments to match the global-state shape/dtype/device.
             if key not in self.m:
                 self.m[key] = torch.zeros_like(w_g)

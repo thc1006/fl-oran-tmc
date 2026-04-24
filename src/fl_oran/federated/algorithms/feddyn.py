@@ -96,14 +96,20 @@ class FedDyn:
         loss_fn: Callable,
         device: torch.device,
     ) -> dict[str, torch.Tensor]:
-        """Grad of loss_fn at model's current weights on a deterministic batch.
+        """Grad of loss_fn at model's weights on a deterministic batch.
 
-        Eval mode + arange index → does not perturb global torch RNG.
+        Train mode is mandatory (cuDNN LSTM backward requires it). We
+        snapshot + restore CPU and CUDA RNG around the call so the outer
+        training loop's RNG chain is unchanged even though dropout fires
+        during this forward.
         """
         bs = min(self.batch_size, cat.shape[0])
         det_idx = torch.arange(bs, device=device)
         was_training = model.training
-        model.eval()
+        model.train()
+        cpu_rng = torch.get_rng_state()
+        cuda_rng = (torch.cuda.get_rng_state(device)
+                    if device.type == "cuda" else None)
         model.zero_grad(set_to_none=True)
         amp_ctx = torch.autocast(
             device_type=device.type,
@@ -120,8 +126,11 @@ class FedDyn:
             if p.grad is not None
         }
         model.zero_grad(set_to_none=True)
-        if was_training:
-            model.train()
+        torch.set_rng_state(cpu_rng)
+        if cuda_rng is not None:
+            torch.cuda.set_rng_state(cuda_rng, device)
+        if not was_training:
+            model.eval()
         return grads
 
     def client_update(

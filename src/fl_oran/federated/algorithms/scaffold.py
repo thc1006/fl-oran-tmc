@@ -92,13 +92,21 @@ class SCAFFOLD:
     ) -> dict[str, torch.Tensor]:
         """Compute per-parameter gradient of loss_fn at model's current weights.
 
-        Uses a deterministic mini-batch (``arange(0, batch_size)``) and eval
-        mode (dropout off) so this call does not perturb global torch RNG.
+        Uses a deterministic mini-batch (``arange(0, batch_size)``) so the
+        batch choice does not consume RNG. We MUST run in train mode because
+        cuDNN's LSTM backward is only implemented for training mode — eval
+        mode would raise ``RuntimeError: cudnn RNN backward can only be
+        called in training mode``. Dropout would then consume torch RNG, so
+        we snapshot + restore both the CPU and CUDA RNG streams around the
+        call to keep the outer training-loop's RNG chain unchanged.
         """
         bs = min(self.batch_size, cat.shape[0])
         det_idx = torch.arange(bs, device=device)
         was_training = model.training
-        model.eval()
+        model.train()
+        cpu_rng = torch.get_rng_state()
+        cuda_rng = (torch.cuda.get_rng_state(device)
+                    if device.type == "cuda" else None)
         model.zero_grad(set_to_none=True)
         amp_ctx = torch.autocast(
             device_type=device.type,
@@ -115,8 +123,11 @@ class SCAFFOLD:
             if p.grad is not None
         }
         model.zero_grad(set_to_none=True)
-        if was_training:
-            model.train()
+        torch.set_rng_state(cpu_rng)
+        if cuda_rng is not None:
+            torch.cuda.set_rng_state(cuda_rng, device)
+        if not was_training:
+            model.eval()
         return grads
 
     def client_update(
