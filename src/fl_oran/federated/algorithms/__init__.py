@@ -108,3 +108,4 @@ from . import fedprox  # noqa: E402,F401
 from . import fedadam  # noqa: E402,F401
 from . import scaffold  # noqa: E402,F401
 from . import feddyn  # noqa: E402,F401
+from . import moon  # noqa: E402,F401
