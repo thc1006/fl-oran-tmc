@@ -321,6 +321,41 @@ AND C2 fail (energy advantage < 2×)", Stage 2 is reframed as a
 2 percentage points at ~80% of LSTM energy, on a 5000-step training
 budget for LSTM/Mamba and 25 000-step for Spiking.
 
+#### Caveat: matched-budget sensitivity
+
+The "Spiking − LSTM" gap of −0.0208 used in the audit row above
+compares LSTM trained for 5 000 steps against Spiking trained for
+25 000 steps. A single-seed (s=42) probe of LSTM and Mamba **also**
+trained for 25 000 steps shows that the dense backbones are
+themselves not fully converged at 5 000 steps:
+
+| Arch (seed=42) | 5 000-step test AUC | 25 000-step test AUC | Δ |
+|---|---|---|---|
+| LSTM | 0.9152 | 0.9244 | +0.0092 |
+| Mamba | 0.9148 | 0.9240 | +0.0092 |
+| Spiking (lr=5e-4) | 0.8370 | 0.8935 | +0.0565 |
+
+Under a properly matched 25 000-step budget for **all three** archs
+on seed=42:
+
+  delta(Spiking − LSTM)  = 0.8935 − 0.9244 = −0.0309
+  delta(Spiking − Mamba) = 0.8935 − 0.9240 = −0.0305
+
+This straddles the C1 −0.030 threshold. The "comfortable PASS"
+implied by the −0.0208 single-budget number above is therefore
+sensitive to the budget choice. A multi-seed verification
+(n=3 LSTM_25k + n=3 Mamba_25k) is in progress at the time of this
+revision and will be folded in once complete; until then the more
+conservative position is **"borderline C1, decision sensitive to
+budget framing"**, and we report both budget framings rather than
+picking one.
+
+Pragmatically: Spiking-SSM under the corrected hyperparameters is
+within 2-3 percentage points of LSTM on this task, with a clear
+energy benefit on theoretical pJ counting; whether C1 strictly
+passes under matched-25k is a budget-framing question, not an
+architectural one.
+
 ### 6.5 Recovery HPO at T_inner=5 (per ADR D-21 C2 row, "one HPO pass")
 
 We additionally ran a 10-seed sweep of `SpikingForecaster` at
