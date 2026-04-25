@@ -276,9 +276,17 @@ def main() -> None:
                         help="LIF integrations per sequence position for SpikingSSMBlock (D-21 recovery: try 5)")
     parser.add_argument("--output-suffix", type=str, default="",
                         help="optional suffix appended to per-cell directory name to keep recovery runs separate")
+    parser.add_argument("--spiking-lr", type=float, default=None,
+                        help="override the SpikingForecaster Adam lr (default 1e-4 was post-hoc audited as undertrained; 5e-4 matches LSTM/Mamba)")
+    parser.add_argument("--spiking-warmup-steps", type=int, default=None,
+                        help="override SpikingForecaster linear-warmup step count")
     args = parser.parse_args()
     if args.spiking_t_inner != 1:
         ARCH_REGISTRY["spiking"]["kwargs"]["t_inner"] = args.spiking_t_inner
+    if args.spiking_lr is not None:
+        ARCH_REGISTRY["spiking"]["lr"] = args.spiking_lr
+    if args.spiking_warmup_steps is not None:
+        ARCH_REGISTRY["spiking"]["warmup_steps"] = args.spiking_warmup_steps
     if args.output_suffix:
         for arch_cfg in ARCH_REGISTRY.values():
             arch_cfg["output_suffix"] = args.output_suffix
