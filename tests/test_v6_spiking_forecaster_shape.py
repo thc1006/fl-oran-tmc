@@ -75,6 +75,53 @@ def test_spiking_forecaster_gradient_flows_through_surrogate():
     assert grads_total > 0, "no gradient flowed back through the spiking blocks"
 
 
+def test_decode_mode_sum_preserves_gradient_at_t_inner_5():
+    """The audit-corrected sum-decoder must keep gradient flowing for T_inner > 1.
+
+    The original `majority` decoder uses a hard threshold which is
+    non-differentiable, blocking gradients through the LIF for T_inner > 1.
+    `sum` divides by t_inner and stays differentiable.
+    """
+    from fl_oran.models.spiking_forecaster import SpikingForecaster
+
+    torch.manual_seed(11)
+    schema = _make_schema()
+    sizes = list(schema.categorical_sizes.values())
+    x_cat = torch.stack(
+        [torch.randint(0, sz + 1, (4, 5)) for sz in sizes], dim=-1,
+    ).long()
+    x_cont = torch.randn(4, 5, schema.n_continuous)
+
+    # majority decoder with t_inner=5: gradient on A_log is fully blocked
+    # (the (>threshold).float() cast is non-differentiable). A_log.grad
+    # is therefore None or all-zero.
+    m_maj = SpikingForecaster(
+        schema=schema, task="classification", seq_len=5,
+        t_inner=5, decode_mode="majority",
+    )
+    out_m = m_maj(x_cat, x_cont)
+    out_m.sum().backward()
+    for b in m_maj.blocks:
+        assert b.A_log.grad is None or b.A_log.grad.abs().sum().item() == 0.0, (
+            "majority decoder unexpectedly propagated A_log gradient at t_inner=5"
+        )
+
+    # sum decoder with t_inner=5: gradient must flow back to A_log.
+    m_sum = SpikingForecaster(
+        schema=schema, task="classification", seq_len=5,
+        t_inner=5, decode_mode="sum",
+    )
+    out_s = m_sum(x_cat, x_cont)
+    out_s.sum().backward()
+    a_log_grad_sum = sum(
+        b.A_log.grad.abs().sum().item() for b in m_sum.blocks
+        if b.A_log.grad is not None
+    )
+    assert a_log_grad_sum > 1e-6, (
+        f"sum decoder failed to propagate gradient (a_log grad sum = {a_log_grad_sum:.3e})"
+    )
+
+
 def test_spiking_forecaster_deterministic_across_two_runs_same_seed():
     from fl_oran.models.spiking_forecaster import SpikingForecaster
 

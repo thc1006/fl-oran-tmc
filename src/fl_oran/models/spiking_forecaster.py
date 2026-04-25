@@ -58,15 +58,22 @@ class SpikingSSMBlock(nn.Module):
         lif_beta: float = 0.9,
         atan_alpha: float = 2.0,
         t_inner: int = 1,
+        decode_mode: str = "majority",
     ) -> None:
         super().__init__()
         if t_inner < 1:
             raise ValueError(f"t_inner must be >= 1, got {t_inner}")
+        if decode_mode not in {"majority", "sum", "soft_or"}:
+            raise ValueError(
+                f"decode_mode must be one of {{'majority', 'sum', 'soft_or'}}, "
+                f"got {decode_mode!r}"
+            )
         self.d_model = d_model
         self.d_state = d_state
         self.lif_threshold = lif_threshold
         self.lif_beta = lif_beta
         self.t_inner = t_inner
+        self.decode_mode = decode_mode
 
         # Input projection (in-tree, used as the SSM "B@x" input gate).
         self.in_proj = nn.Linear(d_model, d_model)
@@ -124,15 +131,42 @@ class SpikingSSMBlock(nn.Module):
                 spk_acc = spk_step if spk_acc is None else spk_acc + spk_step
                 if not self.training:
                     self.spike_count = self.spike_count + spk_step.sum().detach()
-            # Reduce to a single spike vector for this sequence position by
-            # taking the (binary) majority across the t_inner sub-steps. For
-            # t_inner=1 this is exactly spk_step. For t_inner > 1 the output
-            # is 1 if at least half of the inner steps fired.
+            # Reduce the t_inner sub-step spikes to a single per-position
+            # output. Three modes are supported (per ADR-001 audit fix #4):
+            #   * "majority": (spk_acc > t_inner/2).float() — preserves the
+            #     binary-spike semantic but is non-differentiable; gradient
+            #     does not flow back through this for t_inner > 1.
+            #     This was the original preregistered behaviour.
+            #   * "sum": spk_t = spk_acc / t_inner — rate-coded float in
+            #     [0, 1]. Gradient flows; downstream Linear sees a real
+            #     instead of a hard 0/1.
+            #   * "soft_or": spk_t = 1 − Π(1 − spk_step_i) for each i — a
+            #     differentiable any-fired aggregation. Reduces to spk_acc
+            #     when t_inner = 1 since 1 − (1 − spk) = spk.
+            # For the default t_inner = 1 all three modes collapse to
+            # spk_step exactly (spk_acc == spk_step, spk_acc/1 == spk_step,
+            # 1−(1−spk_step) == spk_step), so the change is backwards
+            # compatible.
             if self.t_inner == 1:
                 spk_t = spk_acc
-            else:
+            elif self.decode_mode == "majority":
                 threshold = self.t_inner / 2.0
                 spk_t = (spk_acc > threshold).float()
+            elif self.decode_mode == "sum":
+                spk_t = spk_acc / float(self.t_inner)
+            elif self.decode_mode == "soft_or":
+                spk_t = spk_acc - (spk_acc.detach() - spk_acc) * 0  # placeholder
+                # NOTE: The proper soft-OR implementation requires keeping the
+                # individual sub-step spikes and computing 1 - Π(1 - s_i) over
+                # them. The current scan loop stores only the running sum
+                # (spk_acc), which is sufficient for "majority" and "sum" but
+                # not for "soft_or". For Stage 1 we expose the API but raise
+                # so users do not silently pick the broken implementation.
+                raise NotImplementedError(
+                    "soft_or decode_mode requires per-sub-step spike storage; "
+                    "use 'sum' for a differentiable alternative or set "
+                    "t_inner=1 to match the preregistered behaviour."
+                )
             spike_outputs.append(spk_t)
 
             if not self.training:
@@ -166,6 +200,7 @@ class SpikingForecaster(nn.Module):
         lif_beta: float = 0.9,
         atan_alpha: float = 2.0,
         t_inner: int = 1,
+        decode_mode: str = "majority",
         fc_hidden: int = 64,
         out_proj_dim: int = 32,
         dropout: float = 0.0,
@@ -202,6 +237,7 @@ class SpikingForecaster(nn.Module):
                 lif_beta=lif_beta,
                 atan_alpha=atan_alpha,
                 t_inner=t_inner,
+                decode_mode=decode_mode,
             )
             for _ in range(n_blocks)
         ])

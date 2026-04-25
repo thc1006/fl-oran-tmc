@@ -157,14 +157,35 @@ def estimate_energy_pJ_per_inference(
 ) -> dict[str, Any]:
     """Run a measurement forward pass and return per-inference energy stats.
 
-    Resets spike counters first, runs the model in eval mode under
-    ``torch.no_grad()``, then computes both terms. Flops are read from
-    fvcore (which itself runs a separate forward pass internally).
+    Reports **three energy values** corresponding to three deployment-target
+    accounting models, plus the dense-MAC and sparse-AC counts that go into
+    each:
+
+    * ``total_energy_pJ_gpu_dense`` — worst case for spiking. Every Linear
+      / Conv operation costs a MAC regardless of input value (i.e., a
+      standard GPU/CPU matmul that does not exploit input sparsity).
+      ``= (flops_dense_full + rnn_macs) * 4.6 pJ``.
+    * ``total_energy_pJ_sparsity_aware`` — sparsity-aware accelerator
+      that detects 0-spike inputs and skips the multiplication. The
+      post-spike ``out_proj`` of every ``SpikingSSMBlock`` is treated as
+      AC for actual spike events, MAC for dense events. This is the
+      "headline" number reported in §6.4 of the paper.
+    * ``total_energy_pJ_neuromorphic`` — idealised neuromorphic chip
+      where **all** post-spike Linear operations downstream of any LIF
+      neuron are AC. For the current SpikingForecaster only the
+      per-block ``out_proj`` directly receives spikes (the classifier
+      head receives a dense float vector after out_proj), so for our
+      architecture ``neuromorphic == sparsity_aware``. The placeholder
+      is exposed so future models with truly spike-stacked layers can
+      report the deeper savings.
+
+    LSTM and Mamba models have no spiking blocks and identical numbers
+    in all three columns.
     """
     if hasattr(model, "reset_spike_counters"):
         model.reset_spike_counters()
 
-    flops = count_flops_total(model, x_cat, x_cont)
+    flops_post_subtraction = count_flops_total(model, x_cat, x_cont)
 
     # Trigger spike accumulation if this is a Spiking model.
     if hasattr(model, "reset_spike_counters"):
@@ -174,11 +195,31 @@ def estimate_energy_pJ_per_inference(
             _ = model(x_cat, x_cont)
 
     sops = count_block_sops(model)
-    total = flops * PJ_PER_MAC_FP32 + sops * PJ_PER_AC_FP32
+
+    # Reconstruct the worst-case dense-MAC count by adding back the
+    # post-spike out_proj structural MACs that count_flops_total subtracted.
+    seq_len = int(x_cat.shape[1])
+    structural = float(count_post_spike_mac_to_remove(model, seq_len))
+    flops_dense_full = flops_post_subtraction + structural
+
+    total_gpu = flops_dense_full * PJ_PER_MAC_FP32
+    total_sparsity = flops_post_subtraction * PJ_PER_MAC_FP32 + sops * PJ_PER_AC_FP32
+    # For SpikingForecaster as currently structured, neuromorphic ==
+    # sparsity_aware (only out_proj receives spikes). Reported separately
+    # so future architectures with deeper spike stacks can populate it.
+    total_neuromorphic = total_sparsity
+
     return {
-        "flops": flops,
+        # Backwards-compatible legacy keys (== sparsity_aware accounting):
+        "flops": flops_post_subtraction,
         "sops": sops,
-        "total_energy_pJ": total,
+        "total_energy_pJ": total_sparsity,
         "pj_per_mac": PJ_PER_MAC_FP32,
         "pj_per_ac": PJ_PER_AC_FP32,
+        # Three-hardware accounting:
+        "flops_dense_full": flops_dense_full,
+        "structural_post_spike_mac": structural,
+        "total_energy_pJ_gpu_dense": total_gpu,
+        "total_energy_pJ_sparsity_aware": total_sparsity,
+        "total_energy_pJ_neuromorphic": total_neuromorphic,
     }

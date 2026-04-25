@@ -78,9 +78,27 @@ def per_arch_stats(cells: dict[tuple[str, int], dict]) -> dict[str, dict]:
         f1s = np.array([float(v["test_f1"]) for v in items])
         accs = np.array([float(v["test_accuracy"]) for v in items])
         params = np.array([int(v["params_count"]) for v in items])
+        # Legacy single-accounting energy (== sparsity_aware on new cells).
         energies = np.array([float(v["energy"].get("total_energy_pJ", 0.0)) for v in items])
         flops = np.array([float(v["energy"].get("flops", 0.0)) for v in items])
         sops = np.array([float(v["energy"].get("sops", 0.0)) for v in items])
+        # Three-accounting fields (fall back to total_energy_pJ if a
+        # cell predates the three-accounting energy_metrics fix).
+        energies_gpu = np.array([
+            float(v["energy"].get("total_energy_pJ_gpu_dense",
+                                   v["energy"].get("total_energy_pJ", 0.0)))
+            for v in items
+        ])
+        energies_sparse = np.array([
+            float(v["energy"].get("total_energy_pJ_sparsity_aware",
+                                   v["energy"].get("total_energy_pJ", 0.0)))
+            for v in items
+        ])
+        energies_neuro = np.array([
+            float(v["energy"].get("total_energy_pJ_neuromorphic",
+                                   v["energy"].get("total_energy_pJ", 0.0)))
+            for v in items
+        ])
         out[arch] = {
             "n": int(len(items)),
             "test_auc_mean": float(aucs.mean()),
@@ -91,6 +109,9 @@ def per_arch_stats(cells: dict[tuple[str, int], dict]) -> dict[str, dict]:
             "params_count_mean": float(params.mean()),
             "energy_pJ_mean": float(energies.mean()),
             "energy_pJ_std": float(energies.std(ddof=1)) if len(energies) > 1 else 0.0,
+            "energy_pJ_gpu_mean": float(energies_gpu.mean()),
+            "energy_pJ_sparsity_mean": float(energies_sparse.mean()),
+            "energy_pJ_neuromorphic_mean": float(energies_neuro.mean()),
             "flops_mean": float(flops.mean()),
             "sops_mean": float(sops.mean()),
             "seeds": sorted(int(v["seed"]) for v in items),
@@ -155,7 +176,8 @@ def paired_bootstrap_delta_ci(cells: dict[tuple[str, int], dict],
 def evaluate_d21_criteria(stats: dict, deltas: dict,
                            spiking_key: str = "spiking",
                            lstm_key: str = "lstm",
-                           mamba_key: str = "mamba") -> dict:
+                           mamba_key: str = "mamba",
+                           energy_field: str = "energy_pJ_mean") -> dict:
     """Apply ADR-001 D-21 GO/NO-GO criteria; return result dict + flags.
 
     ``spiking_key`` / ``lstm_key`` / ``mamba_key`` select which variant of
@@ -174,8 +196,10 @@ def evaluate_d21_criteria(stats: dict, deltas: dict,
     c1_pass = c1_hi is not None and c1_hi >= -0.030
 
     # C2: total_energy_ratio(spiking, lstm) <= 0.5
-    if spiking.get("energy_pJ_mean", 0) > 0 and lstm.get("energy_pJ_mean", 0) > 0:
-        ratio = spiking["energy_pJ_mean"] / lstm["energy_pJ_mean"]
+    sp_e = spiking.get(energy_field, 0)
+    ls_e = lstm.get(energy_field, 0)
+    if sp_e > 0 and ls_e > 0:
+        ratio = sp_e / ls_e
     else:
         ratio = None
     c2_pass = ratio is not None and ratio <= 0.5
@@ -194,6 +218,8 @@ def evaluate_d21_criteria(stats: dict, deltas: dict,
 
     return {
         "spiking_variant_evaluated": spiking_key,
+        "lstm_variant_evaluated": lstm_key,
+        "energy_field": energy_field,
         "C1_accuracy_gap_spiking_vs_lstm": {
             "ci95": [spiking_lstm.get("ci_lo"), c1_hi],
             "threshold": -0.030,
@@ -364,6 +390,22 @@ def main() -> None:
             audit_criteria[f"{k}_vs_25k_baselines"] = evaluate_d21_criteria(
                 stats, deltas, spiking_key=k, lstm_key="lstm_25k", mamba_key="mamba_25k",
             )
+            # Three-hardware accounting variants of the matched-25k decision.
+            for hw_label, hw_field in (
+                ("gpu_dense", "energy_pJ_gpu_mean"),
+                ("sparsity_aware", "energy_pJ_sparsity_mean"),
+                ("neuromorphic", "energy_pJ_neuromorphic_mean"),
+            ):
+                audit_criteria[f"{k}_vs_25k_baselines_{hw_label}"] = evaluate_d21_criteria(
+                    stats, deltas, spiking_key=k,
+                    lstm_key="lstm_25k", mamba_key="mamba_25k",
+                    energy_field=hw_field,
+                )
+            if "lstm_50k" in stats:
+                audit_criteria[f"{k}_vs_50k_baselines"] = evaluate_d21_criteria(
+                    stats, deltas, spiking_key=k, lstm_key="lstm_50k",
+                    mamba_key=("mamba_50k" if "mamba_50k" in stats else "mamba_25k"),
+                )
         else:
             audit_criteria[k] = evaluate_d21_criteria(stats, deltas, spiking_key=k)
 

@@ -66,6 +66,17 @@ ARCH_REGISTRY = {
         "weight_decay": 0.0,
         "kwargs": {},  # tuned defaults: backbone_d_model=64, expand=1, n_blocks=2
     },
+    "mamba_expand2": {
+        # Audit ablation per ADR-001 §7 limitations (Stage 1 final round).
+        # Tests whether the canonical Mamba-S6 design (expand=2) outperforms
+        # the dense LSTM baseline once parameter parity is preserved by
+        # shrinking d_model to 48.
+        "ctor": MambaForecaster,
+        "lr": 5e-4,
+        "warmup_steps": 750,
+        "weight_decay": 0.0,
+        "kwargs": {"backbone_d_model": 48, "backbone_expand": 2, "n_blocks": 2},
+    },
     "spiking": {
         "ctor": SpikingForecaster,
         "lr": 1e-4,
@@ -280,9 +291,16 @@ def main() -> None:
                         help="override the SpikingForecaster Adam lr (default 1e-4 was post-hoc audited as undertrained; 5e-4 matches LSTM/Mamba)")
     parser.add_argument("--spiking-warmup-steps", type=int, default=None,
                         help="override SpikingForecaster linear-warmup step count")
+    parser.add_argument("--spiking-decode-mode", type=str, default=None,
+                        choices=("majority", "sum"),
+                        help="Spiking sub-step spike aggregation; default majority is non-differentiable for t_inner > 1, 'sum' fixes that")
+    parser.add_argument("--early-stop-patience", type=int, default=0,
+                        help="0 = no early stopping (run full --total-steps); >0 = stop after this many val_every checks without val_auc improvement")
     args = parser.parse_args()
     if args.spiking_t_inner != 1:
         ARCH_REGISTRY["spiking"]["kwargs"]["t_inner"] = args.spiking_t_inner
+    if args.spiking_decode_mode is not None:
+        ARCH_REGISTRY["spiking"]["kwargs"]["decode_mode"] = args.spiking_decode_mode
     if args.spiking_lr is not None:
         ARCH_REGISTRY["spiking"]["lr"] = args.spiking_lr
     if args.spiking_warmup_steps is not None:
