@@ -286,24 +286,36 @@ the binding constraint.
 | Spiking T_inner=5 (recovery) | 10 | 0.5002 ± 0.0003 | 13 306 | 7.60e+05 |
 
 `delta_auc(T_inner=5, T_inner=1)` = −0.1755 (CI95 [−0.1982, −0.1565],
-Wilcoxon p = 0.002). The recovery is **worse** than the baseline:
-the majority-vote decoding at T_inner=5 collapses the spike train to
-near-zero output (sops drops from 36 k to 13 k) because the
-`snntorch.Leaky` reset_delay=True semantics produce alternating
-spike-non-spike patterns at saturated inputs, and a strict ≥ 3-of-5
-majority requires three same-step spikes which essentially never
-occur. Effective AUC therefore stays at chance (0.5).
+Wilcoxon p = 0.002). The recovery is **worse** than the baseline.
+After the run we audited the implementation and identified the root
+cause as a **gradient-flow bug in the preregistered majority-vote
+decoder**, not a representational issue with rate-coded spiking:
 
-**This is itself a small implementation finding, not an architectural
-verdict on T_inner > 1**: a sum-decoding (rate-coded float in
-[0, T_inner]) or any-fired decoding (OR over sub-steps) would not
-collapse, and might recover some accuracy. We document the failure
-honestly here rather than retroactively re-design the decoding —
-ADR D-21 explicitly preregistered "one HPO pass", which we have done.
+The decoder emits `spk_t = (Σ_{i=1..T_inner} spk_step_i > T_inner/2).float()`
+where `spk_step_i` is the per-substep LIF output that carries the atan
+surrogate gradient. The hard `>` comparison is non-differentiable,
+so gradient does not flow back through `spk_t` to the LIF parameters
+or to the upstream SSM state. The LIF and the diagonal SSM therefore
+**receive no learning signal** when T_inner > 1, the network
+converges to a constant-zero output, and effective AUC stays at
+chance (0.5). The non-zero `sops` in row two of the table
+(13 306 vs 36 064) reflect spikes that occur during the unlearnt
+forward pass, not anything informative.
+
+This is an implementation-level finding rather than an architectural
+verdict on T_inner > 1. The fix is to replace the hard threshold
+with a differentiable surrogate decoder — for example **sum decoding**
+(`spk_t = spk_acc / T_inner`, returning a rate-coded float in
+[0, 1]) or **any-fired decoding** with a smooth soft-OR. Both
+preserve the surrogate-gradient path and would let T_inner > 1
+actually train. Per ADR-001 D-21 the preregistered "one HPO pass"
+is exhausted by this experiment; re-running with a redesigned
+decoder is future work and would be a new preregistered design.
 
 The substantive D-21 conclusion does not move: even an optimistic
-0.10-AUC recovery from any decoding fix would land Spiking at ~0.78,
-still 13 percentage points below LSTM and far outside the C1 threshold.
+0.10-AUC recovery from a corrected T_inner > 1 decoder would land
+Spiking at ~0.78, still 13 percentage points below LSTM and far
+outside the C1 threshold of 0.030.
 
 ---
 
