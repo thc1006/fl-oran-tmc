@@ -35,7 +35,15 @@ PJ_PER_AC_FP32: float = 0.9
 
 
 def count_flops_total(model: torch.nn.Module, x_cat: torch.Tensor, x_cont: torch.Tensor) -> float:
-    """Per-inference dense MAC count for ``model.forward(x_cat, x_cont)``."""
+    """Per-inference dense MAC count for ``model.forward(x_cat, x_cont)``.
+
+    Combines:
+    * ``fvcore.nn.FlopCountAnalysis`` for traceable ops (Linear, Conv, matmul, ...)
+    * Hand-counted MACs for ``nn.LSTM`` and ``nn.GRU`` modules, which fvcore
+      does not trace into (it sees only the C++ kernel boundary). Without
+      this correction, an LSTM-based model reports ~80× too few FLOPs and
+      its energy estimate is severely undercounted.
+    """
     from fvcore.nn import FlopCountAnalysis
 
     n_inferences = float(x_cat.shape[0])
@@ -48,7 +56,27 @@ def count_flops_total(model: torch.nn.Module, x_cat: torch.Tensor, x_cont: torch
     # for the metric path. They are not MAC contributors anyway.
     analysis.unsupported_ops_warnings(False)
     analysis.uncalled_modules_warnings(False)
-    return float(analysis.total()) / n_inferences
+    fvcore_flops = float(analysis.total())
+
+    # Hand-count MACs for recurrent modules fvcore doesn't trace.
+    seq_len = int(x_cat.shape[1])
+    rnn_macs_per_inference = 0
+    for module in model.modules():
+        if isinstance(module, (torch.nn.LSTM, torch.nn.GRU)):
+            input_size = module.input_size
+            hidden_size = module.hidden_size
+            num_layers = module.num_layers
+            n_gates = 4 if isinstance(module, torch.nn.LSTM) else 3
+            # Per timestep, per layer: n_gates × (I + H + 1) × H MACs.
+            # Layers after the first take hidden_size as input.
+            macs_per_step = (
+                n_gates * (input_size + hidden_size + 1) * hidden_size
+                + (num_layers - 1) * n_gates * (2 * hidden_size + 1) * hidden_size
+            )
+            rnn_macs_per_inference += macs_per_step * seq_len
+
+    rnn_macs_total = rnn_macs_per_inference * int(n_inferences)
+    return (fvcore_flops + rnn_macs_total) / n_inferences
 
 
 def count_block_sops(model: torch.nn.Module) -> float:
