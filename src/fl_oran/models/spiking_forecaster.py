@@ -155,7 +155,6 @@ class SpikingSSMBlock(nn.Module):
             elif self.decode_mode == "sum":
                 spk_t = spk_acc / float(self.t_inner)
             elif self.decode_mode == "soft_or":
-                spk_t = spk_acc - (spk_acc.detach() - spk_acc) * 0  # placeholder
                 # NOTE: The proper soft-OR implementation requires keeping the
                 # individual sub-step spikes and computing 1 - Π(1 - s_i) over
                 # them. The current scan loop stores only the running sum

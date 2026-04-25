@@ -46,6 +46,14 @@ def count_flops_total(model: torch.nn.Module, x_cat: torch.Tensor, x_cont: torch
     * **Subtracts** the post-spike ``out_proj`` operations of every
       :class:`SpikingSSMBlock` so they are not double-counted as dense
       MACs in this number — see :func:`count_post_spike_mac_to_remove`.
+
+    .. note::
+
+       Side effect: this function calls ``model.eval()`` to drive
+       ``fvcore`` along the inference code path. The caller's training
+       mode is therefore overwritten. ``estimate_energy_pJ_per_inference``
+       handles this internally; standalone callers who care about preserving
+       train mode should re-invoke ``model.train()`` after this returns.
     """
     from fvcore.nn import FlopCountAnalysis
 
@@ -112,21 +120,25 @@ def count_post_spike_mac_to_remove(model: torch.nn.Module, seq_len: int) -> int:
 
 
 def count_block_sops(model: torch.nn.Module) -> float:
-    """Per-inference synaptic-op (AC) count across all SpikingSSMBlock instances.
+    """Per-inference **spike-driven** AC count across all SpikingSSMBlock instances.
 
-    Two contributions per block:
-    * **Spike-driven**: ``spike_count × fan_out`` — the LIF spike train is fed
-      into the block's ``out_proj`` Linear, and each emitted spike causes a
-      fan-out-of-out_features accumulate on downstream weights. (Whether the
-      spike actually fires multiplies w or zeroes it out is binary, so the
-      effective op is an AC.)
-    * **Structural**: the full Linear ``out_proj.in_features × out_proj.out_features``
-      operation count, treated as ACs because the input is a binary spike train.
-      This term is what we subtract from the dense MAC count in
-      :func:`count_post_spike_mac_to_remove`, so we add it back here.
+    Each emitted LIF spike triggers ``out_proj.out_features`` accumulate
+    operations on the post-spike ``out_proj`` Linear weights, so the
+    spike-driven AC count for one block over one inference equals
+    ``spike_count_block × out_proj.out_features`` divided by the number
+    of inferences observed.
 
-    The dominant of the two for a fully-firing layer is the structural term;
-    for sparse spike trains the spike-driven term is much smaller.
+    The structural term (the dense ``in_features × out_features × seq_len``
+    that ``out_proj`` would cost if its input were dense rather than a spike
+    train) is **not** added here. It is netted out of the dense MAC total in
+    :func:`count_flops_total` via :func:`count_post_spike_mac_to_remove`, so
+    the energy formula
+
+        total_sparsity = (flops_full_dense - structural) * pJ_per_MAC + sops_spike * pJ_per_AC
+
+    is consistent: the dense-MAC term subtracts the cost we are not paying,
+    and this function adds back only the cost we ARE paying (one AC per
+    actual 1-spike event × the downstream fan-out).
 
     Returns 0.0 if no SpikingSSMBlock submodules exist (LSTM and Mamba).
     Requires that the model was previously run in eval mode without an
@@ -137,12 +149,9 @@ def count_block_sops(model: torch.nn.Module) -> float:
     inferences_max = 0.0
     for module in model.modules():
         if isinstance(module, SpikingSSMBlock):
-            in_f = float(module.out_proj.in_features)
             out_f = float(module.out_proj.out_features)
-            # Per-block per-inference structural AC count:
-            # spike_count is the cumulative count of 1-valued spike events
-            # entering out_proj; each such event triggers `out_features`
-            # accumulate operations on the downstream weights.
+            # Each emitted spike causes `out_features` accumulates downstream;
+            # spike_count is the cumulative count of 1-valued spike events.
             sops_total += float(module.spike_count) * out_f
             inferences_max = max(inferences_max, float(module.forward_inferences))
     if inferences_max == 0.0:
@@ -204,9 +213,13 @@ def estimate_energy_pJ_per_inference(
 
     total_gpu = flops_dense_full * PJ_PER_MAC_FP32
     total_sparsity = flops_post_subtraction * PJ_PER_MAC_FP32 + sops * PJ_PER_AC_FP32
-    # For SpikingForecaster as currently structured, neuromorphic ==
-    # sparsity_aware (only out_proj receives spikes). Reported separately
-    # so future architectures with deeper spike stacks can populate it.
+    # For SpikingForecaster as currently structured the only spike-input
+    # Linear is each block's out_proj; the classifier head receives a dense
+    # float vector after out_proj. Hence neuromorphic == sparsity_aware
+    # for this architecture. The two columns are reported separately so
+    # downstream tooling does not have to special-case "this model has no
+    # deeper spike stack" — when a future architecture stacks spike-input
+    # layers (e.g. spike-input fc), this branch will diverge.
     total_neuromorphic = total_sparsity
 
     return {

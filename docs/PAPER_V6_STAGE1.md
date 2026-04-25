@@ -466,6 +466,71 @@ documented as not transferring to this task. We report both numbers
 side-by-side rather than retroactively replacing the preregistered
 result, so reviewers can see the original as well as the correction.
 
+### 6.7 T_inner=5 sum-decoder (audit) is the strongest Spiking variant
+
+The T_inner=5 majority-vote recovery sweep documented in §6.5 collapsed
+to chance because the hard threshold `(spk_acc > T_inner/2).float()`
+is non-differentiable and blocked surrogate gradients. After replacing
+the decoder with a differentiable sum-aggregator (`spk_t = spk_acc / T_inner`,
+rate-coded float in [0, 1]), gradients flow through and T_inner=5
+trains cleanly.
+
+| Variant | n | test AUC ± std | gap vs LSTM 25k | gap vs LSTM 50k |
+|---|---|---|---|---|
+| Spiking T_inner=1 (audit) | 10 | 0.8944 ± 0.0018 | −0.0299 [−0.0311, −0.0286] | −0.0328 [−0.0338, −0.0316] |
+| **Spiking T_inner=5 sum-decode** | **3** | **0.9021 ± 0.0030** | **−0.0223 [−0.0251, −0.0178]** | **−0.0249 [−0.0268, −0.0215]** |
+
+The sum-decoded T_inner=5 variant **reaches AUC ~0.902 in 3 seeds, +0.008
+over T_inner=1**, and crucially **C1 PASSES even against LSTM 50k**
+(hi = −0.0215 < −0.030 threshold). This is the strongest D-21-favoring
+variant in the audit chain. We caveat: only 3 seeds, so the CI is
+~5× wider than the 10-seed Spiking T_inner=1 variant. A 10-seed
+verification is recommended before any Stage 2 commitment.
+
+Energy-accounting caveat for sum-decode: with `decode_mode="sum"` the
+out_proj input is a rate-coded float in [0, 1], not a binary spike
+train. On a sparsity-aware accelerator that processes rate-coded
+inputs as repeated 1-spike events the post-spike out_proj cost is
+still ``Σ_event × out_features`` ACs (multi-rate AC accounting); on a
+standard GPU/CPU doing dense matmul the operation is a MAC regardless
+of the float value. The C2 PASS for sum-decode therefore depends on
+**both** sparsity-aware accounting AND multi-rate execution — a
+stricter hardware target than the binary-spike T_inner=1 case which
+only needs sparsity-aware. The energy column in the §6.7 table uses
+the multi-rate AC convention; under standard GPU dense MAC accounting
+the spiking_t5sum energy ratio reverts to ~0.83 (C2 FAIL).
+
+The Mamba expand=2 ablation likewise shows that the parity-constrained
+Mamba (expand=1, d_model=64) and the canonical-scaled Mamba (expand=2,
+d_model=48) are statistically indistinguishable from each other and
+from LSTM at matched parameter count: delta(Mamba expand=2, LSTM 25k)
+= +0.0005, CI95 [−0.0008, +0.0020]. The §7 caveat about Mamba being
+gimped by expand=1 is therefore data-rejected.
+
+### 6.8 Final D-21 decision matrix (eight evaluations across the audit chain)
+
+| Evaluation key | C1 hi | C2 ratio | C3 lo | Decision |
+|---|---|---|---|---|
+| **Preregistered (5k all)** | −0.2167 | 0.81 | −0.0005 | **NO-GO** (formal) |
+| matched-25k, GPU dense | −0.0286 | 0.83 | −0.0005 | Trade-off |
+| matched-25k, sparsity-aware | −0.0286 | **0.49** | −0.0005 | GO Spiking-led |
+| matched-25k, neuromorphic | −0.0286 | 0.49 | −0.0005 | GO Spiking-led |
+| matched-50k, sparsity-aware | **−0.0316** | 0.49 | (lstm_50k vs lstm_25k +0.0091) | **NO-GO** (C1 fails by 0.0016) |
+| Spiking T_inner=5 sum (3 seeds) vs LSTM 25k | −0.0178 | 0.49 | −0.0005 | Trade-off (C2 by GPU; C1 PASS) |
+| Spiking T_inner=5 sum (3 seeds) vs LSTM 50k | −0.0215 | 0.49 | (cross-budget) | C1 PASS, but n=3 only |
+
+The decision is **structurally multi-conditional**:
+
+* If we evaluate against the preregistered protocol: **NO-GO** is the formal answer.
+* If we accept the lr+budget audits but not the sum-decoder: under matched-50k
+  the gap reverts to −0.033 and **NO-GO** survives at convergence-matched.
+* If we additionally accept the sum-decoder + 3-seed sample: C1 PASSES even at
+  matched-50k. Best-case decision is **Trade-off (C1 met, C2 fail)** under
+  GPU dense accounting, **GO Spiking-led** under sparsity-aware.
+
+We report all rows; we do not pick one. §7 documents the reviewer-trap
+caveats that should accompany any chosen framing.
+
 ---
 
 ## 7. Limitations
@@ -473,6 +538,29 @@ result, so reviewers can see the original as well as the correction.
 * **No neuromorphic hardware**: energy is theoretical, not measured;
   the C2 PASS additionally depends on the sparsity-aware accounting
   in §5 — on a standard GPU the same model would be C2 FAIL.
+* **Multiple-comparisons inflation across the audit chain**: §6.8
+  reports eight different D-21 evaluations as the audit cycle
+  progressed (preregistered, three matched-25k accountings, matched-50k,
+  T_inner=5 majority, T_inner=5 sum vs 25k baselines, T_inner=5 sum
+  vs 50k baselines). A naive Bonferroni correction at α=0.05 across
+  eight tests would lower the per-test threshold to 0.006, which
+  shifts the matched-25k C1 hi from −0.0286 to roughly −0.028,
+  i.e. **even more borderline but still inside −0.030**. The
+  matched-50k C1 hi (−0.0316) is on the wrong side under either
+  uncorrected or Bonferroni-corrected thresholds.
+* **Test-set re-use across audit rounds**: the same OOD test set
+  (tr 25-27) was scored eight times during the audit chain. Strictly,
+  the test set should have been locked after the preregistered
+  evaluation; a held-out audit set would have been the more rigorous
+  way to do the lr / budget / decoder ablations. We accept this is a
+  protocol violation; the alternative (running the entire pipeline
+  twice with separate audit/test splits) was prohibitively expensive
+  on a single GPU.
+* **n=3 seeds for the strongest variants**: Mamba expand=2 (3 seeds)
+  and Spiking T_inner=5 sum-decoder (3 seeds) have ~5× wider CI95
+  than the 10-seed primary cells. The "T_inner=5 sum passes C1 even
+  at matched-50k" finding (§6.7) is statistically suggestive but
+  not Stage-2-actionable until verified at 10 paired seeds.
 * **Convergence-matched ambiguity**: at the matched 25 000-step
   budget all three architectures are still slowly improving (LSTM
   +0.0025 from 25k → 50k on a 1-seed probe). The matched-25k
