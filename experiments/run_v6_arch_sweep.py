@@ -294,6 +294,10 @@ def main() -> None:
     parser.add_argument("--spiking-decode-mode", type=str, default=None,
                         choices=("majority", "sum"),
                         help="Spiking sub-step spike aggregation; default majority is non-differentiable for t_inner > 1, 'sum' fixes that")
+    parser.add_argument("--spiking-lif-threshold", type=float, default=None,
+                        help="Override LIF firing threshold (D-21 recovery pass); default 1.0")
+    parser.add_argument("--spiking-lif-beta", type=float, default=None,
+                        help="Override LIF leak beta (D-21 recovery pass); default 0.9")
     parser.add_argument("--early-stop-patience", type=int, default=0,
                         help="0 = no early stopping (run full --total-steps); >0 = stop after this many val_every checks without val_auc improvement")
     args = parser.parse_args()
@@ -301,6 +305,10 @@ def main() -> None:
         ARCH_REGISTRY["spiking"]["kwargs"]["t_inner"] = args.spiking_t_inner
     if args.spiking_decode_mode is not None:
         ARCH_REGISTRY["spiking"]["kwargs"]["decode_mode"] = args.spiking_decode_mode
+    if args.spiking_lif_threshold is not None:
+        ARCH_REGISTRY["spiking"]["kwargs"]["lif_threshold"] = args.spiking_lif_threshold
+    if args.spiking_lif_beta is not None:
+        ARCH_REGISTRY["spiking"]["kwargs"]["lif_beta"] = args.spiking_lif_beta
     if args.spiking_lr is not None:
         ARCH_REGISTRY["spiking"]["lr"] = args.spiking_lr
     if args.spiking_warmup_steps is not None:

@@ -134,8 +134,16 @@ def paired_bootstrap_delta_ci(cells: dict[tuple[str, int], dict],
                               arch_a: str, arch_b: str,
                               n_boot: int = 10_000,
                               ci_level: float = 0.95,
+                              n_comparisons_for_bonferroni: int = 1,
                               seed: int = 2026) -> dict:
-    """delta_auc(arch_a, arch_b) via paired bootstrap CI on per-seed deltas."""
+    """delta_auc(arch_a, arch_b) via paired bootstrap CI on per-seed deltas.
+
+    ``n_comparisons_for_bonferroni`` controls a Bonferroni-corrected CI.
+    With N comparisons, the per-test alpha is ci_level / N (e.g. for
+    family-wise 0.95 across 8 tests, per-test alpha is 0.05/8 = 0.00625
+    → CI99.375). Both the uncorrected CI and the Bonferroni-corrected CI
+    are reported in the output.
+    """
     auc_a, auc_b, seeds = _paired_aucs(cells, arch_a, arch_b)
     delta = auc_a - auc_b
     if len(delta) < 2:
@@ -144,6 +152,8 @@ def paired_bootstrap_delta_ci(cells: dict[tuple[str, int], dict],
             "delta_mean": float(delta.mean()) if len(delta) else 0.0,
             "ci_lo": None,
             "ci_hi": None,
+            "ci_lo_bonferroni": None,
+            "ci_hi_bonferroni": None,
             "wilcoxon_p": None,
             "seeds": seeds,
         }
@@ -156,6 +166,10 @@ def paired_bootstrap_delta_ci(cells: dict[tuple[str, int], dict],
     alpha = 1.0 - ci_level
     lo = float(np.percentile(boot_means, 100 * alpha / 2))
     hi = float(np.percentile(boot_means, 100 * (1 - alpha / 2)))
+    # Bonferroni-corrected CI: alpha_per_test = alpha / N_comparisons.
+    alpha_bonf = alpha / max(n_comparisons_for_bonferroni, 1)
+    lo_bonf = float(np.percentile(boot_means, 100 * alpha_bonf / 2))
+    hi_bonf = float(np.percentile(boot_means, 100 * (1 - alpha_bonf / 2)))
     # Wilcoxon as secondary diagnostic.
     try:
         wilcoxon = float(sps.wilcoxon(delta, alternative="two-sided",
@@ -168,6 +182,9 @@ def paired_bootstrap_delta_ci(cells: dict[tuple[str, int], dict],
         "delta_std": float(delta.std(ddof=1)) if n > 1 else 0.0,
         "ci_lo": lo,
         "ci_hi": hi,
+        "ci_lo_bonferroni": lo_bonf,
+        "ci_hi_bonferroni": hi_bonf,
+        "n_comparisons_for_bonferroni": int(n_comparisons_for_bonferroni),
         "wilcoxon_p": wilcoxon,
         "seeds": seeds,
     }
@@ -264,18 +281,27 @@ def render_results_md(stats: dict, deltas: dict, criteria: dict,
         )
     lines.append("")
 
-    # Paired deltas
-    lines.append("## Pairwise delta_auc with 95% paired-bootstrap CI (n_boot=10000)\n")
-    lines.append("| Comparison | n_seeds | delta mean | CI95 [lo, hi] | Wilcoxon p |")
-    lines.append("|---|---|---|---|---|")
+    # Paired deltas — uncorrected CI95 + Bonferroni-corrected.
+    n_compare_in_table = next(
+        (d.get("n_comparisons_for_bonferroni", 1) for d in deltas.values() if d), 1
+    )
+    lines.append(
+        f"## Pairwise delta_auc with 95% paired-bootstrap CI (n_boot=10000), "
+        f"and Bonferroni-corrected CI ({n_compare_in_table} comparisons)\n"
+    )
+    lines.append("| Comparison | n_seeds | delta mean | CI95 [lo, hi] | Bonferroni CI [lo, hi] | Wilcoxon p |")
+    lines.append("|---|---|---|---|---|---|")
     for (a, b), d in deltas.items():
         if d.get("ci_lo") is None:
             continue
         wilcoxon = "n/a" if d.get("wilcoxon_p") is None else f"{d['wilcoxon_p']:.4f}"
+        lo_b = d.get("ci_lo_bonferroni")
+        hi_b = d.get("ci_hi_bonferroni")
+        bonf = "n/a" if lo_b is None else f"[{lo_b:+.4f}, {hi_b:+.4f}]"
         lines.append(
             f"| {a} − {b} | {d['n_paired_seeds']} | "
             f"{d['delta_mean']:+.4f} | [{d['ci_lo']:+.4f}, {d['ci_hi']:+.4f}] | "
-            f"{wilcoxon} |"
+            f"{bonf} | {wilcoxon} |"
         )
     lines.append("")
 
@@ -338,38 +364,43 @@ def main() -> None:
         raise RuntimeError(f"No v6 cells found under {sweep_dir}")
 
     stats = per_arch_stats(cells)
-    deltas: dict[tuple[str, str], dict] = {}
-    base_pairs = [("mamba", "lstm"), ("spiking", "lstm"), ("spiking", "mamba")]
-    for a, b in base_pairs:
+    # Two-pass: first count how many delta comparisons we will compute, then
+    # use that as N for Bonferroni on each.
+    pending_pairs: list[tuple[str, str]] = []
+    for a, b in [("mamba", "lstm"), ("spiking", "lstm"), ("spiking", "mamba")]:
         if a in stats and b in stats:
-            deltas[(a, b)] = paired_bootstrap_delta_ci(cells, a, b, n_boot=args.n_boot)
-    # Recovery variant pairwise deltas (e.g., spiking_t5 vs lstm/mamba/spiking).
+            pending_pairs.append((a, b))
     for a in sorted(stats):
         if a in ("lstm", "mamba", "spiking"):
             continue
         for b in ("lstm", "mamba", "spiking"):
-            if b in stats:
-                deltas[(a, b)] = paired_bootstrap_delta_ci(cells, a, b, n_boot=args.n_boot)
-    # Matched-budget pairs (e.g. spiking_lr5e4_25k vs lstm_25k vs mamba_25k).
+            if b in stats and (a, b) not in pending_pairs:
+                pending_pairs.append((a, b))
     for a in sorted(stats):
         if a in ("lstm", "mamba", "spiking") or a.startswith(("lstm_", "mamba_")):
             continue
         for b in sorted(stats):
             if a == b:
                 continue
-            if (a, b) in deltas:
+            if (a, b) in pending_pairs:
                 continue
             if b.startswith(("lstm_", "mamba_")):
-                deltas[(a, b)] = paired_bootstrap_delta_ci(cells, a, b, n_boot=args.n_boot)
-    # Cross-budget mamba_25k vs lstm_25k.
+                pending_pairs.append((a, b))
     for a in sorted(stats):
         if not a.startswith("mamba_"):
             continue
         for b in sorted(stats):
             if not b.startswith("lstm_") or a == b:
                 continue
-            if (a, b) not in deltas:
-                deltas[(a, b)] = paired_bootstrap_delta_ci(cells, a, b, n_boot=args.n_boot)
+            if (a, b) not in pending_pairs:
+                pending_pairs.append((a, b))
+    n_compare = max(len(pending_pairs), 1)
+    deltas: dict[tuple[str, str], dict] = {}
+    for a, b in pending_pairs:
+        deltas[(a, b)] = paired_bootstrap_delta_ci(
+            cells, a, b, n_boot=args.n_boot,
+            n_comparisons_for_bonferroni=n_compare,
+        )
 
     # Evaluate D-21 against the preregistered "spiking" arch first.
     criteria_pre = evaluate_d21_criteria(stats, deltas,
