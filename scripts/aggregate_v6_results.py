@@ -413,15 +413,17 @@ def main() -> None:
     audit_keys = sorted(k for k in stats if k.startswith("spiking_") and k != "spiking_t5")
     audit_criteria: dict[str, dict] = {}
     for k in audit_keys:
-        # Decide a matched-budget LSTM/Mamba key based on the spiking suffix.
-        if "_25k" in k and "lstm_25k" in stats:
+        # Decide which LSTM/Mamba baseline to match against based on the
+        # variant's training-budget suffix.
+        is_50k = "_50k" in k
+        is_25k = (not is_50k) and ("_25k" in k or k.endswith("_lr5e4_25k") or "_t5sum" in k or "_lif_" in k)
+        if is_25k and "lstm_25k" in stats:
             audit_criteria[f"{k}_vs_5k_baselines"] = evaluate_d21_criteria(
                 stats, deltas, spiking_key=k, lstm_key="lstm", mamba_key="mamba",
             )
             audit_criteria[f"{k}_vs_25k_baselines"] = evaluate_d21_criteria(
                 stats, deltas, spiking_key=k, lstm_key="lstm_25k", mamba_key="mamba_25k",
             )
-            # Three-hardware accounting variants of the matched-25k decision.
             for hw_label, hw_field in (
                 ("gpu_dense", "energy_pJ_gpu_mean"),
                 ("sparsity_aware", "energy_pJ_sparsity_mean"),
@@ -436,6 +438,29 @@ def main() -> None:
                 audit_criteria[f"{k}_vs_50k_baselines"] = evaluate_d21_criteria(
                     stats, deltas, spiking_key=k, lstm_key="lstm_50k",
                     mamba_key=("mamba_50k" if "mamba_50k" in stats else "mamba_25k"),
+                )
+        elif is_50k and "lstm_50k" in stats:
+            # Variant trained at 50k matched budget — compare against lstm_50k
+            # / mamba_50k natively under all three hardware accountings.
+            mamba_target = "mamba_50k" if "mamba_50k" in stats else "mamba_25k"
+            audit_criteria[f"{k}_vs_50k_baselines"] = evaluate_d21_criteria(
+                stats, deltas, spiking_key=k, lstm_key="lstm_50k", mamba_key=mamba_target,
+            )
+            for hw_label, hw_field in (
+                ("gpu_dense", "energy_pJ_gpu_mean"),
+                ("sparsity_aware", "energy_pJ_sparsity_mean"),
+                ("neuromorphic", "energy_pJ_neuromorphic_mean"),
+            ):
+                audit_criteria[f"{k}_vs_50k_baselines_{hw_label}"] = evaluate_d21_criteria(
+                    stats, deltas, spiking_key=k,
+                    lstm_key="lstm_50k", mamba_key=mamba_target,
+                    energy_field=hw_field,
+                )
+            # Cross-budget reference: same Spiking variant against the 25k
+            # baseline (helpful to see if extending budget moves the gap).
+            if "lstm_25k" in stats:
+                audit_criteria[f"{k}_vs_25k_baselines"] = evaluate_d21_criteria(
+                    stats, deltas, spiking_key=k, lstm_key="lstm_25k", mamba_key="mamba_25k",
                 )
         else:
             audit_criteria[k] = evaluate_d21_criteria(stats, deltas, spiking_key=k)
