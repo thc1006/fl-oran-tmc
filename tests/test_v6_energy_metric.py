@@ -114,3 +114,45 @@ def test_estimate_energy_dense_only_model_zero_sops():
     out = estimate_energy_pJ_per_inference(model, x_cat, x_cont)
     assert out["sops"] == 0.0
     assert abs(out["total_energy_pJ"] - out["flops"] * PJ_PER_MAC_FP32) < 1e-6
+
+
+def test_post_spike_out_proj_macs_removed_from_flops():
+    """After the audit fix: the per-block out_proj MACs are subtracted from
+    the dense flops total because their input is a binary spike train.
+
+    For a SpikingForecaster with backbone_d_model=80, n_blocks=2, seq_len=5:
+        post_spike_mac_to_remove_per_inference = 80 * 80 * 5 * 2 = 64 000
+
+    A model without any SpikingSSMBlock (LSTM/Mamba) has zero post-spike
+    MACs to remove and its flops are unchanged.
+    """
+    from fl_oran.evaluation.energy_metrics import count_post_spike_mac_to_remove
+
+    spiking = SpikingForecaster(schema=_SCHEMA, task="classification", seq_len=5)
+    expected_per_inference = 80 * 80 * 5 * 2
+    measured = count_post_spike_mac_to_remove(spiking, seq_len=5)
+    assert measured == expected_per_inference, (measured, expected_per_inference)
+
+    lstm = ForecasterV2(schema=_SCHEMA, task="classification", seq_len=5)
+    assert count_post_spike_mac_to_remove(lstm, seq_len=5) == 0
+
+
+def test_corrected_spiking_energy_is_below_uncorrected():
+    """Spiking energy after the fix must be strictly less than (or equal to)
+    the energy under naive fvcore-only counting. The reduction equals the
+    post-spike out_proj MAC count (for a fully-firing spike train) minus
+    the spike-driven AC contribution that replaces it."""
+    from fl_oran.evaluation.energy_metrics import (
+        count_post_spike_mac_to_remove, PJ_PER_MAC_FP32,
+    )
+
+    spk = SpikingForecaster(schema=_SCHEMA, task="classification", seq_len=5)
+    x_cat, x_cont = _toy_inputs()
+    out = estimate_energy_pJ_per_inference(spk, x_cat, x_cont)
+    # Reconstruct what the uncorrected count would have been:
+    structural = float(count_post_spike_mac_to_remove(spk, seq_len=5))
+    uncorrected_flops = out["flops"] + structural
+    uncorrected_total = uncorrected_flops * PJ_PER_MAC_FP32
+    # Corrected total must be strictly less than uncorrected (because spike
+    # rate < 100% → AC contribution < structural × 4.6).
+    assert out["total_energy_pJ"] < uncorrected_total

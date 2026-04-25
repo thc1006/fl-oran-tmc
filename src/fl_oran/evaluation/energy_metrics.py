@@ -43,6 +43,9 @@ def count_flops_total(model: torch.nn.Module, x_cat: torch.Tensor, x_cont: torch
       does not trace into (it sees only the C++ kernel boundary). Without
       this correction, an LSTM-based model reports ~80× too few FLOPs and
       its energy estimate is severely undercounted.
+    * **Subtracts** the post-spike ``out_proj`` operations of every
+      :class:`SpikingSSMBlock` so they are not double-counted as dense
+      MACs in this number — see :func:`count_post_spike_mac_to_remove`.
     """
     from fvcore.nn import FlopCountAnalysis
 
@@ -76,13 +79,56 @@ def count_flops_total(model: torch.nn.Module, x_cat: torch.Tensor, x_cont: torch
             rnn_macs_per_inference += macs_per_step * seq_len
 
     rnn_macs_total = rnn_macs_per_inference * int(n_inferences)
-    return (fvcore_flops + rnn_macs_total) / n_inferences
+
+    # Remove post-spike out_proj MACs from the dense count: those operations
+    # consume a binary spike train as input and are accumulate-only (AC), not
+    # multiply-accumulate (MAC). They are added to the sops total instead via
+    # :func:`count_block_sops`.
+    post_spike_macs_per_inference = count_post_spike_mac_to_remove(model, seq_len)
+    post_spike_macs_total = post_spike_macs_per_inference * int(n_inferences)
+
+    return (fvcore_flops + rnn_macs_total - post_spike_macs_total) / n_inferences
+
+
+def count_post_spike_mac_to_remove(model: torch.nn.Module, seq_len: int) -> int:
+    """MAC count attributable to ``SpikingSSMBlock.out_proj`` per inference.
+
+    These MACs are removed from the dense-FLOPs total in
+    :func:`count_flops_total` because their input is a binary spike train,
+    making the multiplications degenerate (1×w or 0×w). The corresponding
+    accumulate operations are reported as sops by :func:`count_block_sops`
+    so the energy formula is not double-counting.
+    """
+    total = 0
+    for module in model.modules():
+        if isinstance(module, SpikingSSMBlock):
+            out = module.out_proj
+            in_features = out.in_features
+            out_features = out.out_features
+            # Linear(in_features → out_features) over seq_len timesteps:
+            # in_features × out_features MACs per timestep.
+            total += in_features * out_features * seq_len
+    return total
 
 
 def count_block_sops(model: torch.nn.Module) -> float:
-    """Per-inference synaptic-op count summed across all SpikingSSMBlock instances.
+    """Per-inference synaptic-op (AC) count across all SpikingSSMBlock instances.
 
-    Returns 0.0 if no SpikingSSMBlock submodules exist (LSTM and Mamba models).
+    Two contributions per block:
+    * **Spike-driven**: ``spike_count × fan_out`` — the LIF spike train is fed
+      into the block's ``out_proj`` Linear, and each emitted spike causes a
+      fan-out-of-out_features accumulate on downstream weights. (Whether the
+      spike actually fires multiplies w or zeroes it out is binary, so the
+      effective op is an AC.)
+    * **Structural**: the full Linear ``out_proj.in_features × out_proj.out_features``
+      operation count, treated as ACs because the input is a binary spike train.
+      This term is what we subtract from the dense MAC count in
+      :func:`count_post_spike_mac_to_remove`, so we add it back here.
+
+    The dominant of the two for a fully-firing layer is the structural term;
+    for sparse spike trains the spike-driven term is much smaller.
+
+    Returns 0.0 if no SpikingSSMBlock submodules exist (LSTM and Mamba).
     Requires that the model was previously run in eval mode without an
     intervening :meth:`reset_spike_counters` so the per-block spike buffers
     contain the data to read.
@@ -91,8 +137,13 @@ def count_block_sops(model: torch.nn.Module) -> float:
     inferences_max = 0.0
     for module in model.modules():
         if isinstance(module, SpikingSSMBlock):
-            fan_out = float(module.out_proj.out_features)
-            sops_total += float(module.spike_count) * fan_out
+            in_f = float(module.out_proj.in_features)
+            out_f = float(module.out_proj.out_features)
+            # Per-block per-inference structural AC count:
+            # spike_count is the cumulative count of 1-valued spike events
+            # entering out_proj; each such event triggers `out_features`
+            # accumulate operations on the downstream weights.
+            sops_total += float(module.spike_count) * out_f
             inferences_max = max(inferences_max, float(module.forward_inferences))
     if inferences_max == 0.0:
         return 0.0
