@@ -152,17 +152,22 @@ def paired_bootstrap_delta_ci(cells: dict[tuple[str, int], dict],
     }
 
 
-def evaluate_d21_criteria(stats: dict, deltas: dict, spiking_key: str = "spiking") -> dict:
+def evaluate_d21_criteria(stats: dict, deltas: dict,
+                           spiking_key: str = "spiking",
+                           lstm_key: str = "lstm",
+                           mamba_key: str = "mamba") -> dict:
     """Apply ADR-001 D-21 GO/NO-GO criteria; return result dict + flags.
 
-    ``spiking_key`` selects which Spiking variant to evaluate (default the
-    preregistered "spiking"; pass e.g. "spiking_lr5e4_25k" for the
-    post-hoc audit-corrected variant).
+    ``spiking_key`` / ``lstm_key`` / ``mamba_key`` select which variant of
+    each architecture to compare. The preregistered evaluation uses the
+    original 5k cells (``"spiking"``, ``"lstm"``, ``"mamba"``). The
+    matched-25k evaluation uses ``"spiking_lr5e4_25k"``, ``"lstm_25k"``,
+    ``"mamba_25k"`` so all three archs are at the same step budget.
     """
     spiking = stats.get(spiking_key, {})
-    lstm = stats.get("lstm", {})
-    mamba_lstm = deltas.get(("mamba", "lstm"), {})
-    spiking_lstm = deltas.get((spiking_key, "lstm"), {})
+    lstm = stats.get(lstm_key, {})
+    mamba_lstm = deltas.get((mamba_key, lstm_key), {})
+    spiking_lstm = deltas.get((spiking_key, lstm_key), {})
 
     # C1: spiking vs lstm CI95 upper bound >= -0.030
     c1_hi = spiking_lstm.get("ci_hi")
@@ -319,14 +324,48 @@ def main() -> None:
         for b in ("lstm", "mamba", "spiking"):
             if b in stats:
                 deltas[(a, b)] = paired_bootstrap_delta_ci(cells, a, b, n_boot=args.n_boot)
+    # Matched-budget pairs (e.g. spiking_lr5e4_25k vs lstm_25k vs mamba_25k).
+    for a in sorted(stats):
+        if a in ("lstm", "mamba", "spiking") or a.startswith(("lstm_", "mamba_")):
+            continue
+        for b in sorted(stats):
+            if a == b:
+                continue
+            if (a, b) in deltas:
+                continue
+            if b.startswith(("lstm_", "mamba_")):
+                deltas[(a, b)] = paired_bootstrap_delta_ci(cells, a, b, n_boot=args.n_boot)
+    # Cross-budget mamba_25k vs lstm_25k.
+    for a in sorted(stats):
+        if not a.startswith("mamba_"):
+            continue
+        for b in sorted(stats):
+            if not b.startswith("lstm_") or a == b:
+                continue
+            if (a, b) not in deltas:
+                deltas[(a, b)] = paired_bootstrap_delta_ci(cells, a, b, n_boot=args.n_boot)
 
     # Evaluate D-21 against the preregistered "spiking" arch first.
-    criteria_pre = evaluate_d21_criteria(stats, deltas, spiking_key="spiking")
+    criteria_pre = evaluate_d21_criteria(stats, deltas,
+                                          spiking_key="spiking",
+                                          lstm_key="lstm",
+                                          mamba_key="mamba")
     # If a post-hoc audit variant is present, evaluate it as well.
+    # For each audit-spiking variant, also evaluate against the matched-budget
+    # LSTM/Mamba baseline if available (lstm_25k, mamba_25k).
     audit_keys = sorted(k for k in stats if k.startswith("spiking_") and k != "spiking_t5")
     audit_criteria: dict[str, dict] = {}
     for k in audit_keys:
-        audit_criteria[k] = evaluate_d21_criteria(stats, deltas, spiking_key=k)
+        # Decide a matched-budget LSTM/Mamba key based on the spiking suffix.
+        if "_25k" in k and "lstm_25k" in stats:
+            audit_criteria[f"{k}_vs_5k_baselines"] = evaluate_d21_criteria(
+                stats, deltas, spiking_key=k, lstm_key="lstm", mamba_key="mamba",
+            )
+            audit_criteria[f"{k}_vs_25k_baselines"] = evaluate_d21_criteria(
+                stats, deltas, spiking_key=k, lstm_key="lstm_25k", mamba_key="mamba_25k",
+            )
+        else:
+            audit_criteria[k] = evaluate_d21_criteria(stats, deltas, spiking_key=k)
 
     out_md = Path(args.out_md)
     out_json = Path(args.out_json)
