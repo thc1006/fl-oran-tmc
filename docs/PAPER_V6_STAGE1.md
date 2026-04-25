@@ -204,28 +204,44 @@ time-major last-step activation as in the LSTM and Mamba paths.
 ## 5. Energy estimation protocol
 
 We do not deploy on neuromorphic hardware. The energy numbers reported
-here are **theoretical** under the Horowitz 2014 45 nm CMOS coefficients
-(`pJ_per_MAC_FP32 = 4.6`, `pJ_per_AC_FP32 = 0.9`). They serve as an
-**upper bound** on the energy a deployed system might achieve.
+here are **theoretical**, under the Horowitz 2014 45 nm CMOS coefficients
+(`pJ_per_MAC_FP32 = 4.6`, `pJ_per_AC_FP32 = 0.9`). The accounting choice
+between MAC and AC for each operation is **hardware-target specific**:
 
-For each architecture we measure, **per single inference**:
+* **GPU / dense matmul accelerator** (worst case for spiking): the
+  hardware multiplies regardless of input value, so every Linear
+  operation is a MAC including those whose input is a binary spike
+  train. Under this accounting `Spiking energy ratio ≈ 0.80` and
+  C2 (energy ≤ 50% of LSTM) **FAILS**.
+* **Sparsity-aware accelerator** (e.g. Loihi-2-style): the hardware
+  detects 0-spikes and skips the multiplication, so post-spike
+  Linear ops cost only `Σ_actual_spikes × fan_out` accumulate
+  operations. Under this accounting `Spiking energy ratio ≈ 0.49`
+  and C2 **PASSES**.
 
-* `flops` = MAC count over the entire forward pass, computed via
-  `fvcore.nn.FlopCountAnalysis` plus a hand-counted contribution for
-  `nn.LSTM` modules (which fvcore does not trace into the C++ kernel
-  for). Without the LSTM correction, the LSTM energy estimate is ~80×
-  too low and the energy comparison becomes meaningless.
+We adopt the sparsity-aware accounting in the headline numbers because
+the spiking-SSM motivation is energy efficiency on accelerators where
+sparsity is exploitable. **Stage 1 paper §6.4's "GO Spiking-led"
+decision is conditional on this hardware target.** A reader targeting
+GPU-only inference should read the comparison as "C1 PASS, C2 FAIL,
+decision = trade-off study" instead.
+
+Per single inference, we measure:
+
+* `flops` = MAC count over the dense path: `fvcore.nn.FlopCountAnalysis`
+  for traceable layers, **plus** hand-counted MACs for `nn.LSTM` /
+  `nn.GRU` modules (which fvcore does not trace through the C++
+  kernel; without this correction LSTM is undercounted by ~80×),
+  **minus** the structural-Linear MACs of every `SpikingSSMBlock`'s
+  `out_proj` (which receives spikes and is accounted as AC under
+  the sparsity-aware model).
 * `sops` = synaptic operations = `Σ_block (spike_count_block ×
-  out_proj.out_features)`, summed over `SpikingSSMBlock` instances
-  only. Zero for LSTM and Mamba models.
+  out_proj.out_features)` — the actual spike-driven AC count.
+  Zero for LSTM and Mamba.
 * `total_energy_pJ = flops × 4.6 + sops × 0.9`.
 
-Limitation: the fvcore FLOPs term double-counts `out_proj` operations
-in `SpikingForecaster`, since their input is binary and the operation
-is truly accumulate-only. The reported `total_energy_pJ` is therefore
-an **upper bound** on Spiking energy. We additionally report
-`backbone_only_energy_ratio` so reviewers can audit the dense vs
-spike contribution split.
+The hand-counted LSTM correction and the post-spike out_proj
+subtraction are tested in `tests/test_v6_energy_metric.py`.
 
 ---
 
@@ -321,40 +337,50 @@ AND C2 fail (energy advantage < 2×)", Stage 2 is reframed as a
 2 percentage points at ~80% of LSTM energy, on a 5000-step training
 budget for LSTM/Mamba and 25 000-step for Spiking.
 
-#### Caveat: matched-budget sensitivity
+#### Caveat: matched-budget sensitivity (final, 10 paired seeds)
 
-The "Spiking − LSTM" gap of −0.0208 used in the audit row above
-compares LSTM trained for 5 000 steps against Spiking trained for
-25 000 steps. A single-seed (s=42) probe of LSTM and Mamba **also**
-trained for 25 000 steps shows that the dense backbones are
-themselves not fully converged at 5 000 steps:
+The "Spiking − LSTM" gap of −0.0208 reported in the table compares
+LSTM trained for 5 000 steps against Spiking trained for 25 000
+steps. A 10-seed audit at lr=5e-4 / 25 000 steps for **all three**
+backbones (matched effective budget) gives:
 
-| Arch (seed=42) | 5 000-step test AUC | 25 000-step test AUC | Δ |
-|---|---|---|---|
-| LSTM | 0.9152 | 0.9244 | +0.0092 |
-| Mamba | 0.9148 | 0.9240 | +0.0092 |
-| Spiking (lr=5e-4) | 0.8370 | 0.8935 | +0.0565 |
+| Arch (n=10 seeds) | mean test AUC ± std | step budget |
+|---|---|---|
+| LSTM (5 000 steps) | 0.9151 ± 0.0010 | preregistered §3.3 |
+| LSTM (25 000 steps, audit) | 0.9249 ± 0.0006 | matched-25k |
+| Mamba (5 000 steps) | 0.9153 ± 0.0008 | preregistered §3.3 |
+| Mamba (25 000 steps, audit) | 0.9241 ± 0.0010 | matched-25k |
+| Spiking, audit (25 000 steps) | 0.8944 ± 0.0018 | matched-25k |
 
-Under a properly matched 25 000-step budget for **all three** archs
-on seed=42:
+| Pairing (10 paired seeds, paired-bootstrap CI95) | delta | hi |
+|---|---|---|
+| LSTM (25k) − LSTM (5k) | +0.0091 | +0.0097 |
+| Mamba (25k) − Mamba (5k) | +0.0089 | +0.0094 |
+| Spiking (audit) − LSTM (25k) | −0.0299 | **−0.0286** |
+| Spiking (audit) − Mamba (25k) | −0.0292 | −0.0280 |
 
-  delta(Spiking − LSTM)  = 0.8935 − 0.9244 = −0.0309
-  delta(Spiking − Mamba) = 0.8935 − 0.9240 = −0.0305
+The matched-25k C1 hi of **−0.0286** is **inside** the −0.030
+threshold by 1.4 thousandths, robust to seed (CI95 width 0.0025).
+However: a single-seed LSTM probe at 50 000 steps gives test AUC
+**0.9269** (+0.0025 over 25k) — i.e. **the dense backbones are
+still climbing slowly at 25k**. Extrapolating to 50k matched
+budget, the gap widens to about −0.033, putting the comparison
+**just outside** the C1 threshold.
 
-This straddles the C1 −0.030 threshold. The "comfortable PASS"
-implied by the −0.0208 single-budget number above is therefore
-sensitive to the budget choice. A multi-seed verification
-(n=3 LSTM_25k + n=3 Mamba_25k) is in progress at the time of this
-revision and will be folded in once complete; until then the more
-conservative position is **"borderline C1, decision sensitive to
-budget framing"**, and we report both budget framings rather than
-picking one.
+Two defensible interpretations:
 
-Pragmatically: Spiking-SSM under the corrected hyperparameters is
-within 2-3 percentage points of LSTM on this task, with a clear
-energy benefit on theoretical pJ counting; whether C1 strictly
-passes under matched-25k is a budget-framing question, not an
-architectural one.
+* **"Matched at practical training budget" (25k)**: convergence
+  has decelerated for all three backbones; the comparison reflects
+  what a practitioner would actually train. C1 PASSES (hi = −0.0286).
+* **"Matched at full convergence" (50k+)**: LSTM and Mamba have
+  more room to grow than Spiking; at full convergence the gap
+  widens to ~3.3 pp. C1 FAILS by a hair.
+
+We report the borderline matched-25k decision (PASS) as the headline
+because it represents a defensible practical training budget, but we
+explicitly flag the convergence-sensitivity in §7 Limitations and
+recommend that any deployment claim retest at the actual production
+training budget rather than assume the matched-25k result transfers.
 
 ### 6.5 Recovery HPO at T_inner=5 (per ADR D-21 C2 row, "one HPO pass")
 
@@ -444,19 +470,47 @@ result, so reviewers can see the original as well as the correction.
 
 ## 7. Limitations
 
-* **No neuromorphic hardware**: energy is theoretical upper bound, not
-  measured. Deployed Spiking-SSM energy on Loihi-2 / Truenorth would
-  realise the savings only after additional engineering.
-* **Centralized only**: this short paper does not extend to a federated
-  setting. The Stage 2 follow-up (conditional on the GO/NO-GO outcome
-  recorded in our ADR) integrates the chosen primary backbone with
-  the existing 7-algorithm FL registry on the same dataset.
-* **`T_inner=1`** (one LIF integration per sequence position) trades
-  off accuracy for compute. Recovery HPO with `T_inner=5` is part of
-  S1-W3 if the C1 accuracy criterion is not met at `T_inner=1`.
+* **No neuromorphic hardware**: energy is theoretical, not measured;
+  the C2 PASS additionally depends on the sparsity-aware accounting
+  in §5 — on a standard GPU the same model would be C2 FAIL.
+* **Convergence-matched ambiguity**: at the matched 25 000-step
+  budget all three architectures are still slowly improving (LSTM
+  +0.0025 from 25k → 50k on a 1-seed probe). The matched-25k
+  C1 PASS (hi = −0.0286, threshold −0.030) holds by 1.4 thousandths;
+  at extrapolated 50k matched the gap widens to ~0.033 and C1
+  marginally FAILS. The decision at "convergence-matched" is therefore
+  sensitive to the choice of training budget; we recommend any
+  deployment reproduce at the actual production training budget.
+* **Mamba `expand=1`**: chosen for ±10% parameter parity with the
+  baselines. Literature Mamba uses `expand=2`; our Mamba is
+  capacity-constrained vs the canonical Mamba-S6 design. The
+  "Mamba ≈ LSTM" finding is therefore conservative — a less
+  parity-constrained Mamba might outperform LSTM on this task.
+* **Centralized only**: this short paper does not extend to a
+  federated setting. The Stage 2 follow-up (conditional on the
+  GO/NO-GO outcome recorded in our ADR) integrates the chosen
+  primary backbone with the existing 7-algorithm FL registry on
+  the same dataset.
+* **Pre-registered Spiking hyperparameters were too conservative**:
+  the original lr=1e-4 / 5000 steps gave a misleading 24-pp gap;
+  see §6.6 for the post-hoc audit that corrected the comparison
+  to the headline 2-3 pp gap. We report both rows for transparency.
+* **`T_inner=1`** (one LIF integration per sequence position) is the
+  preregistered configuration. The `T_inner=5` recovery sweep
+  (§6.5) failed because the majority-vote decoder we preregistered
+  blocks gradient flow through a non-differentiable threshold; sum
+  decoding or soft-OR would unblock it but is out of scope here.
+* **Tiny target leakage at split boundaries**: the
+  `add_classification_target` shifts within `(run_id, slice_id)`
+  groups before the OOD `tr` filter is applied, so the last row of
+  each (run_id, slice_id) trajectory in train holds a target
+  computed from the first val row's `ul_bler`. This affects ~0.01%
+  of rows and is below the noise floor of all measured AUC
+  differences, but it is a real boundary leakage that future
+  pipeline revisions should fix.
 * **ColO-RAN simulator**: while the dataset is widely used as a
   cellular benchmark, it is not real-network telemetry. Future work
-  on Colosseum-collected real-time traces would strengthen the claim.
+  on real-time RAN traces would strengthen the claim.
 
 ---
 
