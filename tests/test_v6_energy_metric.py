@@ -137,6 +137,45 @@ def test_post_spike_out_proj_macs_removed_from_flops():
     assert count_post_spike_mac_to_remove(lstm, seq_len=5) == 0
 
 
+def test_post_spike_mac_count_uses_d_inner_under_expand():
+    """When SpikingSSMBlock has expand>1, count_post_spike_mac_to_remove
+    must read the actual out_proj.in_features (= d_inner), not assume
+    d_model. With backbone_d_model=56, backbone_expand=2 the d_inner
+    is 112 and out_proj is Linear(112 → 56)."""
+    from fl_oran.evaluation.energy_metrics import count_post_spike_mac_to_remove
+
+    spk_e1 = SpikingForecaster(
+        schema=_SCHEMA, task="classification", seq_len=5,
+        backbone_d_model=56, backbone_expand=1,
+    )
+    spk_e2 = SpikingForecaster(
+        schema=_SCHEMA, task="classification", seq_len=5,
+        backbone_d_model=56, backbone_expand=2,
+    )
+
+    # expand=1: in=56, out=56, seq_len=5, n_blocks=2 → 56×56×5×2 = 31360
+    assert count_post_spike_mac_to_remove(spk_e1, seq_len=5) == 56 * 56 * 5 * 2
+    # expand=2: in=112, out=56, seq_len=5, n_blocks=2 → 112×56×5×2 = 62720
+    assert count_post_spike_mac_to_remove(spk_e2, seq_len=5) == 112 * 56 * 5 * 2
+
+
+def test_estimate_energy_with_expand2_runs_without_crash():
+    """end-to-end energy estimation must not crash for SpikingForecaster expand=2."""
+    spk = SpikingForecaster(
+        schema=_SCHEMA, task="classification", seq_len=5,
+        backbone_d_model=56, backbone_expand=2,
+    )
+    x_cat, x_cont = _toy_inputs()
+    out = estimate_energy_pJ_per_inference(spk, x_cat, x_cont)
+    # Sanity: all keys present and finite.
+    for key in ("flops", "sops", "total_energy_pJ",
+                "total_energy_pJ_gpu_dense",
+                "total_energy_pJ_sparsity_aware",
+                "total_energy_pJ_neuromorphic"):
+        assert key in out
+        assert out[key] >= 0
+
+
 def test_corrected_spiking_energy_is_below_uncorrected():
     """Spiking energy after the fix must be strictly less than (or equal to)
     the energy under naive fvcore-only counting. The reduction equals the

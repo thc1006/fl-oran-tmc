@@ -253,9 +253,13 @@ def main() -> None:
     if pynvml is None:
         log.error("pynvml is not installed; run `uv pip install pynvml`")
         return
-    pynvml.nvmlInit()
-    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-    name = pynvml.nvmlDeviceGetName(handle)
+    try:
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        name = pynvml.nvmlDeviceGetName(handle)
+    except pynvml.NVMLError as exc:
+        log.error("NVML init failed (no NVIDIA driver or no GPU?): %s", exc)
+        return
     log.info("NVML init: GPU 0 = %s", name)
 
     # Attempt to lock GPU clock for reproducible per-cell timing/energy.
@@ -327,8 +331,12 @@ def main() -> None:
         model = ctor(schema=schema, task="classification", seq_len=cfg.seq_len, **kwargs)
 
         best_state_path = cell_dir / "best_state.pt"
-        if best_state_path.exists():
-            model.load_state_dict(torch.load(best_state_path, map_location="cpu", weights_only=True))
+        if not best_state_path.exists():
+            log.warning("[%s s=%d %s] no best_state.pt — SKIPPING (refusing to "
+                        "measure a randomly-initialised model)",
+                        arch_base, seed, suffix or "-")
+            continue
+        model.load_state_dict(torch.load(best_state_path, map_location="cpu", weights_only=True))
         model = model.cuda().eval()
 
         if use_energy_api:
