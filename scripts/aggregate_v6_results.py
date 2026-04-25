@@ -216,12 +216,20 @@ def render_results_md(stats: dict, deltas: dict, criteria: dict) -> str:
     c1 = criteria["C1_accuracy_gap_spiking_vs_lstm"]
     c2 = criteria["C2_energy_ratio_spiking_vs_lstm"]
     c3 = criteria["C3_mamba_arm_healthy"]
-    lines.append(f"- **C1 Spiking accuracy vs LSTM** (CI95 upper bound ≥ -0.030): "
-                  f"hi = {c1['ci95'][1]} → **{'PASS' if c1['pass'] else 'FAIL'}**")
-    lines.append(f"- **C2 Spiking energy ratio ≤ 0.5**: ratio = {c2['ratio']:.4f if c2['ratio'] else 'n/a'} "
-                  f"→ **{'PASS' if c2['pass'] else 'FAIL'}**")
-    lines.append(f"- **C3 Mamba arm healthy** (CI95 lower bound ≥ -0.030): "
-                  f"lo = {c3['ci95'][0]} → **{'PASS' if c3['pass'] else 'FAIL'}**")
+    def _fmt(value):
+        return "n/a" if value is None else f"{value:.4f}"
+    lines.append(
+        f"- **C1 Spiking accuracy vs LSTM** (CI95 upper bound ≥ -0.030): "
+        f"hi = {_fmt(c1['ci95'][1])} → **{'PASS' if c1['pass'] else 'FAIL'}**"
+    )
+    lines.append(
+        f"- **C2 Spiking energy ratio ≤ 0.5**: ratio = {_fmt(c2['ratio'])} "
+        f"→ **{'PASS' if c2['pass'] else 'FAIL'}**"
+    )
+    lines.append(
+        f"- **C3 Mamba arm healthy** (CI95 lower bound ≥ -0.030): "
+        f"lo = {_fmt(c3['ci95'][0])} → **{'PASS' if c3['pass'] else 'FAIL'}**"
+    )
     lines.append("")
     lines.append(f"### Decision: **{criteria['decision']}**\n")
     return "\n".join(lines)
