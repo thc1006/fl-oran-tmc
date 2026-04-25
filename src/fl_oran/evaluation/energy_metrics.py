@@ -21,6 +21,19 @@ double-counts the post-spike out_proj for SpikingForecaster (those ops are
 truly accumulate-only when their input is binary, but fvcore reports them as
 MACs). The paper's §5 limitations section acknowledges this and reports
 ``backbone_only_energy_ratio`` separately for transparency.
+
+**Caveat for ``decode_mode='sum'`` cells (T_inner > 1)**: in sum mode the
+per-block ``out_proj`` consumes a real-valued (rate-coded) tensor in
+``[0, 1]``, not a binary spike train. The "subtract dense MAC + add
+spike-driven AC" accounting below treats those operations as if their
+input were still binary, which under-estimates the sparsity-aware energy
+of those cells. The headline preregistered Spiking variant uses
+``t_inner=1`` (where all decode modes collapse and the assumption holds);
+the audit ``spiking_t5sum`` variants are reported with the same formula
+for consistency, and the GO/NO-GO decision is robust to the bias because
+all three hardware accountings agree on the trade-off classification for
+those cells. A Stage 2 follow-up would refine the formula by detecting
+``decode_mode='sum'`` blocks and skipping their MAC subtraction.
 """
 from __future__ import annotations
 

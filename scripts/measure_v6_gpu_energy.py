@@ -55,7 +55,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
+import traceback
 from pathlib import Path
 
 import numpy as np
@@ -69,6 +71,14 @@ from fl_oran.models.forecaster_v2 import ForecasterV2
 from fl_oran.models.mamba_forecaster import MambaForecaster
 from fl_oran.models.spiking_forecaster import SpikingForecaster
 from fl_oran.training.centralized_v3 import V3Config, _load_and_prepare
+
+# Local helper (single source of truth shared with recompute_v6_energy.py).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _v6_cell_metadata import (  # noqa: E402
+    atomic_write_text,
+    build_kwargs_from_suffix,
+    parse_cell_dir as _shared_parse_cell_dir,
+)
 
 log = get_logger(__name__)
 
@@ -90,84 +100,34 @@ def _try_import_pynvml():
 
 
 def _parse_cell_dir(name: str) -> tuple[str, int, str]:
-    """Returns (arch_base, seed, suffix). Mirrors aggregator parser.
+    """Wrapper around :func:`_v6_cell_metadata.parse_cell_dir`.
 
-    The cell-name convention is ``<arch>_s<seed>[_<suffix>]`` and the
-    parser splits on the first ``_s`` substring. **This is fragile**:
-    any future arch name containing ``_s`` (e.g. ``spiking_skip``)
-    would mis-parse. Today all archs in :data:`ARCH_CTOR` are
-    ``_s``-free in the prefix; we validate that as a defensive check.
+    Kept as a private name so existing imports (and the orchestrator
+    log style) continue to work. The implementation lives in
+    ``scripts/_v6_cell_metadata.py`` and is shared with
+    ``recompute_v6_energy.py``.
     """
-    # Defensive: refuse arch names that would corrupt the partition.
-    for known_arch in ARCH_CTOR:
-        if "_s" in known_arch:
-            raise ValueError(
-                f"ARCH_CTOR contains arch {known_arch!r} with '_s' substring; "
-                f"_parse_cell_dir would misparse cell names. Rename the arch."
-            )
-    arch, _, rest = name.partition("_s")
-    seed_part, _, suffix = rest.partition("_")
-    return arch, int(seed_part), suffix
-
-
-def _runner_arch_registry() -> dict:
-    """Single source of truth for per-arch constructor kwargs.
-
-    Imports ARCH_REGISTRY from the runner module so that the kwargs used
-    to train a cell and the kwargs used to reconstruct it for energy
-    measurement cannot drift out of sync. If the runner changes a default
-    (e.g. backbone_d_model for spiking_expand2), the measurement script
-    automatically inherits the change.
-    """
-    import sys
-    runner_path = Path(__file__).resolve().parents[1] / "experiments"
-    if str(runner_path) not in sys.path:
-        sys.path.insert(0, str(runner_path))
-    from run_v6_arch_sweep import ARCH_REGISTRY  # type: ignore[import-not-found]
-    return ARCH_REGISTRY
+    return _shared_parse_cell_dir(name)
 
 
 def _build_kwargs_from_suffix(arch_base: str, suffix: str) -> dict:
-    """Reconstruct the kwargs the cell was trained with.
-
-    The base kwargs come from the runner's ARCH_REGISTRY (so we cannot
-    drift from training-time defaults). Suffix-encoded overrides
-    (``_t5``, ``_t5sum``, ``_lif_t05_b09``) are then applied.
-    """
-    registry = _runner_arch_registry()
-    if arch_base not in registry:
-        # Fall back to empty kwargs (constructor defaults) for unknown archs.
-        kwargs: dict = {}
-    else:
-        kwargs = dict(registry[arch_base].get("kwargs", {}))
-
-    if arch_base in ("spiking", "spiking_expand2"):
-        # Suffix-encoded recovery overrides on top of registry defaults.
-        if "t5sum" in suffix:
-            kwargs["t_inner"] = 5
-            kwargs["decode_mode"] = "sum"
-        elif "t5" in suffix:
-            kwargs["t_inner"] = 5
-        if "lif_t" in suffix:
-            try:
-                t_str = suffix.split("lif_t")[1].split("_")[0]
-                kwargs["lif_threshold"] = int(t_str) / 10.0
-            except (IndexError, ValueError):
-                pass
-            try:
-                b_str = suffix.split("_b")[-1].split("_")[0]
-                if len(b_str) == 2:
-                    kwargs["lif_beta"] = int(b_str) / 10.0
-                elif len(b_str) == 3:
-                    kwargs["lif_beta"] = int(b_str) / 100.0
-            except (IndexError, ValueError):
-                pass
-    return kwargs
+    """Wrapper around :func:`_v6_cell_metadata.build_kwargs_from_suffix`."""
+    return build_kwargs_from_suffix(arch_base, suffix)
 
 
 def _measure_energy_api(handle, pynvml, model, x_cat_gpu, x_cont_gpu,
                         n_inferences: int, batch_size: int, idle_w: float):
-    """Use NVML Energy API (Volta+) for hardware-counted total energy."""
+    """Use NVML Energy API (Volta+) for hardware-counted total energy.
+
+    Wallclock-timing caveat: ``torch.cuda.synchronize()`` is called after
+    every batch so the energy counter delta is correctly attributed to
+    finished work. This serialises GPU execution and yields a wallclock
+    that is **slower** than production async inference (which overlaps
+    kernel queueing with kernel execution). The energy/inference reported
+    here is therefore an **upper bound** on the energy a real deployment
+    would see for the same model. We accept this in exchange for
+    measurement determinism.
+    """
     n_batches = n_inferences // batch_size
     # Warmup (cuDNN heuristic + memory layout)
     with torch.no_grad():
@@ -251,8 +211,16 @@ def _measure_poll_api(handle, pynvml, model, x_cat_gpu, x_cont_gpu,
 
 
 def _measure_idle_wattage(handle, pynvml, seconds: float = 1.0,
-                           sample_hz: float = 10.0) -> float:
-    samples = []
+                           sample_hz: float = 10.0) -> tuple[float, int]:
+    """Returns ``(mean_wattage_W, n_samples)``.
+
+    The caller MUST inspect ``n_samples`` — when NVML's power query is
+    unsupported on a particular GPU/driver combo, ``samples`` ends up
+    empty and the wattage defaults to 0. Silently using 0 as the idle
+    baseline would attribute ALL measured energy (including the ~15 W
+    idle floor) to the model and over-count its energy by 30-50 %.
+    """
+    samples: list[float] = []
     period = 1.0 / sample_hz
     end = time.time() + seconds
     while time.time() < end:
@@ -262,7 +230,7 @@ def _measure_idle_wattage(handle, pynvml, seconds: float = 1.0,
         except pynvml.NVMLError:
             pass
         time.sleep(period)
-    return float(np.mean(samples)) if samples else 0.0
+    return (float(np.mean(samples)) if samples else 0.0, len(samples))
 
 
 def main() -> None:
@@ -277,19 +245,43 @@ def main() -> None:
                         help="optional cap for testing")
     parser.add_argument("--cell-glob", type=str, default="*_s*",
                         help="glob to filter which cells to measure (default all)")
+    parser.add_argument("--force", action="store_true",
+                        help="re-measure cells that already have an "
+                             "energy_measured.json (skipped by default — "
+                             "the measurement loop is the slow part of "
+                             "Tier A.2 so we don't redo it on rerun)")
     args = parser.parse_args()
+
+    # Hard requirement: PyTorch must see CUDA. NVML can succeed on a
+    # headless CPU-only host where torch.cuda.is_available()==False, and
+    # we need .cuda() below — fail loudly here rather than after data
+    # loading wastes 30s.
+    if not torch.cuda.is_available():
+        log.error("torch.cuda.is_available() is False — this script needs a "
+                  "CUDA device. Aborting.")
+        sys.exit(2)
+    # Guard against an operator picking --n-inferences < --batch-size, which
+    # gives n_batches=0 and a downstream ZeroDivisionError in pJ-per-inf
+    # computation.
+    if args.n_inferences // args.batch_size <= 0:
+        log.error(
+            "--n-inferences (%d) must be at least --batch-size (%d) to "
+            "produce at least one full batch.",
+            args.n_inferences, args.batch_size,
+        )
+        sys.exit(2)
 
     pynvml = _try_import_pynvml()
     if pynvml is None:
         log.error("pynvml is not installed; run `uv pip install pynvml`")
-        return
+        sys.exit(2)
     try:
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         name = pynvml.nvmlDeviceGetName(handle)
     except pynvml.NVMLError as exc:
         log.error("NVML init failed (no NVIDIA driver or no GPU?): %s", exc)
-        return
+        sys.exit(2)
     log.info("NVML init: GPU 0 = %s", name)
 
     # Attempt to lock GPU clock for reproducible per-cell timing/energy.
@@ -316,9 +308,32 @@ def main() -> None:
         log.warning("Energy API unavailable (%s); falling back to polling.", exc)
         use_energy_api = False
 
-    # Sample idle wattage as a baseline.
-    idle_w = _measure_idle_wattage(handle, pynvml, seconds=2.0, sample_hz=args.sample_hz)
-    log.info("Idle wattage baseline: %.1f W", idle_w)
+    # Sample idle wattage as a baseline. Validate the GPU is actually idle
+    # at startup — if some other process is using it, our "idle" reading is
+    # contaminated and the model_attributable_mJ subtraction undercounts
+    # model energy.
+    idle_w, idle_n_samples = _measure_idle_wattage(
+        handle, pynvml, seconds=2.0, sample_hz=args.sample_hz,
+    )
+    log.info("Idle wattage baseline: %.1f W (%d samples)", idle_w, idle_n_samples)
+    if idle_n_samples == 0:
+        log.warning(
+            "Idle wattage sampling returned 0 samples — NVML power query is "
+            "likely unsupported on this GPU/driver. idle_w defaults to 0 W, "
+            "which means ALL energy will be attributed to the model and "
+            "over-count its true cost by ~30-50%% (the GPU's idle floor).",
+        )
+    # On RTX 4080 idle is typically ~15-20 W. Anything > 50 W means the GPU
+    # is doing something else (driver telemetry, another process, a
+    # not-fully-released CUDA context). Warn loudly so the operator notices.
+    if idle_w > 50.0:
+        log.warning(
+            "Idle wattage %.1f W is anomalously high (>50 W threshold); "
+            "another process may be using the GPU. The model-attributable "
+            "energy subtraction will UNDERCOUNT real model energy by an "
+            "amount proportional to (idle_w − true_idle) × wallclock.",
+            idle_w,
+        )
 
     # Load data once for inference inputs.
     cfg = V3Config(
@@ -347,84 +362,137 @@ def main() -> None:
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+    n_measured = 0
+    n_skipped_already = 0
+    n_skipped_no_state = 0
+    n_skipped_unknown = 0
+    n_failed = 0
+
     for cell_dir in cell_dirs:
         try:
             arch_base, seed, suffix = _parse_cell_dir(cell_dir.name)
-        except (ValueError, IndexError):
-            log.warning("skip un-parseable cell name: %s", cell_dir.name)
+        except (ValueError, IndexError) as exc:
+            log.warning("skip un-parseable cell %s (%s)", cell_dir.name, exc)
+            n_skipped_unknown += 1
             continue
         if arch_base not in ARCH_CTOR:
             log.warning("skip unknown arch %s in %s", arch_base, cell_dir)
+            n_skipped_unknown += 1
             continue
-        kwargs = _build_kwargs_from_suffix(arch_base, suffix)
-        ctor = ARCH_CTOR[arch_base]
-        model = ctor(schema=schema, task="classification", seq_len=cfg.seq_len, **kwargs)
+
+        out_path = cell_dir / "energy_measured.json"
+        if out_path.exists() and not args.force:
+            log.info("[%s s=%d %s] energy_measured.json already exists; "
+                     "skipping (use --force to remeasure)",
+                     arch_base, seed, suffix or "-")
+            n_skipped_already += 1
+            continue
 
         best_state_path = cell_dir / "best_state.pt"
         if not best_state_path.exists():
             log.warning("[%s s=%d %s] no best_state.pt — SKIPPING (refusing to "
                         "measure a randomly-initialised model)",
                         arch_base, seed, suffix or "-")
+            n_skipped_no_state += 1
             continue
-        model.load_state_dict(torch.load(best_state_path, map_location="cpu", weights_only=True))
-        model = model.cuda().eval()
 
-        if use_energy_api:
-            stats = _measure_energy_api(
-                handle, pynvml, model, x_cat_gpu, x_cont_gpu,
-                args.n_inferences, args.batch_size, idle_w,
+        try:
+            kwargs = _build_kwargs_from_suffix(arch_base, suffix)
+            ctor = ARCH_CTOR[arch_base]
+            model = ctor(schema=schema, task="classification",
+                         seq_len=cfg.seq_len, **kwargs)
+            model.load_state_dict(
+                torch.load(best_state_path, map_location="cpu", weights_only=True)
             )
-        else:
-            stats = _measure_poll_api(
-                handle, pynvml, model, x_cat_gpu, x_cont_gpu,
-                args.n_inferences, args.batch_size, args.sample_hz,
-            )
+            model = model.cuda().eval()
 
-        # Cross-reference theoretical energy from existing energy.json.
-        theoretical = {}
-        e_path = cell_dir / "energy.json"
-        if e_path.exists():
+            if use_energy_api:
+                stats = _measure_energy_api(
+                    handle, pynvml, model, x_cat_gpu, x_cont_gpu,
+                    args.n_inferences, args.batch_size, idle_w,
+                )
+            else:
+                stats = _measure_poll_api(
+                    handle, pynvml, model, x_cat_gpu, x_cont_gpu,
+                    args.n_inferences, args.batch_size, args.sample_hz,
+                )
+
+            # Cross-reference theoretical energy from existing energy.json.
+            theoretical = {}
+            e_path = cell_dir / "energy.json"
+            if e_path.exists():
+                try:
+                    e_dict = json.loads(e_path.read_text())
+                    theoretical = {
+                        "energy_pJ_per_inference_theoretical_sparsity_aware":
+                            e_dict.get("total_energy_pJ_sparsity_aware",
+                                       e_dict.get("total_energy_pJ", 0.0)),
+                        "energy_pJ_per_inference_theoretical_gpu_dense":
+                            e_dict.get("total_energy_pJ_gpu_dense",
+                                       e_dict.get("total_energy_pJ", 0.0)),
+                    }
+                except json.JSONDecodeError:
+                    pass
+            out = {
+                "arch_base": arch_base,
+                "seed": seed,
+                "suffix": suffix,
+                "gpu_name": name if isinstance(name, str) else name.decode(
+                    "utf-8", errors="replace"
+                ),
+                "idle_wattage_W": idle_w,
+                "gpu_clock_locked": clock_locked,
+                **stats,
+                **theoretical,
+            }
+            if "energy_pJ_per_inference_theoretical_sparsity_aware" in out and \
+                    out.get("energy_pJ_per_inference_total"):
+                out["ratio_measured_to_theoretical_sparsity"] = (
+                    out["energy_pJ_per_inference_total"] /
+                    out["energy_pJ_per_inference_theoretical_sparsity_aware"]
+                )
+            if "energy_pJ_per_inference_theoretical_gpu_dense" in out and \
+                    out.get("energy_pJ_per_inference_total"):
+                out["ratio_measured_to_theoretical_gpu_dense"] = (
+                    out["energy_pJ_per_inference_total"] /
+                    out["energy_pJ_per_inference_theoretical_gpu_dense"]
+                )
+
+            atomic_write_text(out_path, json.dumps(out, indent=2))
+            log.info(
+                "[%s s=%d %s] measured=%.2e pJ/inf  theoretical_sparsity=%.2e  "
+                "ratio=%.0fx",
+                arch_base, seed, suffix or "-",
+                out.get("energy_pJ_per_inference_total", 0.0),
+                out.get("energy_pJ_per_inference_theoretical_sparsity_aware", 0.0),
+                out.get("ratio_measured_to_theoretical_sparsity", 0.0),
+            )
+            n_measured += 1
+        except Exception as exc:
+            # Per-cell error isolation: one bad cell (state-dict mismatch,
+            # OOM, etc.) must not abort the whole 150-cell sweep.
+            log.error("[%s s=%d %s] measurement FAILED: %s\n%s",
+                      arch_base, seed, suffix or "-", exc,
+                      traceback.format_exc())
+            n_failed += 1
+            # Free GPU memory before continuing to the next cell.
             try:
-                e_dict = json.loads(e_path.read_text())
-                theoretical = {
-                    "energy_pJ_per_inference_theoretical_sparsity_aware":
-                        e_dict.get("total_energy_pJ_sparsity_aware",
-                                    e_dict.get("total_energy_pJ", 0.0)),
-                    "energy_pJ_per_inference_theoretical_gpu_dense":
-                        e_dict.get("total_energy_pJ_gpu_dense",
-                                    e_dict.get("total_energy_pJ", 0.0)),
-                }
-            except json.JSONDecodeError:
+                del model
+            except UnboundLocalError:
                 pass
-        out = {
-            "arch_base": arch_base,
-            "seed": seed,
-            "suffix": suffix,
-            "gpu_name": name if isinstance(name, str) else name.decode("utf-8", errors="replace"),
-            "idle_wattage_W": idle_w,
-            "gpu_clock_locked": clock_locked,
-            **stats,
-            **theoretical,
-        }
-        if "energy_pJ_per_inference_theoretical_sparsity_aware" in out and out.get("energy_pJ_per_inference_total"):
-            out["ratio_measured_to_theoretical_sparsity"] = (
-                out["energy_pJ_per_inference_total"] /
-                out["energy_pJ_per_inference_theoretical_sparsity_aware"]
-            )
-        if "energy_pJ_per_inference_theoretical_gpu_dense" in out and out.get("energy_pJ_per_inference_total"):
-            out["ratio_measured_to_theoretical_gpu_dense"] = (
-                out["energy_pJ_per_inference_total"] /
-                out["energy_pJ_per_inference_theoretical_gpu_dense"]
-            )
+            torch.cuda.empty_cache()
+            continue
 
-        (cell_dir / "energy_measured.json").write_text(json.dumps(out, indent=2))
-        log.info("[%s s=%d %s] measured=%.2e pJ/inf  theoretical_sparsity=%.2e  ratio=%.0fx",
-                 arch_base, seed, suffix or "-",
-                 out.get("energy_pJ_per_inference_total", 0.0),
-                 out.get("energy_pJ_per_inference_theoretical_sparsity_aware", 0.0),
-                 out.get("ratio_measured_to_theoretical_sparsity", 0.0))
+    log.info(
+        "measurement summary: measured=%d skipped_already=%d "
+        "skipped_no_state=%d skipped_unknown=%d failed=%d",
+        n_measured, n_skipped_already, n_skipped_no_state,
+        n_skipped_unknown, n_failed,
+    )
 
     # Release any clock lock so subsequent users don't inherit the lock.
+    # `try/finally` is intentionally outside the cell loop — even if every
+    # cell crashed we still want the clock lock released.
     if clock_locked:
         try:
             pynvml.nvmlDeviceResetGpuLockedClocks(handle)
@@ -432,6 +500,10 @@ def main() -> None:
         except (pynvml.NVMLError, AttributeError):
             pass
     pynvml.nvmlShutdown()
+
+    if n_failed:
+        # Signal failure to the orchestrator (set -e).
+        sys.exit(1)
 
 
 if __name__ == "__main__":

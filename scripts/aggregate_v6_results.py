@@ -42,7 +42,13 @@ def _parse_cell_name(name: str) -> tuple[str, int]:
 
 
 def load_cells(sweep_dir: Path) -> dict[tuple[str, int], dict]:
-    """Read every ``<arch>_s<seed>[_<suffix>]/summary.json`` + ``energy.json``."""
+    """Read every ``<arch>_s<seed>[_<suffix>]/summary.json`` + ``energy.json``.
+
+    Defensive: a single corrupt ``summary.json`` (e.g. half-written by a
+    runner that was SIGKILLed mid-write) must NOT crash the whole
+    aggregation pipeline. We log the cell and skip it; the operator can
+    decide to re-train that seed.
+    """
     cells: dict[tuple[str, int], dict] = {}
     for cell_dir in sorted(sweep_dir.glob("*_s*")):
         if not cell_dir.is_dir():
@@ -51,15 +57,28 @@ def load_cells(sweep_dir: Path) -> dict[tuple[str, int], dict]:
         energy_path = cell_dir / "energy.json"
         if not summary_path.exists():
             continue
-        summary = json.loads(summary_path.read_text())
+        try:
+            summary = json.loads(summary_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"warning: skipping {cell_dir.name} — summary.json unreadable ({exc})")
+            continue
         if energy_path.exists():
-            summary["energy"] = json.loads(energy_path.read_text())
+            try:
+                summary["energy"] = json.loads(energy_path.read_text())
+            except (json.JSONDecodeError, OSError) as exc:
+                print(f"warning: {cell_dir.name} — energy.json unreadable "
+                      f"({exc}); proceeding with empty energy")
+                summary["energy"] = {}
         else:
             summary["energy"] = {}
         # Re-derive (arch_label, seed) from the directory name so that
         # recovery sweeps with the same arch + seed but a non-empty
         # output_suffix do not collide with main-sweep cells.
-        arch_label, seed = _parse_cell_name(cell_dir.name)
+        try:
+            arch_label, seed = _parse_cell_name(cell_dir.name)
+        except ValueError as exc:
+            print(f"warning: skipping {cell_dir.name} — un-parseable name ({exc})")
+            continue
         # Override the arch field to match the directory-derived label
         # (so per_arch_stats and pairwise deltas key on it).
         summary["arch"] = arch_label
@@ -225,12 +244,18 @@ def evaluate_d21_criteria(stats: dict, deltas: dict,
     c3_lo = mamba_lstm.get("ci_lo")
     c3_pass = c3_lo is not None and c3_lo >= -0.030
 
+    # Mamba-led fallback: requires Mamba significantly outperforms LSTM,
+    # i.e. CI lower bound > +0.005. Coerce missing-CI (n_paired_seeds<2)
+    # to a guard value so the comparison does not raise TypeError on None.
+    mamba_lo_raw = mamba_lstm.get("ci_lo")
+    mamba_lo_for_fallback = mamba_lo_raw if mamba_lo_raw is not None else -1.0
+
     decision = "NO-GO Stage 2"
     if c1_pass and c2_pass and c3_pass:
         decision = "GO Stage 2: Spiking-led"
     elif c1_pass and (not c2_pass) and c3_pass:
         decision = "GO Stage 2: Trade-off study (C1 met, C2 fail)"
-    elif (not c1_pass) and c3_pass and mamba_lstm.get("ci_lo", -1) > 0.005:
+    elif (not c1_pass) and c3_pass and mamba_lo_for_fallback > 0.005:
         decision = "GO Stage 2: Mamba-led fallback"
 
     return {
@@ -410,6 +435,13 @@ def main() -> None:
     # If a post-hoc audit variant is present, evaluate it as well.
     # For each audit-spiking variant, also evaluate against the matched-budget
     # LSTM/Mamba baseline if available (lstm_25k, mamba_25k).
+    #
+    # ``spiking_t5`` (the early decode_mode="majority" / t_inner=5 variant)
+    # is intentionally excluded because its hand-tuned encoder threshold
+    # produced an effectively-zero spike rate, so it is no longer a useful
+    # comparison point — the recovery work that replaced it lives under
+    # ``spiking_t5sum`` (decode_mode="sum") and ``spiking_lr5e4_25k``. Other
+    # ``spiking_*`` variants are kept.
     audit_keys = sorted(k for k in stats if k.startswith("spiking_") and k != "spiking_t5")
     audit_criteria: dict[str, dict] = {}
     for k in audit_keys:
