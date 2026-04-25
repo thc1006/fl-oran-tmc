@@ -28,10 +28,17 @@ python experiments/run_moon_hpo.py --seed 42 --alpha 0.5 --mus 0.1 0.5 1.0 5.0 1
 python scripts/aggregate_v5_results.py     # rebuilds RESULTS_V5.md from cells
 ./scripts/run_full_sweep.sh                # 150 cells, ~2 h 53 min — DONE, do not re-run
 
-# Stage 1 — to be written in S1-W1/W2 per ADR-001 D-20:
-# python experiments/run_v6_arch_sweep.py --arch lstm,mamba,spiking --seeds 42,0,1,2,3,7,11,13,17,23
-# python scripts/aggregate_v6_results.py    # produces RESULTS_V6_STAGE1.md + bootstrap-CI plots
-# pytest tests/test_v6_*.py                 # 8 v6 tests; see ADR-001 D-20 TDD plan
+# Stage 1 (S1-W2 main sweep, per ADR-001 D-20):
+python experiments/run_v6_arch_sweep.py --arch lstm,mamba,spiking \
+  --seeds 42,0,1,2,3,7,11,13,17,23 --total-steps 5000 \
+  --val-every 250 --sample-ratio 1.0
+# Stage 1 (S1-W3 D-21 recovery if Spiking C1 fails — T_inner=5):
+python experiments/run_v6_arch_sweep.py --arch spiking \
+  --seeds 42,0,1,2,3,7,11,13,17,23 --total-steps 5000 \
+  --spiking-t-inner 5 --output-suffix _t5
+# Stage 1 aggregator + paper-grade markdown:
+python scripts/aggregate_v6_results.py    # → docs/RESULTS_V6_STAGE1.md + aggregated.json
+pytest tests/test_v6_*.py --no-cov         # 35 v6 tests; see ADR-001 D-20 TDD plan
 ```
 
 Hardware: single RTX 4080, 16 GiB VRAM, Ubuntu 24.04, Python 3.12.3, PyTorch 2.10 + CUDA 12.8.
