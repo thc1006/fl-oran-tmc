@@ -75,6 +75,49 @@ def test_spiking_forecaster_gradient_flows_through_surrogate():
     assert grads_total > 0, "no gradient flowed back through the spiking blocks"
 
 
+def test_spiking_expand2_param_count_and_shape():
+    """SpikingForecaster with backbone_expand=2 must have d_inner = 2 × d_model
+    inside every block, the output shape is unchanged at (B, 1), and the param
+    count grows roughly linearly with d_inner.
+
+    Per ARCH_REGISTRY["spiking_expand2"] the d_model is shrunk to 56 so the
+    total param count lands within ±10% of the LSTM baseline.
+    """
+    from fl_oran.models.spiking_forecaster import SpikingForecaster
+
+    schema = _make_schema()
+    x_cat, x_cont, _ = _make_inputs()
+
+    # expand=1 baseline (default).
+    m1 = SpikingForecaster(
+        schema=schema, task="classification", seq_len=5,
+        backbone_d_model=56, backbone_expand=1,
+    )
+    out1 = m1(x_cat, x_cont)
+    assert out1.shape == (4, 1)
+    for blk in m1.blocks:
+        assert blk.d_inner == 56  # expand=1 → d_inner == d_model
+
+    # expand=2 — internal d_inner doubles.
+    m2 = SpikingForecaster(
+        schema=schema, task="classification", seq_len=5,
+        backbone_d_model=56, backbone_expand=2,
+    )
+    out2 = m2(x_cat, x_cont)
+    assert out2.shape == (4, 1)
+    for blk in m2.blocks:
+        assert blk.d_inner == 112  # 56 × 2 = 112
+        assert blk.A_log.shape == (112, blk.d_state)
+        assert blk.B.shape == (112, blk.d_state)
+        assert blk.out_proj.in_features == 112
+        assert blk.out_proj.out_features == 56
+
+    # expand=2 should have more params than expand=1 (same d_model).
+    n1 = sum(p.numel() for p in m1.parameters() if p.requires_grad)
+    n2 = sum(p.numel() for p in m2.parameters() if p.requires_grad)
+    assert n2 > n1
+
+
 def test_decode_mode_sum_preserves_gradient_at_t_inner_5():
     """The audit-corrected sum-decoder must keep gradient flowing for T_inner > 1.
 

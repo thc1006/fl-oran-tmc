@@ -59,6 +59,7 @@ class SpikingSSMBlock(nn.Module):
         atan_alpha: float = 2.0,
         t_inner: int = 1,
         decode_mode: str = "majority",
+        expand: int = 1,
     ) -> None:
         super().__init__()
         if t_inner < 1:
@@ -68,27 +69,33 @@ class SpikingSSMBlock(nn.Module):
                 f"decode_mode must be one of {{'majority', 'sum', 'soft_or'}}, "
                 f"got {decode_mode!r}"
             )
+        if expand < 1:
+            raise ValueError(f"expand must be >= 1, got {expand}")
         self.d_model = d_model
         self.d_state = d_state
+        self.d_inner = expand * d_model
         self.lif_threshold = lif_threshold
         self.lif_beta = lif_beta
         self.t_inner = t_inner
         self.decode_mode = decode_mode
+        self.expand = expand
 
-        # Input projection (in-tree, used as the SSM "B@x" input gate).
-        self.in_proj = nn.Linear(d_model, d_model)
-        # Diagonal SSM A matrix per channel (stable: A = -exp(A_log)).
+        # Input projection: d_model → d_inner (mirrors Mamba's expand pattern;
+        # for expand=1 this is the identity-shape path that the original
+        # SpikingSSMBlock used).
+        self.in_proj = nn.Linear(d_model, self.d_inner)
+        # Diagonal SSM A matrix per **expanded** channel (stable: A = -exp(A_log)).
         # Initialise with the S4D-Real ramp so all eigenvalues are negative.
         A_init = torch.arange(1, d_state + 1, dtype=torch.float32).unsqueeze(0)
-        A_init = A_init.expand(d_model, -1).contiguous()
+        A_init = A_init.expand(self.d_inner, -1).contiguous()
         self.A_log = nn.Parameter(torch.log(A_init))
-        # B and C are learnable (d_model, d_state), initialised small.
-        self.B = nn.Parameter(torch.randn(d_model, d_state) * 0.02)
-        self.C = nn.Parameter(torch.randn(d_model, d_state) * 0.02)
-        # Per-channel skip path.
-        self.D = nn.Parameter(torch.ones(d_model))
-        # Output projection from the spike train back to d_model.
-        self.out_proj = nn.Linear(d_model, d_model)
+        # B and C are learnable (d_inner, d_state), initialised small.
+        self.B = nn.Parameter(torch.randn(self.d_inner, d_state) * 0.02)
+        self.C = nn.Parameter(torch.randn(self.d_inner, d_state) * 0.02)
+        # Per-channel skip path (size d_inner).
+        self.D = nn.Parameter(torch.ones(self.d_inner))
+        # Output projection from the spike train back to d_model (d_inner → d_model).
+        self.out_proj = nn.Linear(self.d_inner, d_model)
 
         # LIF neuron (stateless module; state is passed explicitly).
         self.lif = snn.Leaky(
@@ -106,12 +113,17 @@ class SpikingSSMBlock(nn.Module):
         self.forward_inferences.zero_()
 
     def _scan_emit_spikes(self, x: torch.Tensor) -> torch.Tensor:
-        """Run the SSM scan and return the spike train ``(B, L, d_model)``."""
+        """Run the SSM scan and return the spike train ``(B, L, d_model)``.
+
+        Internally the scan operates in ``d_inner = expand × d_model``
+        channel space; the spike train is projected back to ``d_model``
+        by the caller via ``self.out_proj``.
+        """
         b, length, _ = x.shape
-        u = self.in_proj(x)                                  # (B, L, d_model)
-        A = -torch.exp(self.A_log)                           # (d_model, d_state)
+        u = self.in_proj(x)                                  # (B, L, d_inner)
+        A = -torch.exp(self.A_log)                           # (d_inner, d_state)
         dA = torch.exp(A)                                    # dt=1 → exp(A)
-        h = u.new_zeros(b, self.d_model, self.d_state)
+        h = u.new_zeros(b, self.d_inner, self.d_state)
         # snntorch's init_leaky returns 0 (scalar); broadcasting handles shape.
         mem = self.lif.init_leaky()
 
@@ -200,6 +212,7 @@ class SpikingForecaster(nn.Module):
         atan_alpha: float = 2.0,
         t_inner: int = 1,
         decode_mode: str = "majority",
+        backbone_expand: int = 1,
         fc_hidden: int = 64,
         out_proj_dim: int = 32,
         dropout: float = 0.0,
@@ -237,6 +250,7 @@ class SpikingForecaster(nn.Module):
                 atan_alpha=atan_alpha,
                 t_inner=t_inner,
                 decode_mode=decode_mode,
+                expand=backbone_expand,
             )
             for _ in range(n_blocks)
         ])

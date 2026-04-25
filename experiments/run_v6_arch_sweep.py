@@ -84,6 +84,17 @@ ARCH_REGISTRY = {
         "weight_decay": 0.0,
         "kwargs": {"t_inner": 1},  # tuned defaults: backbone_d_model=80, n_blocks=2, dropout=0
     },
+    "spiking_expand2": {
+        # Tier B.2 ablation: tests whether SSM-style channel expansion
+        # helps the Spiking arm the way it would Mamba. d_model shrunk
+        # to 56 to satisfy the ±10% parity constraint with LSTM 44k:
+        # 56 × expand=2 = 112 d_inner channels, total ~43.6K params.
+        "ctor": SpikingForecaster,
+        "lr": 5e-4,
+        "warmup_steps": 750,
+        "weight_decay": 0.0,
+        "kwargs": {"backbone_d_model": 56, "backbone_expand": 2, "t_inner": 1},
+    },
 }
 
 
