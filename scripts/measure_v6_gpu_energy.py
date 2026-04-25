@@ -90,48 +90,78 @@ def _try_import_pynvml():
 
 
 def _parse_cell_dir(name: str) -> tuple[str, int, str]:
-    """Returns (arch_base, seed, suffix). Mirrors aggregator parser."""
+    """Returns (arch_base, seed, suffix). Mirrors aggregator parser.
+
+    The cell-name convention is ``<arch>_s<seed>[_<suffix>]`` and the
+    parser splits on the first ``_s`` substring. **This is fragile**:
+    any future arch name containing ``_s`` (e.g. ``spiking_skip``)
+    would mis-parse. Today all archs in :data:`ARCH_CTOR` are
+    ``_s``-free in the prefix; we validate that as a defensive check.
+    """
+    # Defensive: refuse arch names that would corrupt the partition.
+    for known_arch in ARCH_CTOR:
+        if "_s" in known_arch:
+            raise ValueError(
+                f"ARCH_CTOR contains arch {known_arch!r} with '_s' substring; "
+                f"_parse_cell_dir would misparse cell names. Rename the arch."
+            )
     arch, _, rest = name.partition("_s")
     seed_part, _, suffix = rest.partition("_")
     return arch, int(seed_part), suffix
 
 
+def _runner_arch_registry() -> dict:
+    """Single source of truth for per-arch constructor kwargs.
+
+    Imports ARCH_REGISTRY from the runner module so that the kwargs used
+    to train a cell and the kwargs used to reconstruct it for energy
+    measurement cannot drift out of sync. If the runner changes a default
+    (e.g. backbone_d_model for spiking_expand2), the measurement script
+    automatically inherits the change.
+    """
+    import sys
+    runner_path = Path(__file__).resolve().parents[1] / "experiments"
+    if str(runner_path) not in sys.path:
+        sys.path.insert(0, str(runner_path))
+    from run_v6_arch_sweep import ARCH_REGISTRY  # type: ignore[import-not-found]
+    return ARCH_REGISTRY
+
+
 def _build_kwargs_from_suffix(arch_base: str, suffix: str) -> dict:
-    """Reconstruct the kwargs the cell was trained with from its suffix."""
-    kwargs: dict = {}
-    if arch_base == "spiking":
-        if "t5" in suffix:
-            kwargs["t_inner"] = 5
+    """Reconstruct the kwargs the cell was trained with.
+
+    The base kwargs come from the runner's ARCH_REGISTRY (so we cannot
+    drift from training-time defaults). Suffix-encoded overrides
+    (``_t5``, ``_t5sum``, ``_lif_t05_b09``) are then applied.
+    """
+    registry = _runner_arch_registry()
+    if arch_base not in registry:
+        # Fall back to empty kwargs (constructor defaults) for unknown archs.
+        kwargs: dict = {}
+    else:
+        kwargs = dict(registry[arch_base].get("kwargs", {}))
+
+    if arch_base in ("spiking", "spiking_expand2"):
+        # Suffix-encoded recovery overrides on top of registry defaults.
         if "t5sum" in suffix:
             kwargs["t_inner"] = 5
             kwargs["decode_mode"] = "sum"
-        # LIF threshold/beta from suffixes like "lif_t05_b09".
+        elif "t5" in suffix:
+            kwargs["t_inner"] = 5
         if "lif_t" in suffix:
             try:
                 t_str = suffix.split("lif_t")[1].split("_")[0]
                 kwargs["lif_threshold"] = int(t_str) / 10.0
             except (IndexError, ValueError):
                 pass
-        if "_b" in suffix and "lif_t" in suffix:
             try:
                 b_str = suffix.split("_b")[-1].split("_")[0]
-                # b05 → 0.5, b09 → 0.9, b099 → 0.99
                 if len(b_str) == 2:
                     kwargs["lif_beta"] = int(b_str) / 10.0
                 elif len(b_str) == 3:
                     kwargs["lif_beta"] = int(b_str) / 100.0
             except (IndexError, ValueError):
                 pass
-    if arch_base == "mamba_expand2":
-        # Hardcoded to match ARCH_REGISTRY["mamba_expand2"] in
-        # experiments/run_v6_arch_sweep.py. If that registry entry
-        # changes, this must change too.
-        kwargs.update({"backbone_d_model": 48, "backbone_expand": 2, "n_blocks": 2})
-    if arch_base == "spiking_expand2":
-        # Mirrors ARCH_REGISTRY["spiking_expand2"]: d_model=56, expand=2, t_inner=1
-        # gives ~43.6K params (-2.2% vs LSTM). Cell-trained kwargs are recovered
-        # here exactly so the loaded best_state.pt has matching shapes.
-        kwargs.update({"backbone_d_model": 56, "backbone_expand": 2, "t_inner": 1})
     return kwargs
 
 
