@@ -414,9 +414,18 @@ def main() -> None:
     audit_criteria: dict[str, dict] = {}
     for k in audit_keys:
         # Decide which LSTM/Mamba baseline to match against based on the
-        # variant's training-budget suffix.
+        # variant's training-budget suffix. **Note**: every Tier-A/B
+        # audit variant is trained at the 25k audit regime unless its
+        # name explicitly carries a budget suffix (`_50k`, etc.). The
+        # generic `_expand2` ablation falls into the 25k bucket.
         is_50k = "_50k" in k
-        is_25k = (not is_50k) and ("_25k" in k or k.endswith("_lr5e4_25k") or "_t5sum" in k or "_lif_" in k)
+        is_25k = (not is_50k) and (
+            "_25k" in k
+            or k.endswith("_lr5e4_25k")
+            or "_t5sum" in k
+            or "_lif_" in k
+            or "_expand2" in k
+        )
         if is_25k and "lstm_25k" in stats:
             audit_criteria[f"{k}_vs_5k_baselines"] = evaluate_d21_criteria(
                 stats, deltas, spiking_key=k, lstm_key="lstm", mamba_key="mamba",
@@ -438,6 +447,12 @@ def main() -> None:
                 audit_criteria[f"{k}_vs_50k_baselines"] = evaluate_d21_criteria(
                     stats, deltas, spiking_key=k, lstm_key="lstm_50k",
                     mamba_key=("mamba_50k" if "mamba_50k" in stats else "mamba_25k"),
+                )
+            if "lstm_100k" in stats:
+                audit_criteria[f"{k}_vs_100k_baselines"] = evaluate_d21_criteria(
+                    stats, deltas, spiking_key=k, lstm_key="lstm_100k",
+                    mamba_key=("mamba_100k" if "mamba_100k" in stats else
+                                ("mamba_50k" if "mamba_50k" in stats else "mamba_25k")),
                 )
         elif is_50k and "lstm_50k" in stats:
             # Variant trained at 50k matched budget — compare against lstm_50k
@@ -461,6 +476,15 @@ def main() -> None:
             if "lstm_25k" in stats:
                 audit_criteria[f"{k}_vs_25k_baselines"] = evaluate_d21_criteria(
                     stats, deltas, spiking_key=k, lstm_key="lstm_25k", mamba_key="mamba_25k",
+                )
+            # Tier A.1 (100k matched): if 100k baselines exist, also report
+            # the cross-budget comparison. Same Spiking variant trained at
+            # 50k vs LSTM/Mamba trained at 100k is unfair to LSTM/Mamba but
+            # useful as a sensitivity diagnostic.
+            if "lstm_100k" in stats:
+                mamba_100k = "mamba_100k" if "mamba_100k" in stats else mamba_target
+                audit_criteria[f"{k}_vs_100k_baselines"] = evaluate_d21_criteria(
+                    stats, deltas, spiking_key=k, lstm_key="lstm_100k", mamba_key=mamba_100k,
                 )
         else:
             audit_criteria[k] = evaluate_d21_criteria(stats, deltas, spiking_key=k)
