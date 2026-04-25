@@ -57,12 +57,16 @@ class SpikingSSMBlock(nn.Module):
         lif_threshold: float = 1.0,
         lif_beta: float = 0.9,
         atan_alpha: float = 2.0,
+        t_inner: int = 1,
     ) -> None:
         super().__init__()
+        if t_inner < 1:
+            raise ValueError(f"t_inner must be >= 1, got {t_inner}")
         self.d_model = d_model
         self.d_state = d_state
         self.lif_threshold = lif_threshold
         self.lif_beta = lif_beta
+        self.t_inner = t_inner
 
         # Input projection (in-tree, used as the SSM "B@x" input gate).
         self.in_proj = nn.Linear(d_model, d_model)
@@ -110,13 +114,29 @@ class SpikingSSMBlock(nn.Module):
             h = dA.unsqueeze(0) * h + self.B.unsqueeze(0) * u[:, t, :].unsqueeze(-1)
             # SSM output: y[b,e] = sum_n C[e,n] * h[b,e,n] + D[e] * u[b,e].
             y_t = (h * self.C.unsqueeze(0)).sum(dim=-1) + self.D.unsqueeze(0) * u[:, t, :]
-            spk_t, mem = self.lif(y_t, mem)
+
+            # Inner-rate-coding LIF integration (t_inner LIF calls per sequence position).
+            # For the default t_inner=1 the loop body executes exactly once and
+            # spk_t is the LIF output of a single y_t presentation.
+            spk_acc = None
+            for _ in range(self.t_inner):
+                spk_step, mem = self.lif(y_t, mem)
+                spk_acc = spk_step if spk_acc is None else spk_acc + spk_step
+                if not self.training:
+                    self.spike_count = self.spike_count + spk_step.sum().detach()
+            # Reduce to a single spike vector for this sequence position by
+            # taking the (binary) majority across the t_inner sub-steps. For
+            # t_inner=1 this is exactly spk_step. For t_inner > 1 the output
+            # is 1 if at least half of the inner steps fired.
+            if self.t_inner == 1:
+                spk_t = spk_acc
+            else:
+                threshold = self.t_inner / 2.0
+                spk_t = (spk_acc > threshold).float()
             spike_outputs.append(spk_t)
 
-            # Energy bookkeeping (eval-mode only; detached so no graph effect).
             if not self.training:
-                self.spike_count = self.spike_count + spk_t.sum().detach()
-                # one inference per row in the batch.
+                # one inference per row in the batch (per outer sequence position).
                 self.forward_inferences = self.forward_inferences + float(b) / length
         return torch.stack(spike_outputs, dim=1)
 
@@ -145,6 +165,7 @@ class SpikingForecaster(nn.Module):
         lif_threshold: float = 1.0,
         lif_beta: float = 0.9,
         atan_alpha: float = 2.0,
+        t_inner: int = 1,
         fc_hidden: int = 64,
         out_proj_dim: int = 32,
         dropout: float = 0.0,
@@ -180,6 +201,7 @@ class SpikingForecaster(nn.Module):
                 lif_threshold=lif_threshold,
                 lif_beta=lif_beta,
                 atan_alpha=atan_alpha,
+                t_inner=t_inner,
             )
             for _ in range(n_blocks)
         ])

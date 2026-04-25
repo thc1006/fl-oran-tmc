@@ -71,7 +71,7 @@ ARCH_REGISTRY = {
         "lr": 1e-4,
         "warmup_steps": 1250,
         "weight_decay": 0.0,
-        "kwargs": {},  # tuned defaults: backbone_d_model=80, n_blocks=2, dropout=0
+        "kwargs": {"t_inner": 1},  # tuned defaults: backbone_d_model=80, n_blocks=2, dropout=0
     },
 }
 
@@ -239,7 +239,8 @@ def run_cell(arch: str, seed: int, cfg: V3Config, df, schema, device: torch.devi
         },
     }
 
-    cell_dir = output_dir / f"{arch}_s{seed}"
+    suffix = ARCH_REGISTRY[arch].get("output_suffix", "")
+    cell_dir = output_dir / f"{arch}_s{seed}{suffix}"
     cell_dir.mkdir(parents=True, exist_ok=True)
     (cell_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
     (cell_dir / "history.csv").write_text(
@@ -271,7 +272,16 @@ def main() -> None:
     parser.add_argument("--unified-parquet", type=str,
                         default="data/coloran_raw_unified.parquet")
     parser.add_argument("--val-every", type=int, default=100)
+    parser.add_argument("--spiking-t-inner", type=int, default=1,
+                        help="LIF integrations per sequence position for SpikingSSMBlock (D-21 recovery: try 5)")
+    parser.add_argument("--output-suffix", type=str, default="",
+                        help="optional suffix appended to per-cell directory name to keep recovery runs separate")
     args = parser.parse_args()
+    if args.spiking_t_inner != 1:
+        ARCH_REGISTRY["spiking"]["kwargs"]["t_inner"] = args.spiking_t_inner
+    if args.output_suffix:
+        for arch_cfg in ARCH_REGISTRY.values():
+            arch_cfg["output_suffix"] = args.output_suffix
 
     archs = [a.strip() for a in args.arch.split(",") if a.strip()]
     seeds = [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
