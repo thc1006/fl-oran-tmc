@@ -271,13 +271,39 @@ not warranted because the Mamba−LSTM CI95 lower bound (−0.0005) does
 not exceed the +0.005 threshold required for "Mamba significantly
 outperforms LSTM".
 
-### 6.5 Recovery HPO at T_inner=5 (per D-21 C2 row, "one HPO pass")
+### 6.5 Recovery HPO at T_inner=5 (per ADR D-21 C2 row, "one HPO pass")
 
 We additionally ran a 10-seed sweep of `SpikingForecaster` at
 T_inner=5 (five LIF integrations per outer sequence position with
-majority-vote spike decoding). [Numbers to be inserted from the
-T_inner=5 sweep when complete; expectation per ADR is partial
-recovery toward Mamba but well outside the 0.030 threshold.]
+majority-vote spike decoding: spike emitted only when ≥ 3 of the 5
+sub-step LIF neurons fire). The aim was to give the spiking model
+more temporal resolution per outer step in case 5 timesteps were
+the binding constraint.
+
+| Variant | n | test AUC (mean ± std) | sops/inf | energy_pJ/inf |
+|---|---|---|---|---|
+| Spiking T_inner=1 (main) | 10 | 0.6757 ± 0.0354 | 36 064 | 7.80e+05 |
+| Spiking T_inner=5 (recovery) | 10 | 0.5002 ± 0.0003 | 13 306 | 7.60e+05 |
+
+`delta_auc(T_inner=5, T_inner=1)` = −0.1755 (CI95 [−0.1982, −0.1565],
+Wilcoxon p = 0.002). The recovery is **worse** than the baseline:
+the majority-vote decoding at T_inner=5 collapses the spike train to
+near-zero output (sops drops from 36 k to 13 k) because the
+`snntorch.Leaky` reset_delay=True semantics produce alternating
+spike-non-spike patterns at saturated inputs, and a strict ≥ 3-of-5
+majority requires three same-step spikes which essentially never
+occur. Effective AUC therefore stays at chance (0.5).
+
+**This is itself a small implementation finding, not an architectural
+verdict on T_inner > 1**: a sum-decoding (rate-coded float in
+[0, T_inner]) or any-fired decoding (OR over sub-steps) would not
+collapse, and might recover some accuracy. We document the failure
+honestly here rather than retroactively re-design the decoding —
+ADR D-21 explicitly preregistered "one HPO pass", which we have done.
+
+The substantive D-21 conclusion does not move: even an optimistic
+0.10-AUC recovery from any decoding fix would land Spiking at ~0.78,
+still 13 percentage points below LSTM and far outside the C1 threshold.
 
 ---
 
