@@ -36,7 +36,7 @@ T0=$(date +%s)
     --algo-spec 'fedadam:{"server_lr": 0.01, "bias_correction": true}' \
     --algo-spec 'scaffold:{}' \
     --algo-spec 'feddyn:{"alpha": 0.01}' \
-    --algo-spec 'moon:{"mu": 1.0, "tau": 0.5}' \
+    --algo-spec 'moon:{"mu": 0.1, "tau": 1.0}' \
     2>&1 | tee "$LOG_DIR/matrix.log"
 
 TOTAL=$(( $(date +%s) - T0 ))
