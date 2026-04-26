@@ -1,0 +1,74 @@
+# Phase 2 minimum-viable FL Stage 2 sweep specification.
+#
+# Per ADR-001 D-22 + project_v5_state.md (TODO order line 117-122):
+#   3 archs × 2 algorithms × 2 partitions × 3 seeds = 36 cells
+#   estimated ~10 min/cell on RTX 4080 (matching M5's pure-LSTM throughput
+#   plus pure-PyTorch Mamba/Spiking overhead) → ~6 hr GPU total.
+#
+# Decision rationale (recap, do not re-litigate):
+#   * MOON deferred entirely per ADR D-22 — encode_fn for non-LSTM archs
+#     is an open paper-level design question. Including MOON here would
+#     cause fl_v7._select_algorithm to raise NotImplementedError on
+#     2/3 of the (algo, arch) cells.
+#   * 3 seeds (down from Stage 1's 10) is the minimum for paired-CI95
+#     direction at all; full Stage 2 will bump to 10 if Phase 2 minimum
+#     results justify the GPU budget.
+#   * Dirichlet α=0.5 only (not the full 5-alpha grid) — Phase 2 minimum
+#     answers "does fl_v7 work end-to-end on production parquet" first,
+#     then Phase 2 polish expands the alpha sweep.
+#
+# Loader contract: scripts/_v7_spec_loader.py
+#   spec = load_spec(this_file)
+#   validate_spec(spec)                # raises if malformed
+#   cells = expand_spec(spec)          # → list[dict] (V7Config kwargs)
+#                                      # len(cells) == len(archs) ×
+#                                      #   len(algorithms) ×
+#                                      #   len(partitions) × len(seeds)
+
+description: Phase 2 minimum-viable FL Stage 2 sweep (36 cells, ~6 hr GPU)
+adr_reference: ADR-001 D-22
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - fedavg
+  - fedprox
+  # MOON intentionally absent — per ADR D-22, deferred to Phase 2 polish.
+
+partitions:
+  - mode: iid
+    n_clients: 7        # documented; iid mode partitions by bs_id and ignores this
+  - mode: dirichlet
+    alpha: 0.5
+    n_clients: 7
+
+seeds: [42, 0, 1]
+
+# Per-cell shared hyperparameters (mirror fl_v5's M5 baseline).
+# Total per-cell gradient steps = num_rounds × clients_per_round
+#   × max_steps_per_round = 20 × 5 × 50 = 5000.
+shared:
+  num_rounds: 20
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train       # ADR D-12 — was "test" → leakage
+  cudnn_deterministic: true     # full bit-reproducibility
+  mixed_precision: bf16
+  device: cuda
+
+# Per-arch lr override per ADR D-20.
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 1.0e-4                  # surrogate gradient is unstable at 5e-4
