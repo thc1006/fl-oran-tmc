@@ -79,32 +79,53 @@ def schema():
     )
 
 
-def _make_synthetic_parquet(out_path: Path, n_rows: int = 4000) -> Path:
+def _make_synthetic_parquet(
+    out_path: Path,
+    *,
+    n_bs: int = 7, n_slice: int = 4, n_tr: int = 28, steps_per_run: int = 30,
+) -> Path:
     """Generate ColO-RAN-shaped parquet with weakly-learnable signal.
 
-    ``ul_bler`` is set to be slightly correlated with ``dl_bler`` so
-    a model with capacity > 0 can drive loss down. Roughly 35% positive
-    rate at threshold=0.10, matching real ColO-RAN distribution.
-    7 bs_ids (1..7), 4 slice_ids (0..3), 4 sched modes (0..3), 28 tr ids.
+    ``build_run_sequences`` groups by ``(run_id, slice_id)`` and orders
+    by ``step_idx`` (see ``data_v2/sequences.py``). Synthetic data must
+    therefore include consecutive ``step_idx`` per (bs_id, slice_id, tr)
+    "run" — otherwise sequences can't be built and downstream FL trains
+    on empty tensors.
+
+    Layout:
+      * ``run_id`` = bs_id × 1000 + slice_id × 100 + tr (unique per
+        (bs_id, slice_id, tr) triple)
+      * ``step_idx`` 0..steps_per_run-1 within each run
+      * 7 bs_ids × 4 slice_ids × 28 tr × 30 steps = 23520 rows default
+
+    ``ul_bler`` is weakly correlated with ``dl_bler`` so the binary
+    classification target ``ul_bler > 0.10`` is learnable above
+    chance for a model with capacity > 0.
     """
     rng = np.random.default_rng(20260426)
     rows = []
-    for tr in range(28):
-        for _ in range(n_rows // 28):
-            cont_vec = rng.normal(0, 1, len(V3_CONTINUOUS))
-            ul_bler_idx = V3_CONTINUOUS.index("ul_bler")
-            cont_vec[ul_bler_idx] = (
-                0.07 + 0.07 * rng.normal()
-                + 0.03 * cont_vec[V3_CONTINUOUS.index("dl_bler")]
-            )
-            row = {
-                "bs_id": int(rng.integers(1, 8)),
-                "slice_id": int(rng.integers(0, 4)),
-                "sched": int(rng.integers(0, 4)),
-                "tr": tr,
-                **{c: float(v) for c, v in zip(V3_CONTINUOUS, cont_vec)},
-            }
-            rows.append(row)
+    sched = 0  # one sched mode is enough; build_run_sequences ignores sched anyway
+    for bs_id in range(1, n_bs + 1):
+        for slice_id in range(n_slice):
+            for tr in range(n_tr):
+                run_id = bs_id * 1000 + slice_id * 100 + tr
+                for step_idx in range(steps_per_run):
+                    cont_vec = rng.normal(0, 1, len(V3_CONTINUOUS))
+                    ul_bler_idx = V3_CONTINUOUS.index("ul_bler")
+                    dl_bler_idx = V3_CONTINUOUS.index("dl_bler")
+                    cont_vec[ul_bler_idx] = (
+                        0.07 + 0.07 * rng.normal()
+                        + 0.03 * cont_vec[dl_bler_idx]
+                    )
+                    rows.append({
+                        "run_id": run_id,
+                        "step_idx": step_idx,
+                        "bs_id": bs_id,
+                        "slice_id": slice_id,
+                        "sched": sched,
+                        "tr": tr,
+                        **{c: float(v) for c, v in zip(V3_CONTINUOUS, cont_vec)},
+                    })
     df = pd.DataFrame(rows)
     df.to_parquet(out_path)
     return out_path
