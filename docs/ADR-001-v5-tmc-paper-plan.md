@@ -1,8 +1,8 @@
 # ADR-001: v5 Pipeline Extension for IEEE TMC Submission
 
-- Status: **Active — Stage 1 sweep complete + post-hoc audit complete; D-21 outcome = GO Stage 2 (Trade-off study) under audit-corrected Spiking hyperparameters. Stage 2 (FL upgrade) is conditionally GO; the preregistered Spiking row gave NO-GO and the audit row flips the decision (see 2026-04-25 20:09 revision-history entry).**
+- Status: **Active — Stage 1 sweep + Tier A+B + Phase 0 (latency/EDP) complete; D-21 outcome FLIPPED again to GO Stage 2: Spiking-led under `spiking_expand2` audit variant at matched-25k budget under sparsity-aware accounting (see 2026-04-26 revision-history entry). Phase 1.5 (fl_v7 arch-agnostic FL) DESIGNED via 14-test TDD plan after 5 audit rounds; implementation NOT started. Stage 2 GPU sweep authorization pending user.**
 - Authors: thc1006 + assistant
-- Last updated: 2026-04-25 (post-Fermi-analysis pivot)
+- Last updated: 2026-04-26 evening
 
 ## Revision History
 
@@ -20,6 +20,7 @@
 | 2026-04-25 final-3 | **Path B pivot**. Three-path Fermi analysis (FL+Spiking-Mamba+ColO-RAN vs centralized Spiking-SSM vs SNN+FL on real domain) yielded p(TMC accept) ≈ 8% / 9% / 1% respectively. The originally planned FL benchmark angle is preempted by FL-DRAM (Springer 2026-03) and SliceFed (arxiv 2603.11390, 2026-03). The remaining genuinely novel niche is **Spiking-SSM × ColO-RAN** (0 hits across 3 cross-validation searches as of today). Pivot strategy: Stage 1 = centralized Spiking-SSM benchmark on ColO-RAN (4 weeks, IoTJ/TNSM/Globecom short paper). Stage 2 (conditional on Stage 1 GO/NO-GO) = FL upgrade combining 7-algorithm registry × 3 architectures (TMC paper). M1-M5 artifacts preserved as Stage 2 ablation baselines; nothing thrown away. M6 (FedBN gap closure) demoted to Stage 2 task. See D-19, D-20, D-21. | First-principles + Fermi adversarial reassessment after user pushback ("回到第一性原則 FL 有意義嗎"). Same total work, lower variance, two publishable products instead of one all-in moonshot. |
 | 2026-04-25 14:39 | **Stage 1 W2 sweep complete (30 cells, 41.7 min on RTX 4080)**. Per-arch test AUC across 10 seeds: LSTM 0.9151 ± 0.0010, Mamba 0.9153 ± 0.0008, Spiking 0.6757 ± 0.0354. Paired-bootstrap CI95: delta(Mamba, LSTM) [-0.0005, +0.0009] (Mamba arm healthy at parity); delta(Spiking, LSTM) [-0.2586, -0.2167] (24 pp gap). Energy per inference: LSTM 967k pJ, Mamba 831k pJ (-14%), Spiking 780k pJ (-19% but 24-pp accuracy loss). | Pure-PyTorch MambaS6Block + SpikingSSMBlock end-to-end. Sweep 5-8× faster than ADR D-20 estimate due to RTX 4080 + bf16. |
 | 2026-04-25 14:40 | **D-21 GO/NO-GO outcome: NO-GO Stage 2**. C1 hard fail (Spiking gap 0.24, threshold 0.03; hi = -0.2167 << -0.050 lower bound for any Stage 2 with Spiking primary). C2 fail (energy ratio 0.81, threshold 0.5). C3 pass (Mamba healthy). Mamba-led Stage 2 fallback NOT warranted: Mamba-LSTM CI95 brackets zero, lo = -0.0005 < +0.005. **Stage 1 short paper proceeds standalone with the LSTM ~ Mamba parity at -14% energy as the positive finding and the Spiking applicability-boundary as a publishable negative result. Stage 2 (FL upgrade) is not pursued.** Recovery HPO at T_inner=5 launched in background as preregistered, but C1 hi << -0.050 means it cannot rescue the decision; numbers will be reported in the paper for completeness. M1-M5 FL benchmark numbers ship as supplementary technical report on arxiv (preempted by FL-DRAM, not standalone-publishable). | Path B Stage 1 thesis confirmed end-to-end: same expected p(TMC) as Path A all-in but with the unconditional Stage 1 deliverable preserved; total invested time ~1 day vs 5+ weeks of speculative Path A all-in. |
+| 2026-04-26 evening | **D-21 outcome FLIPPED again: GO Stage 2: Spiking-led** (was Trade-off study) per Tier B.2 `spiking_expand2` cells (10 seeds, backbone_d_model=56, backbone_expand=2). Energy ratio drops to **0.439** under sparsity-aware accounting (PASSES C2 by margin 0.061; previous lr5e4_25k was 0.494 borderline / t5sum was 0.609 fail). C1 paired bootstrap CI95 [-0.0303, **-0.0278**] vs lstm_25k = PASS by margin 0.0022, robust to Bonferroni n=176 correction (CI [-0.0312, -0.0269]). C3 Mamba arm healthy. **Stage 2 primary architecture = `spiking_expand2`**, not lr5e4_25k. Conditions: GO holds at matched-25k budget under sparsity-aware/neuromorphic accounting; FAILS at 50k+ matched (ci_hi -0.0309 by 0.0009 marginal) and FAILS under gpu_dense accounting (ratio 0.715). NVML measurements (Tier A.2, all 159 cells) reveal **real-vs-theoretical inversion**: on RTX 4080 LSTM is 9-29× CHEAPER than Spiking. Spiking advantage realises only on neuromorphic / sparsity-aware accelerator hardware. This is paper §discussion's applicability-boundary core. Phase 0 (latency/EDP aggregation TDD, commit 835a499) added 7 tests + paper-grade `RESULTS_V6_STAGE1_ANALYSIS.md` (≈420 lines). Phase 1.5 (fl_v7 arch-agnostic FL trainer for Stage 2) DESIGNED via 14-test TDD plan after 5 hostile-audit rounds; implementation pending. See D-22. | Tier B.2 (`spiking_expand2 × 10 seeds × 25k`) finished 10:58; Tier A.2 NVML run finished 17:13 after pynvml install glitch (10:58 first run died set-e on missing pynvml; ~6 hr GPU idle window before user triggered re-run). 90 unit tests passing (7 new latency/EDP TDD added). |
 | 2026-04-25 20:09 | **D-21 outcome revised after post-hoc audit: GO Stage 2 (Trade-off study)**. User pushback on result meaningfulness ("我主要是擔心剛剛跑的所有腳本存在任何問題") triggered a learning-rate ablation. Audit revealed that the preregistered Spiking lr=1e-4 + 5000-step budget was severely undertraining: train-loss + val-AUC curves were still descending at the budget cap, while LSTM/Mamba had plateaued by step 1500. A 10-seed full sweep at lr=5e-4 + 25 000 steps (`spiking_lr5e4_25k` cells under `artifacts/v6_arch_sweep/`) lifts Spiking from 0.6757 ± 0.0354 to **0.8944 ± 0.0018** AUC. Paired-bootstrap CI95 of `delta(Spiking_audit, LSTM)` = [−0.0218, −0.0199], **inside** the C1 −0.030 threshold (PASS). C2 unchanged at 0.80 (FAIL). C3 unchanged (PASS). Per ADR D-21 row "C1 met AND C2 fail (energy advantage < 2×)", the Stage 2 path is reframed as a **trade-off study** ("comparable energy at no accuracy cost") rather than a clean Spiking-superiority claim. Lower p(TMC) ~6-8% per the original D-21 row commentary, but unambiguously above the NO-GO threshold. **Stage 1 paper now reports both preregistered and audit-corrected Spiking rows side-by-side with a methodological audit section (§6.6) that documents why the literature-derived lr=1e-4 heuristic did not transfer to this task.** | Honest correction: methodological flaw caught by adversarial-review-style audit, not by spec-time review. Preserves preregistration credibility (numbers reported as-spec) while delivering the substantive corrected finding. |
 
 ### D-16. MOON deferred from M2 to M3
@@ -271,6 +272,53 @@ This gives `[lo, hi]` directly comparable to the −0.030 threshold. Wilcoxon p-
 
 **Stage 2 plan summary** (full plan in §4 milestones, this is a one-paragraph reminder):
 If GO (Spiking-led or Mamba-led), integrate the chosen primary architecture and `MambaForecaster` (always retained as ablation) with the existing 6-algorithm FL registry plus FedBN (7th, addressing M6/D-17). Sweep dimensions: **3 archs × 7 algos × 10 seeds × 5 alphas = 1050 cells**, est. **~20-26 hr GPU** on existing matrix driver (M5's 1.16 min/cell × 1050 cells = 20.3 hr baseline + Spiking-overhead correction up to ~30%). Larger than an earlier draft estimate of 525 cells / 7 hr because (a) seed count standardised at 10 for bootstrap power and (b) Spiking and pure-PyTorch Mamba both add per-cell overhead vs M5's pure-LSTM baseline. M1-M5 LSTM × 6-algo numbers serve as 150-cell legacy ablation table inside the Stage 2 paper. Submission target: TMC. Fallback: TNSM (better-fit for FL-on-network-management angle).
+
+### D-22. Phase 1.5 — fl_v7 arch-agnostic FL trainer (added 2026-04-26)
+
+**Trigger**: Stage 2 needs an FL trainer that accepts {LSTM, Mamba, Spiking_expand2}. Both `fl_v3.py` (line 30, 105, 133) and `fl_v5.py` (line 51, 430) are hard-bound to `ForecasterV2` (LSTM only). D-9 forbids refactoring v1-v5. ADR §S2-W1..3 explicitly named the new trainer `run_v7_fl_arch_sweep.py` / artifacts under `v7_fl_arch_sweep/` — **Phase 1.5 implements that v7 layer**.
+
+**Decision: Option B (parallel `fl_v7.py`), not Option A (extend fl_v5)**:
+- Option A would refactor fl_v5's hardcoded `ForecasterV2` → arch-agnostic. Risk: breaks M5 baseline reproducibility (D-9 violation), MOON's `forecaster_encode_fn` tightly coupled to ForecasterV2's `lstm1`/`lstm2` attribute layout, ~3-5 hr refactor with high regression risk.
+- Option B writes `src/fl_oran/training/fl_v7.py` as a parallel trainer, leaving fl_v5 unchanged. Reuses `weighted_average_state_dicts`, `federated_fit_scaler`, `partition_clients`, `get_algorithm` per D-3 single source of truth. Estimated ~250-400 LoC + ~14 unit tests.
+
+**Partition semantics clarification (was unclear before reading partition.py)**:
+- `mode="iid"`: partitions by `bs_id` (=7 ColO-RAN gNBs). **Ignores `--n-clients` argument** — the 7 base stations are the natural client granularity. Earlier "smoke test got 7 clients despite n_clients=4" was BY DESIGN, not a bug.
+- `mode="dirichlet"`: per-slice Dirichlet over `n_clients`. **This is the canonical Stage 2 partition** per D-17 (covariate-skew over slice_id). Stage 2 uses `n_clients=7` (matching gNB count) ×  α ∈ {0.05, 0.1, 0.5, 1.0, 10.0} per D-5.
+
+**MOON treatment (D-16 follow-up)**:
+For Phase 1.5 minimum-viable, defer MOON entirely. `fl_v7._select_algorithm()` raises `NotImplementedError` for `algorithm="moon"` regardless of arch (D-16's per-arch encode_fn is a paper-level design question). MOON × LSTM specifically COULD be enabled by importing `forecaster_encode_fn` from fl_v5 (but couples v5↔v7), or by re-deriving the encode contract in fl_v7. **Defer that design call to Phase 2 polish, not Phase 1.5**.
+
+**14-test TDD plan (Round 4+5 hostile-audit hardened)** — `tests/test_v7_fl_arch_agnostic.py`:
+
+| # | Test | Purpose |
+|---|---|---|
+| 1 | `test_v7_config_field_defaults_AND_unknown_arch_rejected_at_build` | V7Config defaults arch="lstm"; `_build_model` raises ValueError(match=r"unknown arch") for bogus arch |
+| 2 | `test_v7_build_model_lstm_pins_params_44553` | hand-calc-validated 44553 (392 emb + 29440 lstm1 + 12544 lstm2 + 2112 fc + 65 head) |
+| 3 | `test_v7_build_model_mamba_pins_params_40489` | from RESULTS_V6_STAGE1_ANALYSIS.md table |
+| 4 | `test_v7_build_model_spiking_expand2_pins_kwargs_AND_params_43593` | block.d_model=56, expand=2, d_inner=112; total params 43593 |
+| 5 | `test_spiking_state_dict_excludes_buffers_AND_attributes_exist_AND_are_scalar` | non-persistent buffers exist as `torch.Tensor` shape `()`, NOT in state_dict |
+| 6 | `test_v7_identity_aggregation_returns_self_per_arch[lstm,mamba,spiking_expand2]` | parametric over 3 archs; weights=[0.5, 0.5] (IEEE 754 exact for power-of-2) |
+| 7 | `test_v7_random_aggregation_load_AND_forward_no_nan_for_spiking_expand2` | random aggregation forward finite |
+| **8** | **`test_v7_gradient_flow_through_spiking_expand2_after_aggregation`** | **D-19 critical**: surrogate × Adam × FL aggregation gradient. firing_rate > 0.1%, all grads finite, max_abs_grad > 1e-7, dropout=0 contract asserted; D18 paranoia post-forward state_dict check |
+| 9 | `test_v7_smoke_lstm_iid_per_algo[fedavg,fedprox]` | parametric over 2 algos to exercise algo_kwargs threading |
+| 10 | `test_v7_smoke_spiking_expand2_dirichlet_3_rounds_history_finite_AND_val_auc_present` | "no NaN" + val_auc key present (fix `h.get("val_auc", 0.0)` silent-pass bug) |
+| 11 | `test_v7_moon_non_lstm_arch_raises_at_select_fast` | MOON × spiking → NotImplementedError, fail-fast at `_select_algorithm` (no parquet load) |
+| 12 | `test_v7_sweep_writes_summary_history_AND_summary_has_test_auc_key` | output IO + JSON content check; best.pt is optional (toy data may not improve) |
+| **13** | **`test_v7_sweep_idempotent_AND_seed_actually_matters`** | **3 sweeps**: r1=r2 with global RNG perturbed between; r1≠r3 with different seed. Catches hardcoded-seed silent bug. Uses `deterministic_torch` fixture with restore. |
+| 14 | `test_v7_config_pos_weight_split_default_train_per_D12` | pin D-12 audit-fix contract (was "test", caused leakage) |
+
+**Phase 1.5 milestones**:
+- 1.5a (0 GPU, ~50 min): write all 14 tests in RED state. Imports lazy via `_import_fl_v7()` to fail clearly when fl_v7 missing.
+- 1.5b (0 GPU, ~5-7 hr): implement `fl_v7.py` until 14 tests GREEN. Iterative: V7Config + `_arch_registry` + `_build_model` + `_select_algorithm` (unit tests 1-8, 11) → `run_v7_sweep` + output IO + seeding (tests 9-10, 12-13) → fixture refinement (test 14).
+- 1.5c (0 GPU, ~30 min): `experiments/run_v7_fl_arch_sweep.py` CLI wrapper mirroring `run_v5_algorithm_sweep.py` with added `--arch` flag.
+- 1.5d (0 GPU, ~15 min, NEW): real-data CPU micro-smoke (1 cell × 100 step × 1 seed on real ColO-RAN parquet) to verify production schema (18M rows, 7 bs_ids, 4 slice_ids, 4 sched, 29 tr) handled correctly. Synthetic fixture in tests has only 4000 rows — partition / federated_fit_scaler / build_run_sequences edge cases at 4-orders-of-magnitude scale difference need empirical verification before Phase 2 GPU run.
+
+**Phase 2 minimum-viable scope (post Phase 1.5)**:
+Reduced from ADR's full 1050-cell sweep: 3 archs × 2 partitions × 2 algos × 3 seeds = **36 cells × ~10 min ≈ 6 hr GPU**. Instrument bytes/round + rounds-to-converge for §7 communication efficiency. Decide whether to invest the full ADR 1050 cells (~20-26 hr) based on Phase 2 minimum results.
+
+**Phase 3 differentiator candidates (not committed; per Round 4 ultrathink)**:
+- 3a: spiking_expand2 vs lstm × Dirichlet α=0.1 (extreme non-IID) × 3 seeds — test "spiking robust to non-IID via binary-output regularization" hypothesis. ~1 hr GPU.
+- 3b: DP-SGD compatibility study — Spiking's binary output may give tighter Renyi-DP composition vs continuous-valued models. ~2 hr GPU.
 
 ---
 
