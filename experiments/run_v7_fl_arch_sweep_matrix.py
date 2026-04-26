@@ -35,6 +35,17 @@ mirroring fl_v5's split, then matrix driver caches SharedSplits.
 """
 from __future__ import annotations
 
+# Performance env vars (must be set BEFORE torch import). Per ADR D-22
+# perf checklist: expandable_segments lets the CUDA caching allocator
+# return memory back to the OS to prevent fragmentation across long
+# multi-cell sweeps. OMP/MKL_NUM_THREADS prevents PyTorch CPU ops from
+# oversubscribing when joblib is also threading inside
+# federated_fit_scaler / build_run_sequences.
+import os
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+os.environ.setdefault("OMP_NUM_THREADS", "4")
+os.environ.setdefault("MKL_NUM_THREADS", "4")
+
 import argparse
 import csv
 import json

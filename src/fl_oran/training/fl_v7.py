@@ -275,7 +275,22 @@ def setup_torch_perf(device: torch.device, deterministic: bool = True) -> None:
     TF32 matmul precision="high" gives ~2-3× speedup on Ada Lovelace
     (sm_89) for fp32 matmul ops. ``cudnn_deterministic=True`` costs
     ~5-15% LSTM throughput but is mandatory per ADR D-15.
+
+    CPU thread tuning (M5-baseline alignment): clamp
+    ``torch.set_num_threads`` to 8 to prevent contention with joblib
+    threading layer used by ``federated_fit_scaler`` (n_jobs=n_clients
+    up to 7) and per-client ``build_run_sequences``. Without this,
+    16-core workstations oversubscribe → ~2× slowdown on CPU prep
+    stages.
     """
+    # CPU thread tuning applies to both CPU and CUDA paths (matmul on
+    # CUDA, prep stages on CPU). Idempotent (safe to call repeatedly).
+    try:
+        torch.set_num_threads(min(torch.get_num_threads(), 8))
+    except Exception:
+        # Some build configurations don't expose set_num_threads; ignore.
+        pass
+
     if device.type != "cuda":
         return
     torch.set_float32_matmul_precision("high")
@@ -331,10 +346,17 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     algo_cls = _select_algorithm(cfg)
 
     # ---- Data preparation ----
+    # Phase-level timing instrumentation: each phase recorded separately
+    # so post-sweep analysis can see where time goes (per ADR D-22 perf
+    # checklist). Total reported at end + each phase emits a single INFO
+    # log line.
+    phase_timings: dict[str, float] = {}
+
     if not cfg.unified_parquet.exists():
         raise FileNotFoundError(cfg.unified_parquet)
 
     t0 = time.time()
+    t_phase = time.time()
     df = pd.read_parquet(cfg.unified_parquet)
     if cfg.sample_ratio < 1.0:
         df = (
@@ -352,8 +374,13 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     )
     feat_cols = schema.categorical + schema.continuous
     split = ood_split_by_tr(df, cfg.train_tr, cfg.val_tr, cfg.test_tr)
+    phase_timings["1_parquet_target_split"] = time.time() - t_phase
 
+    t_phase = time.time()
     client_dfs = _partition(split.train, cfg)
+    phase_timings["2_partition"] = time.time() - t_phase
+
+    t_phase = time.time()
     client_items = list(client_dfs.items())
 
     # Per-client sequence build in parallel (GIL released by numpy/pandas).
@@ -369,6 +396,8 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         for (cid, _), (X, Y) in zip(client_items, per_client_results)
         if len(X) > 0
     }
+    phase_timings["3_per_client_sequences"] = time.time() - t_phase
+
     if not client_shards:
         raise RuntimeError(
             f"no non-empty clients (alpha={cfg.alpha}, n_clients={cfg.n_clients})"
@@ -380,33 +409,50 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         {c: len(x) for c, (x, _) in client_shards.items()},
     )
 
+    t_phase = time.time()
     X_va, Y_va = build_run_sequences(
         split.val, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len,
     )
     X_te, Y_te = build_run_sequences(
         split.test, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len,
     )
+    phase_timings["4_val_test_sequences"] = time.time() - t_phase
 
     # Federated scaler (sufficient-stats aggregation, GIL-free joblib).
+    t_phase = time.time()
     scaler = federated_fit_scaler(
         {cid: X for cid, (X, _) in client_shards.items()},
         schema,
         n_jobs=len(client_shards),
     )
+    phase_timings["5_federated_scaler_fit"] = time.time() - t_phase
+
+    # M5-style pin_memory: mirror fl_v5's ``_maybe_pin``. Pinned host
+    # memory enables faster (and truly non-blocking) CPU→GPU transfers
+    # via cudaMemcpyAsync during ``.to(device, non_blocking=True)``.
+    # Skip on CPU (no transfer) or when sample_ratio is small (pinned
+    # tensors live in non-pageable RAM; large allocations stress the OS
+    # — only pay this cost when GPU is the target).
+    _pin = (device.type == "cuda")
 
     def _to_tensors(X: np.ndarray, Y: np.ndarray):
         cat, cont = apply_continuous_scaler(X, schema, scaler)
-        return (
-            torch.from_numpy(cat),
-            torch.from_numpy(cont),
-            torch.from_numpy(Y),
-        )
+        t_cat = torch.from_numpy(cat)
+        t_cont = torch.from_numpy(cont)
+        t_y = torch.from_numpy(Y)
+        if _pin:
+            t_cat = t_cat.pin_memory()
+            t_cont = t_cont.pin_memory()
+            t_y = t_y.pin_memory()
+        return (t_cat, t_cont, t_y)
 
+    t_phase = time.time()
     va_cat, va_cont, va_y = _to_tensors(X_va, Y_va)
     te_cat, te_cont, te_y = _to_tensors(X_te, Y_te)
     client_cpu: dict[int, tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {
         cid: _to_tensors(X, Y) for cid, (X, Y) in client_shards.items()
     }
+    phase_timings["6_scale_AND_pin_tensors"] = time.time() - t_phase
 
     # pos_weight from requested split (D-12 contract).
     if cfg.pos_weight_split == "train":
@@ -449,11 +495,16 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     algo_inst = algo_cls(**algo_kwargs)
 
     # ---- Training rounds ----
+    t_phase = time.time()
     cids = sorted(client_cpu.keys())
     rng = np.random.default_rng(cfg.seed)
     history: list[dict] = []
     best_val_auc: float = float("-inf")
     best_state: dict | None = None
+    # Record first-round vs steady-state timing separately to detect
+    # cold compile / cudnn warmup overhead (per perf-checklist diagnostic).
+    first_round_dt: float | None = None
+    steady_round_dts: list[float] = []
 
     for r in range(1, cfg.num_rounds + 1):
         t_round = time.time()
@@ -510,12 +561,33 @@ def run_v7_sweep(cfg: V7Config) -> dict:
                 kk: v.detach().cpu()
                 for kk, v in global_model.state_dict().items()
             }
+        if first_round_dt is None:
+            first_round_dt = dt
+        else:
+            steady_round_dts.append(dt)
+
+    phase_timings["7_training_total"] = time.time() - t_phase
+    if first_round_dt is not None:
+        phase_timings["7a_first_round"] = first_round_dt
+    if steady_round_dts:
+        phase_timings["7b_steady_round_mean"] = (
+            sum(steady_round_dts) / len(steady_round_dts)
+        )
 
     # ---- Test eval on best-val-AUC checkpoint ----
+    t_phase = time.time()
     if best_state is not None:
         global_model.load_state_dict(best_state)
     test_logits = _batched_predict(global_model, te_cat, te_cont, device)
     test_m = _metrics(te_y[:, 0].numpy().astype(int), test_logits[:, 0])
+    phase_timings["8_test_eval"] = time.time() - t_phase
+    phase_timings["TOTAL"] = time.time() - t0
+    # Emit phase summary as a single INFO line so post-sweep analysis
+    # can grep / parse it from logs without re-running the cell.
+    log.info(
+        "v7 phase timings (s): %s",
+        " | ".join(f"{k}={v:.2f}" for k, v in phase_timings.items()),
+    )
 
     # ---- Emit artifacts (FLAT layout per ADR D-7) ----
     env_meta = {
@@ -538,6 +610,9 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         "test": test_m,
         # Convenience top-level key the aggregator may read directly.
         "test_auc": test_m.get("auc", 0.0),
+        # Phase timings (added 2026-04-26 perf-checklist) — keys
+        # 1_..8_TOTAL plus 7a/7b first-vs-steady round breakdown.
+        "phase_timings_s": phase_timings,
     }
     cell_dir = cfg.output_dir / cfg.name
     cell_dir.mkdir(parents=True, exist_ok=True)
