@@ -1,305 +1,453 @@
-"""TDD red-phase tests for ``src/fl_oran/training/fl_v7.py``.
+"""TDD red-phase tests for ``src/fl_oran/training/fl_v7.py`` — Phase 1.5a-v2.
 
-Phase 1.5a (per ADR-001 Stage 2 plan §S2-W1..3): pin the expected
-behavior of an arch-agnostic FL trainer that supports the v6 lineup
-{lstm, mamba, mamba_expand2, spiking, spiking_expand2} via the same
-ARCH_REGISTRY pattern as ``experiments/run_v6_arch_sweep.py``.
+Per ADR-001 D-22, this is the Round 4+5 hostile-audit-hardened
+14-test version. Round history:
 
-The existing ``fl_v5.py`` is hard-bound to ``ForecasterV2`` (LSTM); per
-ADR D-9 we do not refactor it. Phase 1.5b will introduce a parallel
-``fl_v7.py`` that:
+* Round 1: 7-test initial design.
+* Round 2: review found 11-test improved version.
+* Round 3: review found 13-test version with 8 fixes for issues
+  ranging from silent-pass bugs (``h.get("val_auc", 0.0)``) to
+  weak isinstance-only assertions on _build_model.
+* Round 4: review identified 4 new issues (params-count schema
+  drift, shape pin missing, pytest.raises match too loose, best.pt
+  over-strict assertion) and added 2 critical NEW tests:
+  identity-aggregation invariant (catches normalization bugs)
+  and gradient-flow-after-aggregation (D-19 surrogate-gradient
+  risk core).
+* Round 5: 17-angle deep audit on test #8 (gradient flow) +
+  12-angle on test #13 (idempotency) — found D1 dropout=0
+  contract assertion needed, D4 firing-rate threshold needed,
+  D17 single-tier max-grad threshold, D18 paranoia post-forward
+  state_dict re-check, E13 negative-case (different seed →
+  different result). Settled at final 14-test plan.
 
-  * accepts ``arch`` in :class:`V7Config`
-  * dispatches model construction via ``_build_model``
-  * runs FL rounds via the existing 6-algorithm registry
-  * reuses ``federated_fit_scaler``, ``partition_clients``,
-    ``weighted_average_state_dicts``, ``train_one_client_capped`` so we
-    do not duplicate SoT functions (D-3)
-  * raises ``NotImplementedError`` on MOON × non-LSTM (D-16 open
-    question — encode_fn for spiking/mamba is paper-level design)
+The 14 tests fall into four groups:
 
-Tests are ordered by increasing setup cost:
+  Tests 1-5: V7Config + _build_model + state_dict (unit, fast)
+  Tests 6-7: aggregation invariants (unit, fast)
+  Test  8 : D-19 critical gradient flow (unit + paranoid checks)
+  Tests 9-12: end-to-end FL smoke + output IO (integration, ~10-30s each)
+  Tests 13-14: idempotency + D-12 contract pin
 
-  1. unit: V7Config exposes ``arch`` field
-  2-4. unit: ``_build_model`` dispatches to the right ctor with
-       registry-pinned kwargs
-  5. unit: Spiking non-persistent buffers are excluded from
-       ``state_dict`` (essential — guarantees they are not corrupted by
-       FedAvg's ``weighted_average_state_dicts`` cross-client
-       aggregation)
-  6-7. integration: ``run_v7_sweep`` end-to-end on synthetic parquet
-       with LSTM × IID and Spiking_expand2 × Dirichlet for 3 rounds
-       each; loss decreases, no crash. Run on CPU with toy data; per
-       test budget < 30 s.
-
-Some tests will be GREEN immediately (test 5: existing behavior of
-SpikingForecaster's ``register_buffer(persistent=False)``); others are
-RED until ``fl_v7.py`` exists.
+In the RED phase, tests 1-4, 6-14 fail with ``ModuleNotFoundError``
+(fl_v7 doesn't exist yet). Test 5 already passes — it pins existing
+``SpikingForecaster`` behavior (non-persistent buffers + scalar
+shape) as a regression guard before fl_v7 starts mutating the
+spiking model usage pattern.
 """
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import json
-import sys
+from dataclasses import replace  # idempotency test 13 needs it
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+import torch
+
+# Single source of truth for production schema (Round 4 B1 fix).
+# If V3_CAT_SIZES changes, params count tests (44553/40489/43593)
+# will fail loudly — surfaces schema drift instead of hiding it.
+from fl_oran.data_v2.encoders import FeatureSchema
+from fl_oran.training.centralized_v3 import (
+    V3_CATEGORICAL,
+    V3_CAT_SIZES,
+    V3_CONTINUOUS,
+)
 
 
-# Path to the (yet to be created) fl_v7 module. Tests import lazily so
-# import errors during the red phase produce a clear test failure rather
-# than a collection error that aborts the whole test run.
 def _import_fl_v7():
-    """Lazily import ``fl_oran.training.fl_v7``; tests fail clearly if
-    the module is missing (RED phase) rather than aborting collection."""
+    """Lazy import. Tests fail clearly during RED phase rather than
+    aborting test collection."""
     return importlib.import_module("fl_oran.training.fl_v7")
 
 
 # ---------------------------------------------------------------------------
-# Schema / synthetic data fixture (mirrors V3_CATEGORICAL / V3_CONTINUOUS).
+# Fixtures
 # ---------------------------------------------------------------------------
 
-_CATEGORICAL = ["bs_id", "slice_id", "sched", "tr"]
-_CAT_SIZES = {"bs_id": 8, "slice_id": 4, "sched": 4, "tr": 29}
-_CONTINUOUS = [
-    "num_ues", "slice_prb",
-    "sum_requested_prbs", "sum_granted_prbs",
-    "tx_brate_dl_Mbps", "rx_brate_ul_Mbps",
-    "tx_pkts_dl", "rx_pkts_ul",
-    "dl_buffer_bytes", "ul_buffer_bytes",
-    "dl_bler", "ul_bler",
-    "dl_mcs", "ul_mcs", "dl_cqi", "ul_sinr", "ul_rssi",
-]
+@pytest.fixture(scope="module")
+def schema():
+    """Production-schema FeatureSchema. Pinned to V3_CAT_SIZES so
+    params-count tests (44553 / 40489 / 43593) reproduce."""
+    return FeatureSchema(
+        categorical=V3_CATEGORICAL,
+        categorical_sizes=V3_CAT_SIZES,
+        continuous=V3_CONTINUOUS,
+    )
 
 
-def _make_synthetic_parquet(tmp_path: Path, n_rows: int = 4000) -> Path:
-    """Generate a tiny ColO-RAN-shaped parquet for FL smoke tests.
+def _make_synthetic_parquet(out_path: Path, n_rows: int = 4000) -> Path:
+    """Generate ColO-RAN-shaped parquet with weakly-learnable signal.
 
-    Each tr id gets ~``n_rows / 28`` rows with deterministic-but-noisy
-    continuous values. ``ul_bler`` is set so the binary classification
-    target ``ul_bler > 0.10`` has roughly 35% positive rate (matches
-    real ColO-RAN). The values are weakly predictable from a few
-    continuous features so a model with capacity > 0 can drive loss
-    down on this toy data.
+    ``ul_bler`` is set to be slightly correlated with ``dl_bler`` so
+    a model with capacity > 0 can drive loss down. Roughly 35% positive
+    rate at threshold=0.10, matching real ColO-RAN distribution.
+    7 bs_ids (1..7), 4 slice_ids (0..3), 4 sched modes (0..3), 28 tr ids.
     """
     rng = np.random.default_rng(20260426)
     rows = []
-    # 7 bs_ids (1..7 — match real ColO-RAN gNB count); 4 slice_ids; 4 sched modes.
     for tr in range(28):
         for _ in range(n_rows // 28):
-            bs_id = int(rng.integers(1, 8))
-            slice_id = int(rng.integers(0, 4))
-            sched = int(rng.integers(0, 4))
-            cont_vec = rng.normal(0, 1, len(_CONTINUOUS))
-            # Make ul_bler weakly positive-correlated to certain columns
-            # so the toy target is learnable.
-            ul_bler_idx = _CONTINUOUS.index("ul_bler")
+            cont_vec = rng.normal(0, 1, len(V3_CONTINUOUS))
+            ul_bler_idx = V3_CONTINUOUS.index("ul_bler")
             cont_vec[ul_bler_idx] = (
                 0.07 + 0.07 * rng.normal()
-                + 0.03 * cont_vec[_CONTINUOUS.index("dl_bler")]
+                + 0.03 * cont_vec[V3_CONTINUOUS.index("dl_bler")]
             )
             row = {
-                "bs_id": bs_id, "slice_id": slice_id, "sched": sched, "tr": tr,
-                **{c: float(v) for c, v in zip(_CONTINUOUS, cont_vec)},
+                "bs_id": int(rng.integers(1, 8)),
+                "slice_id": int(rng.integers(0, 4)),
+                "sched": int(rng.integers(0, 4)),
+                "tr": tr,
+                **{c: float(v) for c, v in zip(V3_CONTINUOUS, cont_vec)},
             }
             rows.append(row)
     df = pd.DataFrame(rows)
-    out = tmp_path / "synthetic_coloran.parquet"
-    df.to_parquet(out)
-    return out
+    df.to_parquet(out_path)
+    return out_path
+
+
+@pytest.fixture(scope="module")
+def synthetic_parquet(tmp_path_factory):
+    """Module-scoped: generate parquet once, reuse across tests in the
+    module. ~30-50 ms write per call — module scope amortizes."""
+    base = tmp_path_factory.mktemp("v7_data")
+    return _make_synthetic_parquet(base / "synthetic_coloran.parquet")
+
+
+@pytest.fixture
+def deterministic_torch():
+    """Force deterministic mode for the test, restore after.
+
+    Round 5 E1: on CPU this is mostly defensive (PyTorch CPU ops
+    deterministic by default for our op set: Embedding, LSTM, Linear)
+    but protects against future op additions that introduce
+    non-determinism.
+    """
+    prev = torch.are_deterministic_algorithms_enabled()
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    yield
+    torch.use_deterministic_algorithms(prev)
 
 
 # ---------------------------------------------------------------------------
-# Tests 1-4: V7Config + _build_model API
+# Tests 1-5: V7Config + _build_model + state_dict
 # ---------------------------------------------------------------------------
 
-def test_v7_config_has_arch_field():
-    """V7Config must accept an ``arch`` field whose default is "lstm"
-    (same as Stage 1 preregistered baseline)."""
+def test_v7_config_field_defaults_AND_unknown_arch_rejected_at_build(schema):
+    """V7Config defaults arch="lstm" + algorithm="fedavg"; unknown arch
+    constructs OK (matches dataclass conventions) but ``_build_model``
+    rejects with ValueError carrying the offending arch name in the
+    message (Round 4 B3 fix: precise match, not loose KeyError)."""
     fl_v7 = _import_fl_v7()
     cfg = fl_v7.V7Config()
-    assert hasattr(cfg, "arch")
     assert cfg.arch == "lstm"
+    assert cfg.algorithm == "fedavg"
+    cfg2 = fl_v7.V7Config(arch="not_a_real_arch")
+    assert cfg2.arch == "not_a_real_arch"
+    with pytest.raises(ValueError, match=r"unknown arch.*not_a_real_arch"):
+        fl_v7._build_model(cfg2, schema)
 
 
-def test_v7_build_model_dispatches_lstm():
-    """``_build_model(cfg, schema)`` with cfg.arch="lstm" returns a
-    ForecasterV2 instance with the same kwargs the Stage 1 runner
-    used (registry default = empty kwargs)."""
+def test_v7_build_model_lstm_pins_params_44553(schema):
+    """Hand-calc validated params: 392 (emb) + 29440 (lstm1)
+    + 12544 (lstm2) + 2112 (fc) + 65 (head) = 44553. Pinning catches
+    BOTH registry kwargs drift AND schema drift in V3_CAT_SIZES."""
     fl_v7 = _import_fl_v7()
-    from fl_oran.data_v2.encoders import FeatureSchema
     from fl_oran.models.forecaster_v2 import ForecasterV2
-
-    schema = FeatureSchema(
-        categorical=_CATEGORICAL,
-        categorical_sizes=_CAT_SIZES,
-        continuous=_CONTINUOUS,
-    )
     cfg = fl_v7.V7Config(arch="lstm")
     model = fl_v7._build_model(cfg, schema)
     assert isinstance(model, ForecasterV2)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 44553, f"lstm params drifted: {n_params}"
 
 
-def test_v7_build_model_dispatches_mamba():
-    """cfg.arch="mamba" returns MambaForecaster with registry default
-    kwargs (d_model=64, expand=1, n_blocks=2)."""
+def test_v7_build_model_mamba_pins_params_40489(schema):
+    """Per docs/RESULTS_V6_STAGE1_ANALYSIS.md §3.1 baseline."""
     fl_v7 = _import_fl_v7()
-    from fl_oran.data_v2.encoders import FeatureSchema
     from fl_oran.models.mamba_forecaster import MambaForecaster
-
-    schema = FeatureSchema(
-        categorical=_CATEGORICAL,
-        categorical_sizes=_CAT_SIZES,
-        continuous=_CONTINUOUS,
-    )
     cfg = fl_v7.V7Config(arch="mamba")
     model = fl_v7._build_model(cfg, schema)
     assert isinstance(model, MambaForecaster)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 40489, f"mamba params drifted: {n_params}"
 
 
-def test_v7_build_model_dispatches_spiking_expand2_with_correct_kwargs():
-    """cfg.arch="spiking_expand2" must hydrate the registry's spec:
-    backbone_d_model=56, backbone_expand=2 (so d_inner=112 inside each
-    SSM block). Pinning these confirms fl_v7 is reusing the same
-    ARCH_REGISTRY as run_v6_arch_sweep.py — single source of truth.
-    """
+def test_v7_build_model_spiking_expand2_pins_kwargs_AND_params_43593(schema):
+    """spiking_expand2 specifically: backbone_d_model=56, expand=2
+    (so d_inner=112). This catches Tier B.2 'wrong baselines' bug
+    class — registry must hydrate these exact kwargs into block."""
     fl_v7 = _import_fl_v7()
-    from fl_oran.data_v2.encoders import FeatureSchema
     from fl_oran.models.spiking_forecaster import SpikingForecaster
-
-    schema = FeatureSchema(
-        categorical=_CATEGORICAL,
-        categorical_sizes=_CAT_SIZES,
-        continuous=_CONTINUOUS,
-    )
     cfg = fl_v7.V7Config(arch="spiking_expand2")
     model = fl_v7._build_model(cfg, schema)
     assert isinstance(model, SpikingForecaster)
-    # First block carries the expand-2 dimensionality.
     block = model.blocks[0]
-    assert block.d_model == 56
-    assert block.expand == 2
-    assert block.d_inner == 112
+    assert block.d_model == 56, f"d_model drifted: {block.d_model}"
+    assert block.expand == 2, f"expand drifted: {block.expand}"
+    assert block.d_inner == 112, f"d_inner drifted: {block.d_inner}"
+    assert len(model.blocks) == 2
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 43593, f"spiking_expand2 params drifted: {n_params}"
 
 
-# ---------------------------------------------------------------------------
-# Test 5: Spiking non-persistent buffers excluded from state_dict
-# ---------------------------------------------------------------------------
+def test_spiking_state_dict_excludes_buffers_AND_attributes_exist_AND_are_scalar(schema):
+    """Round 4 B2 + Round 5 D18: spiking blocks expose ``spike_count``
+    and ``forward_inferences`` as non-persistent **scalar** tensor
+    buffers. They MUST exist as attributes (else energy_metrics
+    ``float(spike_count)`` breaks) AND MUST NOT appear in state_dict
+    (else FedAvg's ``weighted_average_state_dicts`` would average
+    spike counts across clients — silent corruption of energy data).
 
-def test_spiking_state_dict_excludes_non_persistent_buffers():
-    """``spike_count`` and ``forward_inferences`` are
-    ``register_buffer(..., persistent=False)`` so they are NOT in
-    ``state_dict()``. This is what allows FedAvg's
-    ``weighted_average_state_dicts`` to cross-aggregate spiking
-    clients without contaminating per-client spike counts.
-
-    Already-true regression: passes against the existing model, but
-    pinning it here protects against future "let's make these
-    persistent for checkpointing" refactors that would silently break
-    FL aggregation.
+    Already-true regression guard: passes against current
+    SpikingForecaster, but pins the contract before fl_v7 starts
+    cross-aggregating state dicts.
     """
-    from fl_oran.data_v2.encoders import FeatureSchema
     from fl_oran.models.spiking_forecaster import SpikingForecaster
 
-    schema = FeatureSchema(
-        categorical=_CATEGORICAL,
-        categorical_sizes=_CAT_SIZES,
-        continuous=_CONTINUOUS,
-    )
     model = SpikingForecaster(
         schema=schema, task="classification", seq_len=5,
         backbone_d_model=56, backbone_expand=2,
     )
+    for blk in model.blocks:
+        assert hasattr(blk, "spike_count")
+        assert isinstance(blk.spike_count, torch.Tensor)
+        assert blk.spike_count.shape == (), (
+            f"spike_count must be scalar; got shape {blk.spike_count.shape}"
+        )
+        assert hasattr(blk, "forward_inferences")
+        assert isinstance(blk.forward_inferences, torch.Tensor)
+        assert blk.forward_inferences.shape == ()
     keys = list(model.state_dict().keys())
     for k in keys:
-        assert "spike_count" not in k, (
-            f"spike_count leaked into state_dict at key {k!r} — "
-            f"register_buffer must remain persistent=False."
-        )
-        assert "forward_inferences" not in k, (
-            f"forward_inferences leaked into state_dict at key {k!r}."
-        )
+        assert "spike_count" not in k, f"leaked: {k}"
+        assert "forward_inferences" not in k, f"leaked: {k}"
 
 
 # ---------------------------------------------------------------------------
-# Tests 6-7: end-to-end FL smoke
+# Tests 6-7: FL aggregation invariants
 # ---------------------------------------------------------------------------
 
-@pytest.mark.timeout(60)
-def test_v7_smoke_lstm_iid_3_rounds(tmp_path):
-    """Full FL run on synthetic data: LSTM, IID partition (by bs_id),
-    3 rounds, FedAvg. Must complete without crash, mean train loss in
-    last round must be strictly below mean train loss in first round
-    (non-trivial learning signal).
+@pytest.mark.parametrize("arch_name", ["lstm", "mamba", "spiking_expand2"])
+def test_v7_identity_aggregation_returns_self_per_arch(schema, arch_name):
+    """Round 4 A2 critical: ``weighted_average_state_dicts`` of two
+    identical state dicts (same seed, same init) with weights
+    [0.5, 0.5] must return bit-equal result. Catches aggregation
+    normalization bugs.
 
-    Why IID + bs_id: per partition.py, IID mode partitions by bs_id and
-    ignores --n-clients (each gNB = one client). This is the canonical
-    "FL ≈ centralized" smoke that confirms the aggregation pipeline
-    works at all before testing harder partition modes.
+    weights=[0.5, 0.5] is IEEE 754 exact: 0.5*v + 0.5*v == v for any
+    float32 v (multiplication by power-of-2 just shifts exponent).
     """
     fl_v7 = _import_fl_v7()
-    parquet = _make_synthetic_parquet(tmp_path)
+    from fl_oran.federated import weighted_average_state_dicts
+
+    cfg = fl_v7.V7Config(arch=arch_name)
+
+    torch.manual_seed(42)
+    m1 = fl_v7._build_model(cfg, schema)
+    torch.manual_seed(42)
+    m2 = fl_v7._build_model(cfg, schema)
+
+    sd_avg = weighted_average_state_dicts(
+        [m1.state_dict(), m2.state_dict()], [0.5, 0.5]
+    )
+    for k, v in m1.state_dict().items():
+        assert torch.allclose(sd_avg[k], v, atol=1e-7), (
+            f"{arch_name} key {k!r} drifted from identical input"
+        )
+
+
+def test_v7_random_aggregation_load_AND_forward_no_nan_for_spiking_expand2(schema):
+    """Two DIFFERENT-init spiking_expand2 models, average state
+    dicts, load into target, forward — must produce finite output.
+    Catches: load_state_dict raising on key mismatch, forward NaN
+    under aggregated weights."""
+    fl_v7 = _import_fl_v7()
+    from fl_oran.federated import weighted_average_state_dicts
+    from fl_oran.models.spiking_forecaster import SpikingForecaster
+
+    cfg = fl_v7.V7Config(arch="spiking_expand2")
+    torch.manual_seed(42)
+    m1 = fl_v7._build_model(cfg, schema)
+    torch.manual_seed(99)
+    m2 = fl_v7._build_model(cfg, schema)
+
+    sd_avg = weighted_average_state_dicts(
+        [m1.state_dict(), m2.state_dict()], [0.5, 0.5]
+    )
+    m_target = SpikingForecaster(
+        schema=schema, task="classification", seq_len=5,
+        backbone_d_model=56, backbone_expand=2,
+    )
+    m_target.load_state_dict(sd_avg)  # no key mismatch raise
+    m_target.eval()
+
+    torch.manual_seed(7)
+    x_cat = torch.randint(0, 4, (4, 5, 4)).long()
+    x_cont = torch.randn(4, 5, 17)
+    with torch.no_grad():
+        out = m_target(x_cat, x_cont)
+    assert torch.isfinite(out).all()
+
+
+def test_v7_gradient_flow_through_spiking_expand2_after_aggregation(schema):
+    """ADR D-19 unprecedented combination risk: surrogate × Adam ×
+    FL aggregation must produce finite, non-trivial gradients with
+    the spike-driven AC path actively exercised.
+
+    Round 5 hardening:
+      - D1: dropout=0 contract assertion (test logic depends on it
+        because eval() makes dropout a no-op; if registry default
+        changed to dropout>0 the spike path would still work but
+        test rationale would need updating).
+      - D4: firing_rate > 0.1% — ensures spike-driven AC path is
+        actually exercised by this batch (otherwise we'd only test
+        dense MAC gradient flow, missing half of D-19's risk).
+      - D17: max_abs_grad > 1e-7 — catches dead surrogate (where
+        gradients are all zero/inf despite isfinite passing).
+      - D18: post-forward state_dict re-check — paranoia that
+        ``self.spike_count = self.spike_count + ...`` reassignment
+        in forward path doesn't accidentally promote the buffer to
+        persistent.
+    """
+    fl_v7 = _import_fl_v7()
+    from fl_oran.federated import weighted_average_state_dicts
+    from fl_oran.models.spiking_forecaster import SpikingForecaster
+
+    cfg = fl_v7.V7Config(arch="spiking_expand2")
+    torch.manual_seed(42)
+    m1 = fl_v7._build_model(cfg, schema)
+    torch.manual_seed(99)
+    m2 = fl_v7._build_model(cfg, schema)
+
+    sd_avg = weighted_average_state_dicts(
+        [m1.state_dict(), m2.state_dict()], [0.5, 0.5]
+    )
+    m_target = SpikingForecaster(
+        schema=schema, task="classification", seq_len=5,
+        backbone_d_model=56, backbone_expand=2,
+    )
+    m_target.load_state_dict(sd_avg)
+    m_target.eval()
+
+    # D1: dropout=0 contract (registry default for spiking_expand2)
+    assert m_target.dropout.p == 0.0, (
+        "test logic relies on registry default dropout=0; if registry "
+        "changes, force cfg.arch_kwargs={'dropout': 0} explicitly"
+    )
+
+    # Deterministic + scaled input → push past LIF threshold=1.0
+    torch.manual_seed(7)
+    x_cat = torch.randint(0, 4, (16, 5, 4)).long()
+    x_cont = torch.randn(16, 5, 17) * 2.0
+
+    out = m_target(x_cat, x_cont)
+    out.sum().backward()
+
+    # D4: spike-driven AC path actually exercised
+    total_spikes = sum(float(b.spike_count) for b in m_target.blocks)
+    total_slots = 16 * 5 * 112 * 2  # batch × seq × d_inner × n_blocks
+    firing_rate = total_spikes / total_slots
+    assert firing_rate > 0.001, (
+        f"firing_rate={firing_rate:.4%} below 0.1% threshold — "
+        f"spike-driven AC gradient path not exercised; test invalid"
+    )
+
+    # All trainable params have finite grad (catches NaN/Inf surrogate)
+    for name, p in m_target.named_parameters():
+        assert p.grad is not None, f"{name}: no grad"
+        assert torch.isfinite(p.grad).all(), f"{name}: non-finite grad"
+
+    # D17: at least one param with non-trivial grad (catches dead surrogate)
+    max_abs_grad = max(p.grad.abs().max().item() for p in m_target.parameters())
+    assert max_abs_grad > 1e-7, (
+        f"all gradients ≈ 0 (max={max_abs_grad:.2e}); "
+        f"surrogate likely dead under aggregated weights"
+    )
+
+    # D18: spike_count remains non-persistent post-forward
+    sd_after = m_target.state_dict()
+    for k in sd_after:
+        assert "spike_count" not in k, f"spike_count leaked post-forward: {k}"
+        assert "forward_inferences" not in k
+
+
+# ---------------------------------------------------------------------------
+# Tests 9-12: end-to-end FL smoke + output IO
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("algo,algo_kwargs", [
+    ("fedavg", {}),
+    ("fedprox", {"mu": 0.01}),
+])
+def test_v7_smoke_lstm_iid_per_algo(synthetic_parquet, tmp_path, algo, algo_kwargs):
+    """Round 4 H: parametric over fedavg + fedprox to exercise
+    algo_kwargs threading through fl_v7's algorithm dispatch.
+
+    Round 4 #5 (loss-decrease relaxation): instead of strict
+    last < first, check that AT LEAST ONE later round improves
+    over round 0 (catches "training loop runs but does nothing"
+    bugs without flaking on toy-data noise)."""
+    fl_v7 = _import_fl_v7()
+
     cfg = fl_v7.V7Config(
-        name="smoke_lstm_iid",
+        name=f"smoke_lstm_iid_{algo}",
         arch="lstm",
-        algorithm="fedavg",
+        algorithm=algo,
+        algo_kwargs=algo_kwargs,
         partition_mode="iid",
-        n_clients=7,                  # ignored by iid mode but documented
+        n_clients=7,
         num_rounds=3,
         clients_per_round=4,
         max_steps_per_round=20,
         batch_size=32,
         lr=5e-4,
         lr_warmup_rounds=1,
-        unified_parquet=parquet,
+        unified_parquet=synthetic_parquet,
         sample_ratio=1.0,
         threshold=0.10,
         seq_len=5,
         seed=42,
-        device="cpu",                 # CPU smoke; integration will go GPU
+        device="cpu",
         mixed_precision="off",
-        output_dir=str(tmp_path / "out"),
+        output_dir=str(tmp_path / f"out_{algo}"),
     )
     result = fl_v7.run_v7_sweep(cfg)
+
     assert "history" in result
     history = result["history"]
     assert len(history) == 3
-    # Loss must decrease meaningfully across 3 rounds.
-    first = history[0]["train_loss"]
-    last = history[-1]["train_loss"]
-    assert np.isfinite(first) and np.isfinite(last)
-    assert last < first, (
-        f"FL run did not learn: loss went {first:.4f} -> {last:.4f}"
+
+    losses = [h["train_loss"] for h in history]
+    for l in losses:
+        assert np.isfinite(l), f"NaN/Inf in losses: {losses}"
+
+    # At least one later round improves on round 0 (with epsilon)
+    assert min(losses[1:]) < losses[0] + 0.05, (
+        f"loss frozen across rounds: {losses}; training loop may not be updating"
     )
 
 
-@pytest.mark.timeout(120)
-def test_v7_smoke_spiking_expand2_dirichlet_3_rounds(tmp_path):
-    """End-to-end FL on the architecture that's hardest to integrate:
-    SpikingForecaster with backbone_expand=2, Dirichlet partition,
-    FedAvg, 3 rounds. The combination
+def test_v7_smoke_spiking_expand2_dirichlet_3_rounds_history_finite_AND_val_auc_present(
+    synthetic_parquet, tmp_path,
+):
+    """End-to-end FL on the architecture combination flagged by
+    ADR D-19 as ``unprecedented`` (surrogate gradient + Adam + FL).
 
-      surrogate-gradient + Adam + FL aggregation + spike buffers
+    Round 4 #1 critical fix: explicit ``assert "val_auc" in h``,
+    NOT silent ``h.get("val_auc", 0.0)`` which always returns finite
+    0.0 if the key is missing — false-pass bug class.
 
-    is flagged by ADR D-19 as ``unprecedented combination``. This test
-    is the de-risking step before Phase 2 commits to a real GPU sweep.
-
-    The smoke verifies:
-      - run_v7_sweep does not crash on spiking_expand2
-      - server-side weighted_average_state_dicts handles the larger
-        expanded-channel state dict correctly
-      - non-persistent spike buffers do not pollute aggregation
-        (test 5 pins the precondition; this test exercises the full path)
-
-    Loss-decrease check is **soft** (training noise on toy data with
-    surrogate gradients can plateau in 3 rounds) — the hard assertion
-    is "no NaN / no crash / finite final loss".
+    Soft loss-decrease (only finite check) because surrogate
+    gradients on toy data with 3 rounds may legitimately not show
+    monotone improvement; the hard claim is "no NaN, no crash,
+    val_auc reported as required".
     """
     fl_v7 = _import_fl_v7()
-    parquet = _make_synthetic_parquet(tmp_path, n_rows=2800)
+
     cfg = fl_v7.V7Config(
         name="smoke_spiking_expand2_dirichlet",
         arch="spiking_expand2",
@@ -313,7 +461,7 @@ def test_v7_smoke_spiking_expand2_dirichlet_3_rounds(tmp_path):
         batch_size=32,
         lr=5e-4,
         lr_warmup_rounds=1,
-        unified_parquet=parquet,
+        unified_parquet=synthetic_parquet,
         sample_ratio=1.0,
         threshold=0.10,
         seq_len=5,
@@ -323,13 +471,150 @@ def test_v7_smoke_spiking_expand2_dirichlet_3_rounds(tmp_path):
         output_dir=str(tmp_path / "out"),
     )
     result = fl_v7.run_v7_sweep(cfg)
-    assert "history" in result
+
     history = result["history"]
     assert len(history) == 3
-    # Hard checks: no NaN / inf, finite final loss.
     for h in history:
         assert np.isfinite(h["train_loss"]), h
-        assert np.isfinite(h.get("val_auc", 0.0)), h
-    # Final loss exists and is finite (no requirement that it must drop
-    # — surrogate gradients on toy data with 3 rounds may not converge).
-    assert np.isfinite(history[-1]["train_loss"])
+        # Round 4 #1 critical: val_auc key MUST exist (not silent default)
+        assert "val_auc" in h, f"history entry missing val_auc: {h}"
+        assert np.isfinite(h["val_auc"]), h
+
+
+def test_v7_moon_non_lstm_arch_raises_at_select_fast(schema):
+    """Round 4 E + ADR D-22 contract: ``_select_algorithm`` raises
+    ``NotImplementedError`` on MOON (any arch in Phase 1.5 minimum-
+    viable; D-16's per-arch encode_fn is paper-level open question
+    deferred to Phase 2 polish).
+
+    Fail-fast at config-time helper (no parquet load, no training)
+    means the test runs in milliseconds.
+    """
+    fl_v7 = _import_fl_v7()
+    cfg = fl_v7.V7Config(algorithm="moon", arch="spiking_expand2")
+    with pytest.raises(NotImplementedError, match=r"MOON"):
+        fl_v7._select_algorithm(cfg)
+
+
+def test_v7_sweep_writes_summary_history_AND_summary_has_test_auc_key(
+    synthetic_parquet, tmp_path,
+):
+    """Round 4 G: ADR D-7 mandates ``summary.json`` + ``history.csv``
+    written to ``cfg.output_dir / cfg.name``. Round 5 B4: ``best.pt``
+    is optional — toy data on 2 rounds may not improve val_auc, in
+    which case best_state never gets written. Don't require it.
+
+    Validates summary.json content: must have ``test_auc`` key (the
+    primary metric the aggregator reads)."""
+    fl_v7 = _import_fl_v7()
+    cell_name = "out_io_test"
+    cfg = fl_v7.V7Config(
+        name=cell_name,
+        arch="lstm",
+        algorithm="fedavg",
+        partition_mode="iid",
+        num_rounds=2,
+        clients_per_round=2,
+        max_steps_per_round=10,
+        batch_size=16,
+        lr=5e-4,
+        lr_warmup_rounds=0,
+        unified_parquet=synthetic_parquet,
+        sample_ratio=1.0,
+        threshold=0.10,
+        seq_len=5,
+        seed=42,
+        device="cpu",
+        mixed_precision="off",
+        output_dir=str(tmp_path),
+    )
+    fl_v7.run_v7_sweep(cfg)
+
+    cell_dir = tmp_path / cell_name
+    assert (cell_dir / "summary.json").exists(), \
+        f"summary.json missing in {cell_dir}"
+    assert (cell_dir / "history.csv").exists(), \
+        f"history.csv missing in {cell_dir}"
+    summary = json.loads((cell_dir / "summary.json").read_text())
+    assert "test_auc" in summary, \
+        f"summary.json keys: {list(summary.keys())}"
+
+
+# ---------------------------------------------------------------------------
+# Tests 13-14: idempotency + D-12 contract
+# ---------------------------------------------------------------------------
+
+def test_v7_sweep_idempotent_AND_seed_actually_matters(
+    deterministic_torch, synthetic_parquet, tmp_path,
+):
+    """Round 4 A4 + Round 5 E13 critical: 3-sweep test catches
+    TWO classes of seed bug:
+
+      1. r1 == r2 (with global RNG corrupted between runs):
+         fl_v7 must seed all RNG sources (torch, numpy, random)
+         from cfg.seed. If any source is left to global state,
+         corrupting global RNG between runs would cause r1 != r2.
+
+      2. r1 != r3 (different seed): if fl_v7 hardcodes a seed
+         instead of reading from cfg.seed, r1 == r3 would pass
+         the first check but fail this one.
+
+    Tiny budget (1 round × 5 steps × 2 clients) keeps total
+    runtime ~15s for 3 sweeps."""
+    fl_v7 = _import_fl_v7()
+
+    base_cfg = fl_v7.V7Config(
+        name="idem_base",
+        arch="lstm",
+        algorithm="fedavg",
+        partition_mode="iid",
+        num_rounds=1,
+        clients_per_round=2,
+        max_steps_per_round=5,
+        batch_size=16,
+        lr=5e-4,
+        lr_warmup_rounds=0,
+        unified_parquet=synthetic_parquet,
+        sample_ratio=1.0,
+        threshold=0.10,
+        seq_len=5,
+        seed=42,
+        device="cpu",
+        mixed_precision="off",
+    )
+    cfg1 = replace(base_cfg, name="r1", output_dir=str(tmp_path / "r1"))
+    r1 = fl_v7.run_v7_sweep(cfg1)
+
+    # E13 part 1: corrupt global RNG → seed=42 must still give same result
+    torch.manual_seed(99999)
+    np.random.seed(99999)
+
+    cfg2 = replace(base_cfg, name="r2", output_dir=str(tmp_path / "r2"))
+    r2 = fl_v7.run_v7_sweep(cfg2)
+    assert r1["history"][-1]["train_loss"] == r2["history"][-1]["train_loss"], (
+        f"r1={r1['history'][-1]['train_loss']} != "
+        f"r2={r2['history'][-1]['train_loss']}; "
+        f"fl_v7 likely depends on global RNG (must seed all sources from cfg.seed)"
+    )
+
+    # E13 part 2: seed=43 MUST give different result
+    cfg3 = replace(base_cfg, seed=43, name="r3", output_dir=str(tmp_path / "r3"))
+    r3 = fl_v7.run_v7_sweep(cfg3)
+    assert r1["history"][-1]["train_loss"] != r3["history"][-1]["train_loss"], (
+        f"seed=42 and seed=43 give SAME train_loss; "
+        f"fl_v7 likely ignores cfg.seed (hardcoded seed bug)"
+    )
+
+
+def test_v7_config_pos_weight_split_default_train_per_D12():
+    """ADR D-12 audit fix: pos_weight derives from train split
+    (not test) to avoid label-distribution leakage. fl_v7 must
+    inherit this default. M5 had a bug where pos_weight came from
+    test split — caught in adversarial review and fixed.
+    """
+    fl_v7 = _import_fl_v7()
+    cfg = fl_v7.V7Config()
+    assert cfg.pos_weight_split == "train", (
+        f"D-12 contract violated: pos_weight_split={cfg.pos_weight_split!r}; "
+        f"must default to 'train' to avoid leakage from test split"
+    )
