@@ -232,6 +232,27 @@ def _build_model(cfg: V7Config, schema: FeatureSchema) -> nn.Module:
     )
 
 
+# Per-algorithm required kwargs (post-fl_v7-auto-fill). ``run_v7_sweep``
+# already injects max_steps/batch_size/grad_clip/amp_enabled/amp_dtype
+# (see _run_training_v7), so this table only lists user-supplied
+# algorithm hyperparameters that the spec MUST provide. The
+# spec loader (scripts/_v7_spec_loader.py) consults this table at
+# load time to refuse a spec that lacks a required kwarg — that is
+# how Phase 2's "all 18 fedprox cells crashed at training time" bug
+# class becomes undeployable.
+#
+# MOON is intentionally absent: its encode_fn requirement is a deferred
+# paper-level question per ADR D-22 / D-16, and ``_select_algorithm``
+# raises NotImplementedError before reaching this table.
+_ALGO_REQUIRED_KWARGS: dict[str, set[str]] = {
+    "fedavg":   set(),
+    "fedprox":  {"mu"},
+    "fedadam":  {"server_lr"},
+    "scaffold": set(),
+    "feddyn":   {"alpha"},  # FedDyn regularization; NOT V7Config.alpha (Dirichlet)
+}
+
+
 def _select_algorithm(cfg: V7Config):
     """Return the algorithm class, fail-fast on MOON × any-arch.
 
