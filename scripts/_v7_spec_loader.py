@@ -322,7 +322,7 @@ def expand_spec(spec: dict) -> list[dict]:
                     cell["seed"] = seed
                     cell["name"] = helper.cell_name(
                         arch, algo, partition["mode"], seed,
-                        alpha=cell["alpha"],
+                        partition["n_clients"], alpha=cell["alpha"],
                     )
                     cells.append(cell)
     return cells

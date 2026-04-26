@@ -203,7 +203,7 @@ def test_expanded_cells_carry_canonical_name(expanded, helper):
         expected = helper.cell_name(
             cell["arch"], cell["algorithm"],
             cell["partition_mode"], cell["seed"],
-            alpha=cell.get("alpha"),
+            cell["n_clients"], alpha=cell.get("alpha"),
         )
         assert cell["name"] == expected, (
             f"name {cell['name']!r} != canonical {expected!r}"
@@ -360,6 +360,9 @@ def test_expanded_cells_compatible_with_v7config_schema(loader, spec_dict):
             "V7Config schema drift — phase2_min.yaml emits fields "
             f"V7Config does not accept:\n  " + "\n  ".join(failures[:5])
         )
+
+
+def test_load_spec_rejects_duplicate_yaml_keys(loader, tmp_path):
     """Item 4: yaml.safe_load silently keeps the last value on duplicate
     keys. Long sweep specs are fragile to copy-paste introducing
     duplicates (e.g. two ``seeds:`` blocks). Custom loader must raise."""

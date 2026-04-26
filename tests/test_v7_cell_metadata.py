@@ -54,28 +54,30 @@ def helper():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
-    "arch, algo, partition_mode, alpha, seed, expected",
+    "arch, algo, partition_mode, alpha, n_clients, seed, expected",
     [
-        ("lstm", "fedavg", "iid", None, 42, "v7_lstm_fedavg_iid_s42"),
-        ("mamba", "fedprox", "iid", None, 0, "v7_mamba_fedprox_iid_s0"),
-        ("spiking_expand2", "fedavg", "iid", None, 17,
-         "v7_spiking_expand2_fedavg_iid_s17"),
-        ("lstm", "fedavg", "dirichlet", 0.5, 42,
-         "v7_lstm_fedavg_dir_a0p50_s42"),
-        ("spiking_expand2", "fedprox", "dirichlet", 0.05, 0,
-         "v7_spiking_expand2_fedprox_dir_a0p05_s0"),
-        ("mamba_expand2", "fedavg", "dirichlet", 10.0, 23,
-         "v7_mamba_expand2_fedavg_dir_a10p00_s23"),
-        ("lstm", "fedavg", "dirichlet", 1.0, 42,
-         "v7_lstm_fedavg_dir_a1p00_s42"),
+        ("lstm", "fedavg", "iid", None, 7, 42, "v7_lstm_fedavg_iid_n7_s42"),
+        ("mamba", "fedprox", "iid", None, 5, 0, "v7_mamba_fedprox_iid_n5_s0"),
+        ("spiking_expand2", "fedavg", "iid", None, 7, 17,
+         "v7_spiking_expand2_fedavg_iid_n7_s17"),
+        ("lstm", "fedavg", "dirichlet", 0.5, 7, 42,
+         "v7_lstm_fedavg_dirichlet_a0p50_n7_s42"),
+        ("spiking_expand2", "fedprox", "dirichlet", 0.05, 7, 0,
+         "v7_spiking_expand2_fedprox_dirichlet_a0p05_n7_s0"),
+        ("mamba_expand2", "fedavg", "dirichlet", 10.0, 5, 23,
+         "v7_mamba_expand2_fedavg_dirichlet_a10p00_n5_s23"),
+        ("lstm", "fedavg", "dirichlet", 1.0, 7, 42,
+         "v7_lstm_fedavg_dirichlet_a1p00_n7_s42"),
     ],
 )
-def test_cell_name_is_canonical(helper, arch, algo, partition_mode, alpha, seed, expected):
+def test_cell_name_is_canonical(helper, arch, algo, partition_mode, alpha, n_clients, seed, expected):
     """``cell_name`` produces the documented canonical string for both
-    IID (no alpha tag) and Dirichlet (with ``a<tag>``) cases. The alpha
-    tag must always have exactly two decimal digits so 0.05 / 0.10 / 0.50
-    do not collide with each other and round-tripping is unambiguous."""
-    assert helper.cell_name(arch, algo, partition_mode, seed, alpha=alpha) == expected
+    IID (no alpha tag) and Dirichlet (with ``a<tag>``) cases. Format
+    must match V7Config.__post_init__ — see
+    ``test_cell_name_matches_v7config_post_init``."""
+    assert helper.cell_name(
+        arch, algo, partition_mode, seed, n_clients, alpha=alpha,
+    ) == expected
 
 
 def test_cell_name_iid_rejects_alpha(helper):
@@ -84,19 +86,27 @@ def test_cell_name_iid_rejects_alpha(helper):
     construction rather than during parse where it would silently drop
     information."""
     with pytest.raises(ValueError, match=r"alpha.*iid"):
-        helper.cell_name("lstm", "fedavg", "iid", 42, alpha=0.5)
+        helper.cell_name("lstm", "fedavg", "iid", 42, 7, alpha=0.5)
 
 
 def test_cell_name_dirichlet_requires_alpha(helper):
     """Dirichlet without alpha is meaningless. Construction must fail."""
     with pytest.raises(ValueError, match=r"alpha.*dirichlet"):
-        helper.cell_name("lstm", "fedavg", "dirichlet", 42, alpha=None)
+        helper.cell_name("lstm", "fedavg", "dirichlet", 42, 7, alpha=None)
 
 
 def test_cell_name_unknown_partition_mode(helper):
     """Only iid and dirichlet are supported per partition.py."""
     with pytest.raises(ValueError, match=r"partition_mode"):
-        helper.cell_name("lstm", "fedavg", "noniid_slice", 42, alpha=0.5)
+        helper.cell_name("lstm", "fedavg", "noniid_slice", 42, 7, alpha=0.5)
+
+
+@pytest.mark.parametrize("bad_n", [0, -1, 1.5, "7", True])
+def test_cell_name_rejects_invalid_n_clients(helper, bad_n):
+    """n_clients must be a positive int (per V7Config.n_clients=7
+    default)."""
+    with pytest.raises(ValueError, match=r"n_clients"):
+        helper.cell_name("lstm", "fedavg", "iid", 42, bad_n)
 
 
 @pytest.mark.parametrize(
@@ -114,7 +124,7 @@ def test_cell_name_dirichlet_rejects_unencodable_alpha(helper, bad_alpha):
     must raise — silent rounding (0.005 → 0p01) would let the same
     intent be encoded as different cells, breaking aggregator grouping."""
     with pytest.raises(ValueError):
-        helper.cell_name("lstm", "fedavg", "dirichlet", 42, alpha=bad_alpha)
+        helper.cell_name("lstm", "fedavg", "dirichlet", 42, 7, alpha=bad_alpha)
 
 
 @pytest.mark.parametrize("bad_arch", ["", None, 42])
@@ -122,21 +132,21 @@ def test_cell_name_rejects_invalid_arch(helper, bad_arch):
     """Empty / non-str arch must raise — silently producing
     ``v7__fedavg_iid_s42`` would be unparseable later."""
     with pytest.raises(ValueError):
-        helper.cell_name(bad_arch, "fedavg", "iid", 42)
+        helper.cell_name(bad_arch, "fedavg", "iid", 42, 7)
 
 
 def test_cell_name_rejects_arch_with_empty_segment(helper):
     """``foo__bar`` would parse-trip incorrectly (empty middle segment).
     Catch at construction."""
     with pytest.raises(ValueError):
-        helper.cell_name("foo__bar", "fedavg", "iid", 42)
+        helper.cell_name("foo__bar", "fedavg", "iid", 42, 7)
 
 
 @pytest.mark.parametrize("bad_algo", ["", None, 42])
 def test_cell_name_rejects_invalid_algorithm(helper, bad_algo):
     """Same defensive contract as arch."""
     with pytest.raises(ValueError):
-        helper.cell_name("lstm", bad_algo, "iid", 42)
+        helper.cell_name("lstm", bad_algo, "iid", 42, 7)
 
 
 @pytest.mark.parametrize("bad_seed", [-1, "42", 1.5, True])
@@ -145,7 +155,7 @@ def test_cell_name_rejects_invalid_seed(helper, bad_seed):
     name but downstream lookups by integer seed would silently miss; a
     bool sneaks past int-checks and prints as ``True``."""
     with pytest.raises(ValueError):
-        helper.cell_name("lstm", "fedavg", "iid", bad_seed)
+        helper.cell_name("lstm", "fedavg", "iid", bad_seed, 7)
 
 
 # ---------------------------------------------------------------------------
@@ -153,22 +163,21 @@ def test_cell_name_rejects_invalid_seed(helper, bad_seed):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(
-    "arch, algo, partition_mode, alpha, seed",
+    "arch, algo, partition_mode, alpha, n_clients, seed",
     [
-        ("lstm", "fedavg", "iid", None, 42),
-        ("mamba", "fedprox", "iid", None, 0),
-        ("spiking_expand2", "fedavg", "iid", None, 17),
-        ("lstm", "fedavg", "dirichlet", 0.5, 42),
-        ("spiking_expand2", "fedprox", "dirichlet", 0.05, 0),
-        ("mamba_expand2", "fedavg", "dirichlet", 10.0, 23),
-        ("lstm", "fedavg", "dirichlet", 1.0, 42),
-        ("lstm", "fedavg", "dirichlet", 0.1, 7),
+        ("lstm", "fedavg", "iid", None, 7, 42),
+        ("mamba", "fedprox", "iid", None, 5, 0),
+        ("spiking_expand2", "fedavg", "iid", None, 7, 17),
+        ("lstm", "fedavg", "dirichlet", 0.5, 7, 42),
+        ("spiking_expand2", "fedprox", "dirichlet", 0.05, 7, 0),
+        ("mamba_expand2", "fedavg", "dirichlet", 10.0, 5, 23),
+        ("lstm", "fedavg", "dirichlet", 1.0, 7, 42),
+        ("lstm", "fedavg", "dirichlet", 0.1, 7, 7),
     ],
 )
-def test_parse_round_trips_with_cell_name(helper, arch, algo, partition_mode, alpha, seed):
-    """For every (arch, algo, partition, alpha, seed) tuple,
-    ``parse_cell_name(cell_name(*tuple)) == tuple`` exactly."""
-    name = helper.cell_name(arch, algo, partition_mode, seed, alpha=alpha)
+def test_parse_round_trips_with_cell_name(helper, arch, algo, partition_mode, alpha, n_clients, seed):
+    """For every tuple, ``parse_cell_name(cell_name(*tuple)) == tuple``."""
+    name = helper.cell_name(arch, algo, partition_mode, seed, n_clients, alpha=alpha)
     parsed = helper.parse_cell_name(name)
     assert parsed["arch"] == arch
     assert parsed["algorithm"] == algo
@@ -177,6 +186,7 @@ def test_parse_round_trips_with_cell_name(helper, arch, algo, partition_mode, al
         assert parsed["alpha"] is None
     else:
         assert parsed["alpha"] == pytest.approx(alpha, abs=1e-6)
+    assert parsed["n_clients"] == n_clients
     assert parsed["seed"] == seed
 
 
@@ -184,14 +194,17 @@ def test_parse_round_trips_with_cell_name(helper, arch, algo, partition_mode, al
     "bad_name",
     [
         "",
-        "lstm_fedavg_iid_s42",                # missing v7_ prefix
-        "v7_lstm_fedavg",                     # missing partition + seed
-        "v7_lstm_fedavg_iid",                 # missing seed
-        "v7_lstm_fedavg_iid_sX",              # non-integer seed
-        "v7_lstm_fedavg_dir_s42",             # dirichlet without _a<tag>
-        "v7_lstm_fedavg_dir_a0p5_s42",        # alpha tag must be 2-decimal
-        "v7_lstm_unknownalgo_iid_s42",        # algorithm not in REGISTRY
-        "v7__fedavg_iid_s42",                 # empty arch
+        "lstm_fedavg_iid_n7_s42",                  # missing v7_ prefix
+        "v7_lstm_fedavg",                          # missing partition + n + seed
+        "v7_lstm_fedavg_iid_s42",                  # missing n<N>
+        "v7_lstm_fedavg_iid_n7",                   # missing seed
+        "v7_lstm_fedavg_iid_n7_sX",                # non-integer seed
+        "v7_lstm_fedavg_iid_nX_s42",               # non-integer n_clients
+        "v7_lstm_fedavg_iid_n0_s42",               # non-positive n_clients
+        "v7_lstm_fedavg_dirichlet_n7_s42",         # dirichlet without _a<tag>
+        "v7_lstm_fedavg_dirichlet_a0p5_n7_s42",    # alpha tag must be 2-decimal
+        "v7_lstm_unknownalgo_iid_n7_s42",          # algorithm not in REGISTRY
+        "v7__fedavg_iid_n7_s42",                   # empty arch
     ],
 )
 def test_parse_cell_name_rejects_malformed(helper, bad_name):
@@ -207,10 +220,56 @@ def test_parse_handles_arch_with_underscore_unambiguously(helper):
     greedily strip ``expand2_fedavg`` thinking ``expand2`` is the arch
     and ``fedavg`` is part of the partition tail. Must split arch from
     algorithm by suffix-matching against the algorithm registry."""
-    name = "v7_mamba_expand2_fedavg_iid_s42"
+    name = "v7_mamba_expand2_fedavg_iid_n7_s42"
     parsed = helper.parse_cell_name(name)
     assert parsed["arch"] == "mamba_expand2"
     assert parsed["algorithm"] == "fedavg"
+
+
+# ---------------------------------------------------------------------------
+# Cross-validation: cell_name MUST match V7Config.__post_init__ byte-exact
+# ---------------------------------------------------------------------------
+
+def test_cell_name_matches_v7config_post_init(helper):
+    """V7Config.__post_init__ is the on-disk source of truth for cell
+    naming. ``_v7_cell_metadata.cell_name`` exists for tools that need
+    the name without instantiating V7Config (heavier import). The two
+    MUST agree byte-for-byte; this test pins the equivalence so any
+    future drift in either side fails CI loudly.
+
+    Skips if fl_v7 not yet importable — only relevant when the v7
+    trainer module is on the Python path.
+    """
+    pytest.importorskip("fl_oran.training.fl_v7")
+    from fl_oran.training.fl_v7 import V7Config
+
+    cases = [
+        # (kwargs, expected via cell_name)
+        (dict(arch="lstm", algorithm="fedavg", partition_mode="iid",
+              alpha=0.5, n_clients=7, seed=42),
+         dict(partition_mode="iid", alpha=None, n_clients=7)),
+        (dict(arch="mamba", algorithm="fedprox", partition_mode="iid",
+              alpha=0.5, n_clients=5, seed=0),
+         dict(partition_mode="iid", alpha=None, n_clients=5)),
+        (dict(arch="spiking_expand2", algorithm="fedavg",
+              partition_mode="dirichlet", alpha=0.05, n_clients=7, seed=17),
+         dict(partition_mode="dirichlet", alpha=0.05, n_clients=7)),
+        (dict(arch="mamba_expand2", algorithm="fedavg",
+              partition_mode="dirichlet", alpha=10.0, n_clients=5, seed=23),
+         dict(partition_mode="dirichlet", alpha=10.0, n_clients=5)),
+    ]
+    for v7_kwargs, helper_kwargs in cases:
+        cfg = V7Config(**v7_kwargs)
+        expected = helper.cell_name(
+            v7_kwargs["arch"], v7_kwargs["algorithm"],
+            helper_kwargs["partition_mode"], v7_kwargs["seed"],
+            helper_kwargs["n_clients"], alpha=helper_kwargs["alpha"],
+        )
+        assert cfg.name == expected, (
+            f"V7Config.__post_init__ produced {cfg.name!r} but "
+            f"_v7_cell_metadata.cell_name produced {expected!r} — "
+            "naming drift; fix one side to match the other"
+        )
 
 
 # ---------------------------------------------------------------------------

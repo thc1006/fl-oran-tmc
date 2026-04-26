@@ -12,14 +12,19 @@ The v7 sweep crosses three dimensions that v6 did not vary:
   draws per-slice proportions from ``Dir(alpha)``.
 * ``alpha`` — only meaningful for Dirichlet; ``None`` for IID.
 
-The cell-name convention is therefore:
+The cell-name convention is therefore (must match
+``fl_oran.training.fl_v7.V7Config.__post_init__`` byte-for-byte —
+cross-validated by ``test_cell_name_matches_v7config_post_init``):
 
-* IID:        ``v7_<arch>_<algorithm>_iid_s<seed>``
-* Dirichlet:  ``v7_<arch>_<algorithm>_dir_a<alpha_tag>_s<seed>``
+* IID:        ``v7_<arch>_<algorithm>_iid_n<N>_s<seed>``
+* Dirichlet:  ``v7_<arch>_<algorithm>_dirichlet_a<alpha_tag>_n<N>_s<seed>``
 
-where ``alpha_tag = f"{alpha:.2f}".replace(".", "p")``. Two-decimal
-formatting guarantees ``0.05 / 0.10 / 0.50 / 1.00 / 10.00`` map to
-distinct, unambiguous tags.
+where ``alpha_tag = f"{alpha:.2f}".replace(".", "p")`` and ``N`` is
+``n_clients``. Two-decimal alpha formatting guarantees
+``0.05 / 0.10 / 0.50 / 1.00 / 10.00`` map to distinct, unambiguous
+tags. ``n_clients`` is included in every cell name (per V7Config fix
+``a294d28``) so future ``n_clients`` ablation sweeps cannot silently
+collide with the canonical ``n=7`` cells.
 
 This module is the canonical place for that convention. The aggregator
 should NOT depend on parsing — fl_v7's ``summary.json`` carries
@@ -125,6 +130,7 @@ def known_algorithms() -> set[str]:
 _VALID_PARTITION_MODES = ("iid", "dirichlet")
 _ALPHA_TAG_RE = re.compile(r"^(\d+)p(\d{2})$")  # e.g. "0p50", "10p00"
 _SEED_RE = re.compile(r"^s(\d+)$")
+_NCLIENTS_RE = re.compile(r"^n(\d+)$")
 _PREFIX = "v7_"
 
 
@@ -175,16 +181,22 @@ def _tag_to_alpha(tag: str) -> float:
 
 
 def cell_name(arch: str, algorithm: str, partition_mode: str, seed: int,
-              *, alpha: float | None = None) -> str:
+              n_clients: int, *, alpha: float | None = None) -> str:
     """Build the canonical v7 cell directory name.
+
+    Format MUST match ``V7Config.__post_init__`` byte-for-byte (the
+    ``test_cell_name_matches_v7config_post_init`` test cross-validates
+    on every change). V7Config is the on-disk source of truth; this
+    helper exists for tools that need to predict the name without
+    instantiating a V7Config (heavier import).
 
     Examples::
 
-        cell_name("lstm", "fedavg", "iid", 42)
-            → "v7_lstm_fedavg_iid_s42"
-        cell_name("spiking_expand2", "fedprox", "dirichlet", 0,
+        cell_name("lstm", "fedavg", "iid", 42, 7)
+            → "v7_lstm_fedavg_iid_n7_s42"
+        cell_name("spiking_expand2", "fedprox", "dirichlet", 0, 7,
                   alpha=0.05)
-            → "v7_spiking_expand2_fedprox_dir_a0p05_s0"
+            → "v7_spiking_expand2_fedprox_dirichlet_a0p05_n7_s0"
 
     Validation:
 
@@ -193,6 +205,9 @@ def cell_name(arch: str, algorithm: str, partition_mode: str, seed: int,
       Dirichlet — the inverse of the ambiguous "alpha is silently
       ignored" pattern, which would let bugs in the caller (alpha
       meant for a different cell) leak in undetected.
+    * ``n_clients`` must be a positive int — included in the name per
+      V7Config fix ``a294d28`` to prevent silent collision between
+      n=5 and n=7 cells in future ablation sweeps.
 
     The function does NOT validate ``arch`` / ``algorithm`` against
     their registries. That allows synthetic testing with arbitrary
@@ -215,6 +230,12 @@ def cell_name(arch: str, algorithm: str, partition_mode: str, seed: int,
         raise ValueError(f"seed must be int, got {type(seed).__name__}: {seed!r}")
     if seed < 0:
         raise ValueError(f"seed must be non-negative, got {seed!r}")
+    if not isinstance(n_clients, int) or isinstance(n_clients, bool):
+        raise ValueError(
+            f"n_clients must be int, got {type(n_clients).__name__}: {n_clients!r}"
+        )
+    if n_clients <= 0:
+        raise ValueError(f"n_clients must be > 0, got {n_clients!r}")
     if partition_mode not in _VALID_PARTITION_MODES:
         raise ValueError(
             f"partition_mode {partition_mode!r} not in {_VALID_PARTITION_MODES}"
@@ -230,23 +251,30 @@ def cell_name(arch: str, algorithm: str, partition_mode: str, seed: int,
             "alpha is required for partition_mode='dirichlet'"
         )
     if partition_mode == "iid":
-        return f"{_PREFIX}{arch}_{algorithm}_iid_s{seed}"
-    return f"{_PREFIX}{arch}_{algorithm}_dir_a{_alpha_to_tag(alpha)}_s{seed}"
+        return f"{_PREFIX}{arch}_{algorithm}_iid_n{n_clients}_s{seed}"
+    return (
+        f"{_PREFIX}{arch}_{algorithm}_dirichlet_"
+        f"a{_alpha_to_tag(alpha)}_n{n_clients}_s{seed}"
+    )
 
 
 def parse_cell_name(name: str) -> dict:
-    """Parse a canonical v7 cell name back into its 5-tuple of fields.
+    """Parse a canonical v7 cell name back into its 6-tuple of fields.
 
-    Returns ``{"arch", "algorithm", "partition_mode", "alpha", "seed"}``.
+    Returns
+    ``{"arch", "algorithm", "partition_mode", "alpha", "n_clients", "seed"}``.
     ``alpha`` is ``None`` for IID, ``float`` for Dirichlet.
 
-    Algorithm names containing no underscore are required; the parser
-    splits ``arch`` from ``algorithm`` by suffix-matching against the
-    algorithm registry, longest-first (so a hypothetical
-    ``fedavg_plus`` beats ``fedavg`` when present). The
-    ``test_no_arch_name_collides_with_algorithm_suffix`` guard ensures
-    no arch name itself ends with ``_<algorithm>``, which would
-    otherwise misattribute an arch's tail as the algorithm.
+    Right-to-left strip order:
+      1. ``s<seed>``
+      2. ``n<n_clients>``
+      3. partition tail (``iid`` or ``dirichlet_a<tag>``)
+      4. remainder = ``<arch>_<algorithm>``; algorithm matched
+         longest-first against the registry
+
+    The right-to-left strip is robust to arch names that themselves
+    contain ``_iid`` / ``_dirichlet`` / ``_n<digit>`` / ``_s<digit>``
+    substrings — only the trailing segment is inspected at each step.
 
     Raises ValueError for any malformed input — never returns silently
     bogus fields.
@@ -258,9 +286,10 @@ def parse_cell_name(name: str) -> dict:
         raise ValueError(f"empty body after {_PREFIX!r}: {name!r}")
 
     parts = body.split("_")
-    if len(parts) < 4:
+    # Min: <arch>_<algo>_iid_n<N>_s<seed> = 5 segments.
+    if len(parts) < 5:
         raise ValueError(
-            f"v7 cell name needs at least <arch>_<algo>_<partition>_<seed>; "
+            f"v7 cell name needs at least <arch>_<algo>_<partition>_n<N>_<seed>; "
             f"got only {len(parts)} segments in {name!r}"
         )
 
@@ -271,19 +300,31 @@ def parse_cell_name(name: str) -> dict:
     seed = int(seed_match.group(1))
     parts = parts[:-1]
 
-    # Partition tail: either ``..._iid`` or ``..._dir_a<tag>``.
+    # n_clients.
+    nclients_match = _NCLIENTS_RE.match(parts[-1])
+    if not nclients_match:
+        raise ValueError(
+            f"second-to-last segment {parts[-1]!r} is not 'n<int>': {name!r}"
+        )
+    n_clients = int(nclients_match.group(1))
+    if n_clients <= 0:
+        raise ValueError(f"n_clients must be > 0, got {n_clients} in {name!r}")
+    parts = parts[:-1]
+
+    # Partition tail: either ``..._iid`` or ``..._dirichlet_a<tag>``.
     if parts[-1] == "iid":
         partition_mode = "iid"
         alpha: float | None = None
         parts = parts[:-1]
-    elif len(parts) >= 2 and parts[-2] == "dir" and parts[-1].startswith("a"):
+    elif (len(parts) >= 2 and parts[-2] == "dirichlet"
+          and parts[-1].startswith("a")):
         partition_mode = "dirichlet"
         alpha_tag = parts[-1][1:]  # strip leading 'a'
         alpha = _tag_to_alpha(alpha_tag)
         parts = parts[:-2]
     else:
         raise ValueError(
-            f"partition tail must be '_iid' or '_dir_a<tag>': {name!r}"
+            f"partition tail must be '_iid' or '_dirichlet_a<tag>': {name!r}"
         )
 
     if not parts:
@@ -317,6 +358,7 @@ def parse_cell_name(name: str) -> dict:
         "algorithm": matched_algo,
         "partition_mode": partition_mode,
         "alpha": alpha,
+        "n_clients": n_clients,
         "seed": seed,
     }
 
