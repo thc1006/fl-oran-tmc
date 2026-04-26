@@ -232,30 +232,15 @@ def main() -> None:
         dups = [n for n, k in Counter(names).items() if k > 1]
         raise SystemExit(f"expanded cells have duplicate names: {dups}")
 
-    if args.limit and args.limit > 0:
-        cells = cells[: args.limit]
-
-    log.info(
-        "spec=%s description=%r n_cells=%d (limit=%d)",
-        args.spec, spec.get("description", ""), len(cells), args.limit,
-    )
-
-    if args.dry_run:
-        for i, c in enumerate(cells):
-            log.info(
-                "cell %3d/%d: name=%s arch=%s algo=%s partition=%s "
-                "alpha=%s n_clients=%s seed=%s lr=%s warmup_rounds=%s",
-                i + 1, len(cells), c["name"], c["arch"], c["algorithm"],
-                c["partition_mode"], c.get("alpha"), c["n_clients"], c["seed"],
-                c.get("lr"), c.get("lr_warmup_rounds"),
-            )
-        return
-
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     parq = Path(args.unified_parquet)
-    if not parq.is_file():
-        raise SystemExit(f"unified parquet not found: {parq}")
+
+    # Order matters: limit → skip-completed → dry-run. Limit narrows the
+    # universe first; skip-completed prunes already-finished work; only
+    # then does dry-run print what WILL actually execute.
+    if args.limit and args.limit > 0:
+        cells = cells[: args.limit]
 
     if args.skip_completed:
         skip_names = _load_skip_set(out_dir, args.summary_tag)
@@ -266,9 +251,30 @@ def main() -> None:
                 "--skip-completed: %d → %d cells after filter",
                 before, len(cells),
             )
-        if not cells:
-            log.info("--skip-completed: nothing left to run; exiting.")
-            return
+
+    log.info(
+        "spec=%s description=%r n_cells=%d (limit=%d)",
+        args.spec, spec.get("description", ""), len(cells), args.limit,
+    )
+
+    if not cells:
+        log.info("nothing to run after filtering; exiting.")
+        return
+
+    if args.dry_run:
+        for i, c in enumerate(cells):
+            log.info(
+                "cell %3d/%d: name=%s arch=%s algo=%s algo_kwargs=%s "
+                "partition=%s alpha=%s n_clients=%s seed=%s lr=%s warmup_rounds=%s",
+                i + 1, len(cells), c["name"], c["arch"], c["algorithm"],
+                c.get("algo_kwargs", {}),
+                c["partition_mode"], c.get("alpha"), c["n_clients"], c["seed"],
+                c.get("lr"), c.get("lr_warmup_rounds"),
+            )
+        return
+
+    if not parq.is_file():
+        raise SystemExit(f"unified parquet not found: {parq}")
 
     if not args.no_preflight:
         _preflight(cells, out_dir, parq)
