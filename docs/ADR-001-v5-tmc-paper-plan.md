@@ -320,6 +320,72 @@ Reduced from ADR's full 1050-cell sweep: 3 archs × 2 partitions × 2 algos × 3
 - 3a: spiking_expand2 vs lstm × Dirichlet α=0.1 (extreme non-IID) × 3 seeds — test "spiking robust to non-IID via binary-output regularization" hypothesis. ~1 hr GPU.
 - 3b: DP-SGD compatibility study — Spiking's binary output may give tighter Renyi-DP composition vs continuous-valued models. ~2 hr GPU.
 
+#### D-22 Performance inheritance from M5 (RTX 4080 + multi-core CPU)
+
+M5's 150-cell sweep ran in 2h53min (vs 12.5h initial estimate, **~4.3× speedup**) due to layered optimizations on this workstation. fl_v7 MUST inherit these — without inheritance Phase 2's 36-cell minimum would degrade from ~6 hr to ~12-25 hr sequential, defeating the "minimum-viable" framing.
+
+**Stack of optimizations to inherit**:
+
+| Layer | Mechanism | fl_v5 site | fl_v7 inheritance contract |
+|---|---|---|---|
+| GPU compute | bf16 mixed precision | `mixed_precision="bf16"` in V5Config | V7Config field same default |
+| GPU compute | TF32 matmul | `torch.set_float32_matmul_precision('high')` in `setup_torch_perf` | fl_v7 calls same helper at run start |
+| GPU compute | Fused Adam | `torch.optim.Adam(..., fused=True)` on CUDA | fl_v7 same gate |
+| GPU launch overhead | torch.compile reduce-overhead (CUDA Graphs) | `compile_model: str \| None = None` field | V7Config same field; **arch-conditional default** (see below) |
+| GPU memory transfer | `non_blocking=True` for `.to(device)` | applied throughout | fl_v7 mirrors all `.to(...)` calls |
+| Reproducibility tax | `cudnn_deterministic=True` | M5 default | fl_v7 same (D-15 mandate) |
+| Multi-core CPU (per-cell) | `federated_fit_scaler(n_jobs=...)` (joblib) | inside `prepare_v5_data` | fl_v7 inherits via D-3 reuse |
+| **Multi-cell sweep parallelism** | `run_v5_sweep_matrix.py` joblib + SharedSplits cache (~4× speedup vs sequential) | sweep driver | **Phase 1.5e: NEW `run_v7_fl_arch_sweep_matrix.py`** |
+
+**Spiking × torch.compile interaction risk** (newly identified 2026-04-26):
+
+`SpikingForecaster._scan_emit_spikes` contains nested Python for-loops with stateful LIF:
+
+```python
+for t in range(length):                  # outer SSM scan
+    for _ in range(self.t_inner):        # inner LIF loop
+        spk_step, mem = self.lif(y_t, mem)
+```
+
+CUDA Graphs (the `reduce-overhead` mode) require static shapes + no Python control flow. Spiking's nested for-loops + stateful `mem` likely **graph-break** under compile, giving silent slowdown OR runtime error. fl_v7 MUST default `compile_model=None` for any spiking arch via:
+
+```python
+def _select_compile_mode(cfg) -> str | None:
+    """Arch-conditional torch.compile mode default. Explicit cfg.compile_model
+    override always wins; otherwise dense archs get reduce-overhead (CUDA
+    Graphs), spiking archs get None to avoid graph-break under nested for-loops."""
+    if cfg.compile_model is not None:
+        return cfg.compile_model
+    return None if cfg.arch.startswith("spiking") else "reduce-overhead"
+```
+
+**Phase 1.5b implementation perf checklist** (each item below MUST be in the implementation, verified manually since the 14 unit tests are correctness-focused, not perf-focused):
+
+- [ ] V7Config inherits V5Config perf fields: `mixed_precision="bf16"`, `compile_model: str | None = None`, `cudnn_deterministic=True`, `pos_weight_split="train"`
+- [ ] `setup_torch_perf(device, deterministic)` called early in `run_v7_sweep` (TF32 matmul + cudnn flags)
+- [ ] `torch.optim.Adam(..., fused=True)` when `device.type == "cuda"`
+- [ ] All `tensor.to(device, ...)` use `non_blocking=True`
+- [ ] `_select_compile_mode(cfg)` arch-conditional default applied
+- [ ] No `torch.compile` for spiking arches by default (silent perf trap risk)
+- [ ] `federated_fit_scaler` reused as-is (joblib n_jobs already in fl_v5 path)
+- [ ] **Phase 1.5d wallclock benchmark**: real-data 1-cell × 100-step run on CPU should land within 2× of fl_v5 single-round baseline; on GPU within 1.5× (slack for new arch overhead). Outside this band → perf regression to investigate before Phase 2.
+
+#### D-22 Phase 1.5e (NEW milestone): matrix driver for multi-cell sweep parallelism
+
+**Trigger**: Phase 2 minimum-viable smoke is 36 cells (3 archs × 2 partitions × 2 algos × 3 seeds). Sequential at fl_v5's ~1.16 min/cell baseline = ~42 min, BUT the v6 archs (Mamba pure-PyTorch + Spiking with t_inner inner loop) add ~30-50% per-cell overhead → ~60 min sequential. With joblib + SharedSplits cache (M5 measured ~4× speedup) → ~15 min.
+
+**Output**: `experiments/run_v7_fl_arch_sweep_matrix.py` (~120 LoC), mirroring `run_v5_sweep_matrix.py`:
+- Reads sweep dimensions
+- Computes `SharedSplits` ONCE (parquet load + OOD split + scaler + sequences shared across all cells of same `(seed, partition, alpha)`)
+- joblib `Parallel(n_jobs=...)` over cells with shared cache
+- Outputs to `artifacts/v7_fl_arch_sweep/<arch>_<algorithm>_a<alpha>_s<seed>/` per ADR D-7
+
+**Estimated**: ~1 hr code + ~30 min testing.
+
+**Without 1.5e**: Phase 2 36-cell sweep sequential = ~60 min still acceptable for smoke, BUT the full ADR 1050-cell sweep (Stage 2 TMC submission) would jump from M5's 2h53min baseline to ~11 hr. **Matrix driver is critical for ADR Stage 2 full sweep, not just for Phase 2 smoke**. Adding 1.5e now closes that path.
+
+**Sequencing**: Phase 1.5e fits between 1.5c (single-cell CLI) and 1.5d (real-data smoke). Single-cell CLI is the unit, matrix driver is the orchestrator. 1.5d should hit BOTH paths to validate.
+
 ---
 
 ## 1. Context
