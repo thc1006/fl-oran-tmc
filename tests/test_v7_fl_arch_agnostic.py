@@ -218,9 +218,15 @@ def test_spiking_state_dict_excludes_buffers_AND_attributes_exist_AND_are_scalar
         assert blk.spike_count.shape == (), (
             f"spike_count must be scalar; got shape {blk.spike_count.shape}"
         )
+        # M5: pin dtype to catch silent fp64-promotion under mixed precision
+        assert blk.spike_count.dtype == torch.float32, (
+            f"spike_count dtype drifted: {blk.spike_count.dtype}; "
+            f"must be float32 to avoid AMP slow-path under bf16 training"
+        )
         assert hasattr(blk, "forward_inferences")
         assert isinstance(blk.forward_inferences, torch.Tensor)
         assert blk.forward_inferences.shape == ()
+        assert blk.forward_inferences.dtype == torch.float32
     keys = list(model.state_dict().keys())
     for k in keys:
         assert "spike_count" not in k, f"leaked: {k}"
@@ -264,10 +270,14 @@ def test_v7_random_aggregation_load_AND_forward_no_nan_for_spiking_expand2(schem
     """Two DIFFERENT-init spiking_expand2 models, average state
     dicts, load into target, forward — must produce finite output.
     Catches: load_state_dict raising on key mismatch, forward NaN
-    under aggregated weights."""
+    under aggregated weights.
+
+    M1 fix: m_target also built via ``_build_model`` (not hardcoded
+    ctor) so registry kwargs drift would be caught here too — m1, m2,
+    m_target all walk the same registry path.
+    """
     fl_v7 = _import_fl_v7()
     from fl_oran.federated import weighted_average_state_dicts
-    from fl_oran.models.spiking_forecaster import SpikingForecaster
 
     cfg = fl_v7.V7Config(arch="spiking_expand2")
     torch.manual_seed(42)
@@ -278,10 +288,8 @@ def test_v7_random_aggregation_load_AND_forward_no_nan_for_spiking_expand2(schem
     sd_avg = weighted_average_state_dicts(
         [m1.state_dict(), m2.state_dict()], [0.5, 0.5]
     )
-    m_target = SpikingForecaster(
-        schema=schema, task="classification", seq_len=5,
-        backbone_d_model=56, backbone_expand=2,
-    )
+    # M1 fix: registry-built target avoids registry/hardcoded drift
+    m_target = fl_v7._build_model(cfg, schema)
     m_target.load_state_dict(sd_avg)  # no key mismatch raise
     m_target.eval()
 
@@ -315,7 +323,6 @@ def test_v7_gradient_flow_through_spiking_expand2_after_aggregation(schema):
     """
     fl_v7 = _import_fl_v7()
     from fl_oran.federated import weighted_average_state_dicts
-    from fl_oran.models.spiking_forecaster import SpikingForecaster
 
     cfg = fl_v7.V7Config(arch="spiking_expand2")
     torch.manual_seed(42)
@@ -326,10 +333,8 @@ def test_v7_gradient_flow_through_spiking_expand2_after_aggregation(schema):
     sd_avg = weighted_average_state_dicts(
         [m1.state_dict(), m2.state_dict()], [0.5, 0.5]
     )
-    m_target = SpikingForecaster(
-        schema=schema, task="classification", seq_len=5,
-        backbone_d_model=56, backbone_expand=2,
-    )
+    # M1 fix: registry-built target (drops hardcoded SpikingForecaster ctor)
+    m_target = fl_v7._build_model(cfg, schema)
     m_target.load_state_dict(sd_avg)
     m_target.eval()
 
@@ -492,7 +497,8 @@ def test_v7_moon_non_lstm_arch_raises_at_select_fast(schema):
     """
     fl_v7 = _import_fl_v7()
     cfg = fl_v7.V7Config(algorithm="moon", arch="spiking_expand2")
-    with pytest.raises(NotImplementedError, match=r"MOON"):
+    # M3 fix: case-insensitive match — implementation may use "MOON" or "moon"
+    with pytest.raises(NotImplementedError, match=r"(?i)moon"):
         fl_v7._select_algorithm(cfg)
 
 
@@ -530,14 +536,26 @@ def test_v7_sweep_writes_summary_history_AND_summary_has_test_auc_key(
     )
     fl_v7.run_v7_sweep(cfg)
 
+    # M4 fix: pin the contract that fl_v7 honors cfg.name verbatim as the
+    # cell directory name (mirrors fl_v5 V5Config behavior). If fl_v7
+    # auto-generates from arch/algo/alpha/seed instead, the assertion
+    # error message lists what IS in tmp_path so the contract violation
+    # is diagnostic, not opaque.
     cell_dir = tmp_path / cell_name
-    assert (cell_dir / "summary.json").exists(), \
-        f"summary.json missing in {cell_dir}"
-    assert (cell_dir / "history.csv").exists(), \
+    if not (cell_dir / "summary.json").exists():
+        actual = sorted(p.name for p in tmp_path.iterdir())
+        raise AssertionError(
+            f"summary.json not at expected path {cell_dir / 'summary.json'}; "
+            f"contract: fl_v7 must use cfg.name verbatim as cell_dir name. "
+            f"Actual contents of {tmp_path}: {actual}"
+        )
+    assert (cell_dir / "history.csv").exists(), (
         f"history.csv missing in {cell_dir}"
+    )
     summary = json.loads((cell_dir / "summary.json").read_text())
-    assert "test_auc" in summary, \
+    assert "test_auc" in summary, (
         f"summary.json keys: {list(summary.keys())}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -614,6 +632,15 @@ def test_v7_config_pos_weight_split_default_train_per_D12():
     """
     fl_v7 = _import_fl_v7()
     cfg = fl_v7.V7Config()
+    # M2 fix: explicit hasattr check gives a clearer failure message if
+    # fl_v7 forgets the field entirely (would otherwise raise
+    # AttributeError, less diagnostic than the assert message below).
+    assert hasattr(cfg, "pos_weight_split"), (
+        "V7Config must expose pos_weight_split per D-12 (audit fix that "
+        "moves pos_weight derivation from test split → train split to "
+        "avoid label-distribution leakage). Forgetting this field "
+        "silently re-introduces the M5-era leakage bug."
+    )
     assert cfg.pos_weight_split == "train", (
         f"D-12 contract violated: pos_weight_split={cfg.pos_weight_split!r}; "
         f"must default to 'train' to avoid leakage from test split"
