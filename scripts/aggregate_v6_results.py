@@ -42,12 +42,18 @@ def _parse_cell_name(name: str) -> tuple[str, int]:
 
 
 def load_cells(sweep_dir: Path) -> dict[tuple[str, int], dict]:
-    """Read every ``<arch>_s<seed>[_<suffix>]/summary.json`` + ``energy.json``.
+    """Read every ``<arch>_s<seed>[_<suffix>]/summary.json`` + ``energy.json``
+    + (optional) ``energy_measured.json``.
 
-    Defensive: a single corrupt ``summary.json`` (e.g. half-written by a
-    runner that was SIGKILLed mid-write) must NOT crash the whole
-    aggregation pipeline. We log the cell and skip it; the operator can
-    decide to re-train that seed.
+    Defensive: a single corrupt JSON (e.g. half-written by a runner that
+    was SIGKILLed mid-write) must NOT crash the whole aggregation
+    pipeline. We log the cell and skip the corrupt portion.
+
+    The optional ``energy_measured.json`` is loaded into
+    ``summary["energy_measured"]`` so :func:`per_arch_stats` can derive
+    NVML-measured energy, latency, and EDP. Cells without that file
+    receive an empty dict (graceful — they keep their other stats but
+    do not contribute to measured/latency/EDP aggregates).
     """
     cells: dict[tuple[str, int], dict] = {}
     for cell_dir in sorted(sweep_dir.glob("*_s*")):
@@ -55,6 +61,7 @@ def load_cells(sweep_dir: Path) -> dict[tuple[str, int], dict]:
             continue
         summary_path = cell_dir / "summary.json"
         energy_path = cell_dir / "energy.json"
+        em_path = cell_dir / "energy_measured.json"
         if not summary_path.exists():
             continue
         try:
@@ -71,6 +78,15 @@ def load_cells(sweep_dir: Path) -> dict[tuple[str, int], dict]:
                 summary["energy"] = {}
         else:
             summary["energy"] = {}
+        if em_path.exists():
+            try:
+                summary["energy_measured"] = json.loads(em_path.read_text())
+            except (json.JSONDecodeError, OSError) as exc:
+                print(f"warning: {cell_dir.name} — energy_measured.json "
+                      f"unreadable ({exc}); proceeding without measured data")
+                summary["energy_measured"] = {}
+        else:
+            summary["energy_measured"] = {}
         # Re-derive (arch_label, seed) from the directory name so that
         # recovery sweeps with the same arch + seed but a non-empty
         # output_suffix do not collide with main-sweep cells.
@@ -118,8 +134,64 @@ def per_arch_stats(cells: dict[tuple[str, int], dict]) -> dict[str, dict]:
                                    v["energy"].get("total_energy_pJ", 0.0)))
             for v in items
         ])
+        # Phase 0 extension: NVML-measured energy + per-inference latency +
+        # Energy-Delay Product. Derived from per-cell energy_measured.json
+        # (loaded by load_cells). Cells without that file are skipped from
+        # the aggregation here — only cells WITH valid measurements feed
+        # the mean / std. If no cell of this arch has measurements at all,
+        # the fields are reported as None (NaN-equivalent in JSON-friendly
+        # form) so downstream tooling can distinguish "not measured" from
+        # the genuine value 0.
+        measured_pJ_list: list[float] = []
+        latency_ms_list: list[float] = []
+        edp_pJ_s_list: list[float] = []
+        for v in items:
+            em = v.get("energy_measured", {})
+            if not em:
+                continue
+            mp = em.get("energy_pJ_per_inference_total")
+            ws = em.get("wallclock_sec")
+            ni = em.get("n_inferences_measured")
+            if mp is None or ws is None or ni is None:
+                continue
+            try:
+                ni_int = int(ni)
+            except (TypeError, ValueError):
+                continue
+            if ni_int <= 0:
+                # Malformed measurement — would divide by zero.
+                continue
+            mp_f = float(mp)
+            lat_ms = float(ws) / float(ni_int) * 1000.0
+            edp_pJ_s = mp_f * lat_ms / 1000.0  # pJ × ms / 1000 = pJ·s
+            measured_pJ_list.append(mp_f)
+            latency_ms_list.append(lat_ms)
+            edp_pJ_s_list.append(edp_pJ_s)
+
+        if measured_pJ_list:
+            measured_arr = np.array(measured_pJ_list)
+            latency_arr = np.array(latency_ms_list)
+            edp_arr = np.array(edp_pJ_s_list)
+            measured_mean = float(measured_arr.mean())
+            measured_std = (
+                float(measured_arr.std(ddof=1)) if len(measured_arr) > 1 else 0.0
+            )
+            latency_mean = float(latency_arr.mean())
+            latency_std = (
+                float(latency_arr.std(ddof=1)) if len(latency_arr) > 1 else 0.0
+            )
+            edp_mean = float(edp_arr.mean())
+            edp_std = float(edp_arr.std(ddof=1)) if len(edp_arr) > 1 else 0.0
+            n_measured = int(len(measured_arr))
+        else:
+            measured_mean = measured_std = None
+            latency_mean = latency_std = None
+            edp_mean = edp_std = None
+            n_measured = 0
+
         out[arch] = {
             "n": int(len(items)),
+            "n_measured": n_measured,
             "test_auc_mean": float(aucs.mean()),
             "test_auc_std": float(aucs.std(ddof=1)) if len(aucs) > 1 else 0.0,
             "test_f1_mean": float(f1s.mean()),
@@ -133,6 +205,13 @@ def per_arch_stats(cells: dict[tuple[str, int], dict]) -> dict[str, dict]:
             "energy_pJ_neuromorphic_mean": float(energies_neuro.mean()),
             "flops_mean": float(flops.mean()),
             "sops_mean": float(sops.mean()),
+            # NVML-derived (Phase 0).
+            "measured_pJ_mean": measured_mean,
+            "measured_pJ_std": measured_std,
+            "latency_ms_mean": latency_mean,
+            "latency_ms_std": latency_std,
+            "edp_pJ_s_mean": edp_mean,
+            "edp_pJ_s_std": edp_std,
             "seeds": sorted(int(v["seed"]) for v in items),
         }
     return out
@@ -305,6 +384,49 @@ def render_results_md(stats: dict, deltas: dict, criteria: dict,
             f"{s['energy_pJ_mean']:.2e} |"
         )
     lines.append("")
+
+    # Real-GPU NVML measurements + latency + EDP (Phase 0).
+    has_measured = any(
+        stats[a].get("measured_pJ_mean") is not None for a in arch_order
+    )
+    if has_measured:
+        lines.append(
+            "## Real-GPU NVML measurements: energy, latency, "
+            "Energy-Delay Product\n"
+        )
+        lines.append(
+            "Per-cell measurement of 128k inferences at batch=64 on "
+            "RTX 4080. Latency = wallclock_sec / n_inferences × 1000 ms. "
+            "EDP = measured_pJ × latency_ms / 1000 (units: pJ·s).\n"
+        )
+        lines.append(
+            "| Arch | n_measured | measured_pJ/inf (mean ± std) | "
+            "latency_ms/inf (mean ± std) | EDP_pJ·s (mean ± std) | "
+            "ratio_measured / theoretical_sparsity |"
+        )
+        lines.append("|---|---|---|---|---|---|")
+        for arch in arch_order:
+            s = stats[arch]
+            n_meas = s.get("n_measured", 0)
+            if n_meas == 0:
+                continue
+            mp_mean = s.get("measured_pJ_mean") or 0.0
+            mp_std = s.get("measured_pJ_std") or 0.0
+            lat_mean = s.get("latency_ms_mean") or 0.0
+            lat_std = s.get("latency_ms_std") or 0.0
+            edp_mean = s.get("edp_pJ_s_mean") or 0.0
+            edp_std = s.get("edp_pJ_s_std") or 0.0
+            theor = s.get("energy_pJ_sparsity_mean") or s.get("energy_pJ_mean")
+            ratio = mp_mean / theor if (theor and theor > 0) else None
+            ratio_str = f"{ratio:.0f}×" if ratio else "n/a"
+            lines.append(
+                f"| {arch} | {n_meas} | "
+                f"{mp_mean:.2e} ± {mp_std:.2e} | "
+                f"{lat_mean:.3f} ± {lat_std:.3f} | "
+                f"{edp_mean:.2e} ± {edp_std:.2e} | "
+                f"{ratio_str} |"
+            )
+        lines.append("")
 
     # Paired deltas — uncorrected CI95 + Bonferroni-corrected.
     n_compare_in_table = next(
