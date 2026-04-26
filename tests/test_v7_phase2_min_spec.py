@@ -244,6 +244,30 @@ def test_lr_overrides_applied_per_arch(expanded):
             pytest.fail(f"unexpected arch in expanded spec: {cell['arch']}")
 
 
+def test_warmup_steps_match_adr_d20_per_arch(expanded):
+    """ADR D-20 mandates lr_warmup_steps=750 for LSTM/Mamba and 1250
+    for Spiking (surrogate-gradient stability). Total warmup steps =
+    lr_warmup_rounds × clients_per_round × max_steps_per_round.
+    Pinning this catches the easy-to-miss spec drift where a global
+    lr_warmup_rounds gives Spiking the LSTM warmup budget."""
+    expected_warmup_steps = {
+        "lstm": 750,
+        "mamba": 750,
+        "spiking_expand2": 1250,
+    }
+    for cell in expanded:
+        steps = (
+            cell["lr_warmup_rounds"]
+            * cell["clients_per_round"]
+            * cell["max_steps_per_round"]
+        )
+        expected = expected_warmup_steps[cell["arch"]]
+        assert steps == expected, (
+            f"arch={cell['arch']}: warmup_steps={steps}, "
+            f"D-20 spec={expected}; check arch_overrides in YAML"
+        )
+
+
 def test_shared_fields_propagate_to_every_cell(expanded):
     """Fields under ``shared:`` must appear on every cell with the
     same value (unless overridden per-arch)."""
@@ -299,6 +323,18 @@ def test_validate_spec_rejects_duplicate_algorithms(loader, spec_dict):
     bad = dict(spec_dict)
     bad["algorithms"] = list(spec_dict["algorithms"]) + [spec_dict["algorithms"][0]]
     with pytest.raises(ValueError, match=r"[Dd]uplicate|algorithm"):
+        loader.validate_spec(bad)
+
+
+def test_validate_spec_rejects_iid_partition_with_alpha(loader, spec_dict):
+    """A misconfigured ``{mode: iid, alpha: 0.5, n_clients: 7}`` would
+    silently drop alpha at expansion time — catch at validation."""
+    bad = dict(spec_dict)
+    bad["partitions"] = [
+        {"mode": "iid", "alpha": 0.5, "n_clients": 7},
+        {"mode": "dirichlet", "alpha": 0.5, "n_clients": 7},
+    ]
+    with pytest.raises(ValueError, match=r"iid|alpha"):
         loader.validate_spec(bad)
 
 

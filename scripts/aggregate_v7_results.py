@@ -159,6 +159,14 @@ def load_cells(sweep_dir: Path) -> dict:
                 "skipping"
             )
             continue
+        # AUC must be finite (mathematically AUC ∈ [0, 1]; NaN/Inf
+        # indicates a single-class test split or a broken metric and
+        # would silently propagate as 'NaN' in the output JSON).
+        if not np.isfinite(test_auc):
+            _warn(
+                f"{cell_dir.name} — test_auc={test_auc} is not finite; skipping"
+            )
+            continue
         # Normalise back into the dict so per_group_stats can rely on
         # field types being correct.
         summary["test_auc"] = test_auc

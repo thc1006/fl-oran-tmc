@@ -192,6 +192,12 @@ def validate_spec(spec: dict) -> None:
                     f"(documented even though IID partitions by bs_id "
                     f"and ignores it): {p!r}"
                 )
+            if "alpha" in p:
+                raise ValueError(
+                    f"iid partition must not include 'alpha' (alpha is "
+                    f"meaningless for IID; expand_spec would silently "
+                    f"drop it, masking the upstream confusion): {p!r}"
+                )
 
     seeds = spec["seeds"]
     if not isinstance(seeds, list) or not seeds:

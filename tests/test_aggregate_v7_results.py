@@ -172,6 +172,24 @@ def test_warn_writes_to_stderr_not_stdout(agg, tmp_path, capsys):
     assert "warning" not in captured.out.lower()
 
 
+@pytest.mark.parametrize("bad_auc", [float("nan"), float("inf"), float("-inf")])
+def test_load_cells_skips_non_finite_test_auc(agg, tmp_path, capsys, bad_auc):
+    """Cells with NaN / Inf test_auc would propagate to per-group mean
+    and emit non-strict JSON ('NaN'). Skip with warning at load."""
+    sweep = tmp_path / "nan_auc"
+    cell = sweep / "v7_lstm_fedavg_iid_s99"
+    cell.mkdir(parents=True)
+    (cell / "summary.json").write_text(json.dumps({
+        "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
+        "alpha": None, "seed": 99, "test_auc": bad_auc,
+    }))
+    (cell / "history.csv").write_text("round\n0\n")
+    cells = agg.load_cells(sweep)
+    assert cells == {}
+    captured = capsys.readouterr()
+    assert "finite" in (captured.out + captured.err).lower()
+
+
 def test_per_group_stats_handles_missing_params_count(agg, tmp_path, capsys):
     """Review I1: a cell missing ``params_count`` must not silently
     contribute 0 to the mean (which would drag the table value down).

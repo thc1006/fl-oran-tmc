@@ -64,7 +64,15 @@ shared:
   mixed_precision: bf16
   device: cuda
 
-# Per-arch lr override per ADR D-20.
+# Per-arch overrides per ADR D-20.
+# Warmup math: total_warmup_steps = lr_warmup_rounds × clients_per_round
+#                                   × max_steps_per_round
+#   3 rounds × 5 × 50 = 750  (matches D-20 LSTM/Mamba spec)
+#   5 rounds × 5 × 50 = 1250 (matches D-20 Spiking spec — surrogate
+#                              gradient stability needs the longer ramp)
+# If clients_per_round or max_steps_per_round is changed in `shared`,
+# these warmup_rounds values must be recomputed to preserve D-20 step
+# counts.
 arch_overrides:
   lstm:
     lr: 5.0e-4
@@ -72,3 +80,4 @@ arch_overrides:
     lr: 5.0e-4
   spiking_expand2:
     lr: 1.0e-4                  # surrogate gradient is unstable at 5e-4
+    lr_warmup_rounds: 5         # → 1250 warmup steps, per ADR D-20
