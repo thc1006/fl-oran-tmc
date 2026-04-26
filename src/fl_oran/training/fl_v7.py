@@ -293,7 +293,11 @@ def setup_torch_perf(device: torch.device, deterministic: bool = True) -> None:
 
     if device.type != "cuda":
         return
-    torch.set_float32_matmul_precision("high")
+    # "medium" allows BF16 reductions for fp32 matmul on Ada (sm_89) —
+    # measurably faster than "high" (TF32 reductions only) at the cost
+    # of ~3-4 ULP precision in matmul output. With our AMP autocast
+    # already operating in bf16 the precision impact is moot.
+    torch.set_float32_matmul_precision("medium")
     if deterministic:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
@@ -383,9 +387,16 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     t_phase = time.time()
     client_items = list(client_dfs.items())
 
-    # Per-client sequence build in parallel (GIL released by numpy/pandas).
-    n_workers = min(5, len(client_items)) or 1
-    per_client_results = Parallel(n_jobs=n_workers, backend="threading")(
+    # Per-client sequence build in parallel.
+    # 2026-04-26 perf round measurements (Dirichlet α=0.5, 10% data):
+    #   - threading n=5: 50.65s (baseline)
+    #   - threading n=7: 69.78s (GIL contention with oversubscription)
+    #   - loky n=7:      ?      (process-based; no GIL but ~3s startup
+    #                            cost per worker for pandas import)
+    # Try loky to bypass GIL — biggest client (~1.5× average at α=0.5)
+    # otherwise dominates threading wallclock.
+    n_workers = min(len(client_items), 7) or 1
+    per_client_results = Parallel(n_jobs=n_workers, backend="loky")(
         delayed(build_run_sequences)(
             d, feat_cols, ["y_sla_next"], seq_len=cfg.seq_len,
         )
