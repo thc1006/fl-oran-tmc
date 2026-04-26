@@ -36,11 +36,36 @@ with the matrix driver's outputs.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+# Kwargs that ``fl_v7.run_v7_sweep`` injects automatically before
+# overlaying the user's ``cfg.algo_kwargs`` on every algorithm class
+# (see fl_v7.py — _run_training_v7 around line 498). The spec must NOT
+# specify these; if it does, fl_v7's auto-fill will silently win and
+# the spec value is dead code.
+_AUTO_FILLED_BY_FL_V7 = frozenset({
+    "max_steps", "batch_size", "grad_clip", "amp_enabled", "amp_dtype",
+})
+
+
+def _import_algo_metadata():
+    """Pull the static required-kwargs table + algorithm registry.
+
+    Lazy-imported because :mod:`fl_oran.training.fl_v7` triggers the
+    full torch import chain. We pay the cost once per
+    :func:`validate_spec` call rather than at module load — this keeps
+    ``import _v7_spec_loader`` cheap for callers that only need
+    :func:`load_spec` (e.g. linters or schema browsers).
+    """
+    from fl_oran.federated.algorithms import get_algorithm
+    from fl_oran.training.fl_v7 import _ALGO_REQUIRED_KWARGS
+    return _ALGO_REQUIRED_KWARGS, get_algorithm
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +154,101 @@ _REQUIRED_TOP_KEYS = ("archs", "algorithms", "partitions", "seeds", "shared")
 _VALID_PARTITION_MODES = ("iid", "dirichlet")
 
 
+def _normalize_algorithms(raw: list) -> list[tuple[str, dict]]:
+    """Coerce each algorithms list entry into a ``(name, kwargs)`` tuple.
+
+    Two surface forms are accepted::
+
+        algorithms: [fedavg, fedprox]                       # back-compat
+        algorithms:
+          - name: fedavg
+          - name: fedprox
+            kwargs: {mu: 0.01}
+
+    A bare string ``"fedavg"`` becomes ``("fedavg", {})``. A dict
+    ``{"name": "fedprox", "kwargs": {"mu": 0.01}}`` becomes
+    ``("fedprox", {"mu": 0.01})``. Missing ``kwargs`` is treated as
+    empty dict.
+
+    Structural errors (non-str/non-dict element, dict missing ``name``,
+    ``kwargs`` not a dict) raise ValueError immediately. Semantic
+    validation (required-kwargs satisfied, no unknowns, no duplicates)
+    happens in :func:`validate_spec`.
+    """
+    out: list[tuple[str, dict]] = []
+    for entry in raw:
+        if isinstance(entry, str):
+            out.append((entry, {}))
+        elif isinstance(entry, dict):
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    f"algorithm entry dict must have non-empty 'name' "
+                    f"string; got {entry!r}"
+                )
+            kwargs = entry.get("kwargs", {})
+            if kwargs is None:
+                kwargs = {}
+            if not isinstance(kwargs, dict):
+                raise ValueError(
+                    f"algorithm[{name!r}].kwargs must be a dict, got "
+                    f"{type(kwargs).__name__}: {kwargs!r}"
+                )
+            # Reject unexpected top-level keys to catch typos like
+            # ``args:`` instead of ``kwargs:`` early.
+            extra = set(entry.keys()) - {"name", "kwargs"}
+            if extra:
+                raise ValueError(
+                    f"algorithm[{name!r}] has unknown keys {sorted(extra)}; "
+                    f"only 'name' and 'kwargs' are allowed"
+                )
+            out.append((name, dict(kwargs)))
+        else:
+            raise ValueError(
+                f"algorithm entry must be str or dict, got "
+                f"{type(entry).__name__}: {entry!r}"
+            )
+    return out
+
+
+def _validate_algo_kwargs(name: str, kwargs: dict, required_table, get_algo_fn) -> None:
+    """Check required kwargs are present and no unknowns slip through.
+
+    The ``required`` set comes from the static
+    ``fl_v7._ALGO_REQUIRED_KWARGS`` table — the table only lists kwargs
+    a *user* must supply (kwargs that fl_v7 auto-fills like ``max_steps``
+    are excluded). The "unknown" check uses ``inspect.signature`` on
+    the algorithm class so that typos like ``mue`` instead of ``mu``
+    fail at validation time rather than silently degrading to default
+    behavior at instantiation.
+    """
+    if name not in required_table:
+        # Algorithm is in the registry but missing from the required-
+        # kwargs table — caller should not have reached here, but
+        # guard anyway. fl_v7's regression test prevents this drift.
+        raise ValueError(
+            f"algorithm {name!r} is in the registry but missing from "
+            f"_ALGO_REQUIRED_KWARGS — update the table"
+        )
+    required = required_table[name]
+    missing = required - set(kwargs)
+    if missing:
+        raise ValueError(
+            f"algorithm {name!r} missing required kwargs: {sorted(missing)}; "
+            f"got kwargs={sorted(kwargs)}"
+        )
+    cls = get_algo_fn(name)
+    sig_params = set(inspect.signature(cls.__init__).parameters)
+    allowed = sig_params - {"self"} - _AUTO_FILLED_BY_FL_V7
+    unknown = set(kwargs) - allowed
+    if unknown:
+        raise ValueError(
+            f"algorithm {name!r} has unknown kwargs: {sorted(unknown)}; "
+            f"allowed (excluding fl_v7-auto-filled "
+            f"{sorted(_AUTO_FILLED_BY_FL_V7)}): {sorted(allowed)}"
+        )
+
+
 def validate_spec(spec: dict) -> None:
     """Raise ValueError on any structural / semantic problem.
 
@@ -158,24 +278,32 @@ def validate_spec(spec: dict) -> None:
                 f"unknown arch {a!r}; known: {sorted(known_archs)}"
             )
 
-    algos = spec["algorithms"]
-    if not isinstance(algos, list) or not algos:
+    algos_raw = spec["algorithms"]
+    if not isinstance(algos_raw, list) or not algos_raw:
         raise ValueError("spec['algorithms'] must be a non-empty list")
-    if len(set(algos)) != len(algos):
-        raise ValueError(f"duplicate algorithms in spec: {algos!r}")
+    # Normalize first (catches structural shape errors), then validate
+    # against algorithm registry + required-kwargs table.
+    normalized = _normalize_algorithms(algos_raw)
+    names = [n for n, _ in normalized]
+    if len(set(names)) != len(names):
+        from collections import Counter
+        dups = sorted({n for n, k in Counter(names).items() if k > 1})
+        raise ValueError(f"duplicate algorithms in spec: {dups}")
     known_algos = helper.known_algorithms()
-    for a in algos:
-        if a not in known_algos:
+    required_table, get_algo_fn = _import_algo_metadata()
+    for name, kwargs in normalized:
+        if name not in known_algos:
             raise ValueError(
-                f"unknown algorithm {a!r}; known: {sorted(known_algos)}"
+                f"unknown algorithm {name!r}; known: {sorted(known_algos)}"
             )
-        if a == "moon":
+        if name == "moon":
             raise ValueError(
                 "MOON is deferred in Phase 1.5 / Phase 2 minimum per "
                 "ADR D-22 — fl_v7._select_algorithm raises "
                 "NotImplementedError. Remove 'moon' from spec or "
                 "revisit D-22 first."
             )
+        _validate_algo_kwargs(name, kwargs, required_table, get_algo_fn)
 
     partitions = spec["partitions"]
     if not isinstance(partitions, list) or not partitions:
@@ -294,17 +422,24 @@ def expand_spec(spec: dict) -> list[dict]:
       1. ``shared``  (every cell)
       2. partition fields (``partition_mode``, ``alpha`` if Dirichlet,
          ``n_clients``)
-      3. ``algorithm`` and ``arch``
-      4. ``arch_overrides[arch]`` (wins over shared — typically just
+      3. ``algorithm`` (name) and ``algo_kwargs`` (per-algorithm dict
+         from the normalized form — empty for fedavg/scaffold,
+         ``{"mu": 0.01}`` for fedprox, etc.)
+      4. ``arch``
+      5. ``arch_overrides[arch]`` (wins over shared — typically just
          ``lr`` per ADR D-20)
-      5. ``seed`` and ``name`` (canonical)
+      6. ``seed`` and ``name`` (canonical)
+
+    Every cell gets an ``algo_kwargs`` key (possibly empty dict) so
+    downstream ``V7Config(**cell)`` construction is uniform.
     """
     validate_spec(spec)
     helper = _metadata()
     overrides = spec.get("arch_overrides", {}) or {}
+    normalized_algos = _normalize_algorithms(spec["algorithms"])
     cells: list[dict] = []
     for arch in spec["archs"]:
-        for algo in spec["algorithms"]:
+        for algo_name, algo_kwargs in normalized_algos:
             for partition in spec["partitions"]:
                 for seed in spec["seeds"]:
                     cell: dict[str, Any] = dict(spec["shared"])
@@ -315,13 +450,16 @@ def expand_spec(spec: dict) -> list[dict]:
                         cell["alpha"] = None
                     cell["n_clients"] = partition["n_clients"]
                     cell["arch"] = arch
-                    cell["algorithm"] = algo
+                    cell["algorithm"] = algo_name
+                    # Copy so cells don't share a mutable algo_kwargs dict
+                    # (callers occasionally mutate a returned cell).
+                    cell["algo_kwargs"] = dict(algo_kwargs)
                     arch_over = overrides.get(arch, {})
                     if isinstance(arch_over, dict):
                         cell.update(arch_over)
                     cell["seed"] = seed
                     cell["name"] = helper.cell_name(
-                        arch, algo, partition["mode"], seed,
+                        arch, algo_name, partition["mode"], seed,
                         partition["n_clients"], alpha=cell["alpha"],
                     )
                     cells.append(cell)

@@ -34,8 +34,10 @@ archs:
   - spiking_expand2
 
 algorithms:
-  - fedavg
-  - fedprox
+  - name: fedavg
+  - name: fedprox
+    kwargs:
+      mu: 0.01                     # canonical FedProx-2018 baseline
   # MOON intentionally absent — per ADR D-22, deferred to Phase 2 polish.
 
 partitions:

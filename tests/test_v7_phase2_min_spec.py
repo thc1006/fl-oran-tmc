@@ -108,15 +108,21 @@ def test_spec_archs_is_list_of_known_archs(spec_dict, helper):
         )
 
 
-def test_spec_algorithms_is_list_of_known_algorithms(spec_dict, helper):
+def test_spec_algorithms_is_list_of_known_algorithms(spec_dict, helper, loader):
     """Every algorithm in the spec must exist in
-    fl_oran.federated.algorithms.REGISTRY."""
+    fl_oran.federated.algorithms.REGISTRY.
+
+    Phase 1.5g-2 added an optional dict form to the algorithms list
+    so per-algorithm kwargs (e.g. fedprox's mu) can be specified in
+    YAML rather than buried in launcher code. Normalize both forms
+    via the loader's helper before checking.
+    """
     algos = spec_dict["algorithms"]
     assert isinstance(algos, list) and len(algos) > 0
     known = helper.known_algorithms()
-    for algo in algos:
-        assert algo in known, (
-            f"spec algo {algo!r} not in registry; known: {sorted(known)}"
+    for name, _kwargs in loader._normalize_algorithms(algos):
+        assert name in known, (
+            f"spec algo {name!r} not in registry; known: {sorted(known)}"
         )
 
 
