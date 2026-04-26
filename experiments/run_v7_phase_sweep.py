@@ -45,7 +45,7 @@ from pathlib import Path
 import torch
 
 from fl_oran.logging_utils import get_logger
-from fl_oran.training.fl_v7 import V7Config, run_v7_sweep
+from fl_oran.training.fl_v7 import V7Config, _select_algorithm, run_v7_sweep
 
 log = get_logger(__name__)
 
@@ -103,7 +103,98 @@ def _parse_args() -> argparse.Namespace:
         "--summary-tag", default="",
         help="Optional tag appended to summary CSV filename.",
     )
+    p.add_argument(
+        "--skip-completed", action="store_true",
+        help=(
+            "Read the latest _phase_summary_*.csv in --output-dir and "
+            "skip any cell whose status was 'ok'. Cells with status "
+            "starting with 'failed' are RE-RUN. Useful for retrying a "
+            "partially-failed sweep without redoing the successful cells."
+        ),
+    )
+    p.add_argument(
+        "--no-preflight", action="store_true",
+        help=(
+            "Skip the algorithm-instantiation pre-flight check. Default is "
+            "to dry-instantiate every cell's V7Config + algorithm class "
+            "before any training, to catch missing kwargs / config bugs "
+            "in seconds rather than after each cell's CPU prep."
+        ),
+    )
     return p.parse_args()
+
+
+def _load_skip_set(out_dir: Path, summary_tag: str) -> set[str]:
+    """Return the set of cell names whose previous run status was 'ok'.
+
+    Reads the most recent ``_phase_summary[_<tag>]_*.csv`` in
+    ``out_dir`` (matched by mtime, not symlink, since the symlink can
+    point to a stale file). If no summary exists or it has no 'ok'
+    rows, returns the empty set.
+    """
+    pattern = (
+        f"_phase_summary_{summary_tag}_*.csv" if summary_tag
+        else "_phase_summary_*.csv"
+    )
+    candidates = sorted(
+        (p for p in out_dir.glob(pattern) if not p.is_symlink()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return set()
+    src = candidates[0]
+    skip: set[str] = set()
+    with src.open() as fp:
+        reader = csv.DictReader(fp)
+        for row in reader:
+            if row.get("status") == "ok":
+                skip.add(row["name"])
+    if skip:
+        log.info(
+            "--skip-completed: found %d ok cells in %s",
+            len(skip), src.name,
+        )
+    return skip
+
+
+def _preflight(cells: list[dict], out_dir: Path, parq: Path) -> None:
+    """Construct V7Config + algorithm class for every cell, no training.
+
+    Catches the bug class that wasted 22 GPU-min in Phase 2: the spec
+    expanded successfully and 18 cells worth of CPU prep ran before
+    every fedprox cell crashed at training time on
+    ``FedProx(missing 'mu')``. With this check, identical bugs surface
+    in ~1 second of zero-GPU work.
+
+    The check intentionally calls ``_select_algorithm`` AND constructs
+    the algorithm instance with the fl_v7-auto-filled kwargs +
+    ``cfg.algo_kwargs`` overlay — same code path run_v7_sweep uses, so
+    any signature mismatch surfaces here.
+    """
+    log.info("pre-flight: dry-instantiate %d cells (no training)", len(cells))
+    for i, cell in enumerate(cells):
+        try:
+            cfg = _build_cfg(cell, out_dir, parq)
+            algo_cls = _select_algorithm(cfg)
+            # Mirror fl_v7._run_training_v7's auto-fill set.
+            test_kwargs = {
+                "max_steps": cfg.max_steps_per_round,
+                "batch_size": cfg.batch_size,
+                "grad_clip": cfg.grad_clip,
+                "amp_enabled": False,
+                "amp_dtype": None,
+            }
+            test_kwargs.update(cfg.algo_kwargs)
+            algo_cls(**test_kwargs)
+        except Exception as exc:
+            raise SystemExit(
+                f"pre-flight FAILED at cell {i+1}/{len(cells)} "
+                f"(name={cell.get('name')!r}, arch={cell.get('arch')!r}, "
+                f"algo={cell.get('algorithm')!r}): "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+    log.info("pre-flight ok — all %d cells construct cleanly", len(cells))
 
 
 def _build_cfg(cell: dict, output_dir: Path, unified_parquet: Path) -> V7Config:
@@ -165,6 +256,22 @@ def main() -> None:
     parq = Path(args.unified_parquet)
     if not parq.is_file():
         raise SystemExit(f"unified parquet not found: {parq}")
+
+    if args.skip_completed:
+        skip_names = _load_skip_set(out_dir, args.summary_tag)
+        if skip_names:
+            before = len(cells)
+            cells = [c for c in cells if c["name"] not in skip_names]
+            log.info(
+                "--skip-completed: %d → %d cells after filter",
+                before, len(cells),
+            )
+        if not cells:
+            log.info("--skip-completed: nothing left to run; exiting.")
+            return
+
+    if not args.no_preflight:
+        _preflight(cells, out_dir, parq)
 
     if torch.cuda.is_available():
         log.info(
