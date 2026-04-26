@@ -43,6 +43,38 @@ from typing import Any
 import yaml
 
 
+# ---------------------------------------------------------------------------
+# Strict YAML loader — rejects duplicate keys
+# ---------------------------------------------------------------------------
+#
+# yaml.safe_load silently overwrites duplicate keys with the last value.
+# That masks copy-paste bugs in long sweep specs (e.g. accidentally
+# repeating ``seeds:`` after editing). We override the mapping
+# constructor on a SafeLoader subclass to raise instead.
+
+class _NoDupSafeLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_mapping_no_dup(loader, node, deep: bool = False):
+    mapping: dict = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise ValueError(
+                f"duplicate key {key!r} in YAML mapping "
+                f"(line {key_node.start_mark.line + 1})"
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_NoDupSafeLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+    _construct_mapping_no_dup,
+)
+
+
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 _METADATA_PATH = _SCRIPTS_DIR / "_v7_cell_metadata.py"
 
@@ -74,14 +106,16 @@ def _metadata():
 def load_spec(path) -> dict:
     """Load a sweep specification YAML into a plain dict.
 
-    Uses ``yaml.safe_load`` to refuse class-instance constructors —
-    sweep specs are pure data and should never trigger Python object
-    instantiation at parse time."""
+    Uses a SafeLoader subclass that (a) refuses class-instance
+    constructors and (b) raises on duplicate keys — vanilla
+    ``yaml.safe_load`` silently keeps only the last duplicate, which
+    masks copy-paste bugs in long sweep specs.
+    """
     p = Path(path)
     if not p.is_file():
         raise FileNotFoundError(f"sweep spec not found: {p}")
     with p.open() as fh:
-        data = yaml.safe_load(fh)
+        data = yaml.load(fh, Loader=_NoDupSafeLoader)
     if not isinstance(data, dict):
         raise ValueError(f"sweep spec must be a YAML mapping; got {type(data).__name__}")
     return data

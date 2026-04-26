@@ -326,6 +326,77 @@ def test_validate_spec_rejects_duplicate_algorithms(loader, spec_dict):
         loader.validate_spec(bad)
 
 
+def test_expanded_cells_compatible_with_v7config_schema(loader, spec_dict):
+    """Item 1: cross-session schema-drift guard. When fl_v7 lands
+    (Phase 1.5b, other session), every expanded cell dict must be
+    acceptable to ``V7Config(**cell)`` without TypeError on unknown
+    kwargs. SKIPS while fl_v7 is being implemented; FAILS if fl_v7
+    exists and rejects any cell.
+
+    Tries with and without ``name`` because V5Config auto-derives
+    ``name`` in __post_init__; V7Config may or may not accept an
+    explicit name override."""
+    pytest.importorskip("fl_oran.training.fl_v7")
+    from fl_oran.training.fl_v7 import V7Config
+
+    cells = loader.expand_spec(spec_dict)
+    failures = []
+    for cell in cells:
+        try:
+            V7Config(**cell)
+            continue
+        except TypeError as e_with_name:
+            cell_no_name = {k: v for k, v in cell.items() if k != "name"}
+            try:
+                V7Config(**cell_no_name)
+            except TypeError as e_no_name:
+                failures.append(
+                    f"cell {cell.get('name', '<unnamed>')!r}: "
+                    f"with name -> {e_with_name}; "
+                    f"without name -> {e_no_name}"
+                )
+    if failures:
+        pytest.fail(
+            "V7Config schema drift — phase2_min.yaml emits fields "
+            f"V7Config does not accept:\n  " + "\n  ".join(failures[:5])
+        )
+    """Item 4: yaml.safe_load silently keeps the last value on duplicate
+    keys. Long sweep specs are fragile to copy-paste introducing
+    duplicates (e.g. two ``seeds:`` blocks). Custom loader must raise."""
+    bad_yaml = tmp_path / "dup_keys.yaml"
+    bad_yaml.write_text(
+        "archs: [lstm]\n"
+        "algorithms: [fedavg]\n"
+        "partitions:\n"
+        "  - {mode: iid, n_clients: 7}\n"
+        "seeds: [42]\n"
+        "seeds: [99]\n"          # ← duplicate key
+        "shared:\n"
+        "  num_rounds: 20\n"
+    )
+    with pytest.raises(ValueError, match=r"duplicate key"):
+        loader.load_spec(bad_yaml)
+
+
+def test_load_spec_rejects_duplicate_nested_yaml_keys(loader, tmp_path):
+    """Duplicate detection must apply at every nesting level, not only
+    top level — a copy-pasted ``shared.batch_size:`` would silently
+    pick the second value otherwise."""
+    bad_yaml = tmp_path / "dup_nested.yaml"
+    bad_yaml.write_text(
+        "archs: [lstm]\n"
+        "algorithms: [fedavg]\n"
+        "partitions:\n"
+        "  - {mode: iid, n_clients: 7}\n"
+        "seeds: [42]\n"
+        "shared:\n"
+        "  batch_size: 64\n"
+        "  batch_size: 128\n"     # ← nested duplicate
+    )
+    with pytest.raises(ValueError, match=r"duplicate key"):
+        loader.load_spec(bad_yaml)
+
+
 def test_validate_spec_rejects_iid_partition_with_alpha(loader, spec_dict):
     """A misconfigured ``{mode: iid, alpha: 0.5, n_clients: 7}`` would
     silently drop alpha at expansion time — catch at validation."""

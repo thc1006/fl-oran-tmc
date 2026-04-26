@@ -292,6 +292,41 @@ def test_paired_bootstrap_delta_holds_axes_fixed(agg, synthetic_sweep):
     assert d["ci_lo"] > 0  # Mamba arm's lower CI bound is above 0
 
 
+def test_all_pairwise_algo_deltas_uses_distinct_seed_per_pair(agg, tmp_path):
+    """Item 2: each (algo_a, algo_b) pair within a (arch, partition,
+    alpha) cell must bootstrap with its own RNG seed, otherwise resample
+    indices across pairs are identical and CIs become artificially
+    correlated. Verified by capturing the seed each pair receives via
+    monkeypatching paired_bootstrap_delta."""
+    sweep = tmp_path / "seed_diff"
+    # 3 algos × 2 seeds → C(3,2)=3 pairs in one cell.
+    for algo in ("fedavg", "fedprox", "fedadam"):
+        for seed in (42, 0):
+            _write_cell(sweep, arch="lstm", algorithm=algo,
+                        partition_mode="iid", alpha=None, seed=seed,
+                        test_auc=0.7 + 0.01 * seed)
+    cells = agg.load_cells(sweep)
+
+    captured_seeds = []
+    real_paired = agg.paired_bootstrap_delta
+
+    def spy(cells, *, a, b, n_boot, seed, **kw):
+        captured_seeds.append(seed)
+        return real_paired(cells, a=a, b=b, n_boot=n_boot, seed=seed, **kw)
+
+    agg.paired_bootstrap_delta = spy
+    try:
+        agg.all_pairwise_algo_deltas(cells, n_boot=200)
+    finally:
+        agg.paired_bootstrap_delta = real_paired
+
+    assert len(captured_seeds) == 3, captured_seeds
+    assert len(set(captured_seeds)) == 3, (
+        f"all 3 pairs got the same seed {captured_seeds}; bootstrap "
+        "samples will be identically correlated across pairs"
+    )
+
+
 def test_paired_bootstrap_delta_dict_shape_consistent_across_branches(agg, tmp_path):
     """Review B1: the n<2 early return must include the same keys as the
     n>=2 branch (specifically ``delta_std``) so JSON consumers /
@@ -384,6 +419,69 @@ def test_main_writes_md_and_json_atomically(agg, synthetic_sweep, tmp_path,
     assert "stats" in payload
     # 4 groups: 2 archs × 2 algos × 1 partition × 1 alpha
     assert len(payload["stats"]) == 4
+
+
+def test_aggregate_scales_to_phase2_full_size(agg, tmp_path):
+    """Item 3: ADR Phase 2 full sweep is 3 archs × 7 algos × 10 seeds
+    × (5 dirichlet + 1 iid) = 1260 cells. Verify the aggregator
+    handles this scale without crash and finishes in a reasonable
+    time. Uses n_boot=2000 (1/5 of production) to keep CI runtime
+    bounded — production runtime scales linearly with n_boot."""
+    import time
+    sweep = tmp_path / "perf_sweep"
+    archs = ["lstm", "mamba", "spiking_expand2"]
+    algos = ["fedavg", "fedprox", "fedadam", "scaffold", "feddyn", "fedbn", "moon"]
+    seeds = list(range(10))
+    alphas = [None, 0.05, 0.1, 0.5, 1.0, 10.0]   # None = IID
+
+    n_written = 0
+    for arch in archs:
+        for algo in algos:
+            for alpha in alphas:
+                for seed in seeds:
+                    pmode = "iid" if alpha is None else "dirichlet"
+                    # Deterministic but varied AUCs so bootstrap CIs
+                    # are non-degenerate.
+                    test_auc = 0.7 + 0.05 * ((hash((arch, algo, seed)) % 100) / 1000.0)
+                    _write_cell(sweep, arch=arch, algorithm=algo,
+                                partition_mode=pmode, alpha=alpha, seed=seed,
+                                test_auc=test_auc)
+                    n_written += 1
+    assert n_written == 1260
+
+    t0 = time.perf_counter()
+    cells = agg.load_cells(sweep)
+    t_load = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    stats = agg.per_group_stats(cells)
+    t_stats = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    deltas = agg.all_pairwise_algo_deltas(cells, n_boot=2000)
+    t_deltas = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    md = agg.render_results_md(stats, deltas)
+    t_render = time.perf_counter() - t0
+
+    print(
+        f"\nperf @ 1260 cells: load={t_load:.2f}s stats={t_stats:.2f}s "
+        f"deltas(n_boot=2000)={t_deltas:.2f}s render={t_render:.2f}s"
+    )
+    assert len(cells) == 1260
+    # 3 archs × 6 partitions × C(7,2) = 3 × 6 × 21 = 378 pairs
+    assert len(deltas) == 378
+    # Total budget: 60s for all 4 phases at 1/5 production n_boot.
+    # Production (n_boot=10000) extrapolates to ~5x deltas time only.
+    total = t_load + t_stats + t_deltas + t_render
+    assert total < 60.0, (
+        f"aggregator took {total:.1f}s on 1260 cells (budget 60s); "
+        "production n_boot=10000 would scale to ~{:.0f}s".format(
+            t_load + t_stats + 5 * t_deltas + t_render
+        )
+    )
+    assert len(md) > 1000  # rendered MD has substantive content
 
 
 def test_main_errors_loudly_on_empty_sweep(agg, tmp_path, monkeypatch):

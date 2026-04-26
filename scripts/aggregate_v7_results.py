@@ -42,6 +42,7 @@ Defensive contract (lessons from the v6 round-4 audit):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -50,6 +51,17 @@ from pathlib import Path
 
 import numpy as np
 from scipy import stats as sps
+
+
+def _derive_pair_seed(base_seed: int, pair_id: str) -> int:
+    """Hash a pair identifier into an unsigned 32-bit seed offset added
+    to ``base_seed``. Uses BLAKE2b for stability across Python versions
+    (unlike ``hash()`` which respects PYTHONHASHSEED). Result fits in
+    numpy's accepted seed range and is deterministic for a given
+    (base_seed, pair_id)."""
+    digest = hashlib.blake2b(pair_id.encode("utf-8"), digest_size=4).digest()
+    offset = int.from_bytes(digest, byteorder="big", signed=False)
+    return (base_seed + offset) % (2 ** 32)
 
 
 # ---------------------------------------------------------------------------
@@ -337,10 +349,17 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
     }
 
 
-def all_pairwise_algo_deltas(cells: dict, *, n_boot: int = 10_000) -> dict:
+def all_pairwise_algo_deltas(cells: dict, *, n_boot: int = 10_000,
+                             base_seed: int = 2026) -> dict:
     """For every ``(arch, partition_mode, alpha)`` cell, compute the
     pairwise delta between every algorithm pair. Used for Stage 2 §5
     "FL algorithm comparison within architecture" subtable.
+
+    Each pair gets its own RNG seed derived from a stable hash of the
+    pair identifier (BLAKE2b). Without this, every pair would resample
+    the bootstrap distribution at exactly the same indices, producing
+    correlated CIs — fine for "report each CI independently" but bad
+    for any joint coverage claim.
 
     Returns dict keyed by ``(arch, pmode, alpha, algo_a, algo_b)``.
     """
@@ -352,13 +371,15 @@ def all_pairwise_algo_deltas(cells: dict, *, n_boot: int = 10_000) -> dict:
         algos_sorted = sorted(algos)
         for i, algo_a in enumerate(algos_sorted):
             for algo_b in algos_sorted[i + 1:]:
+                pair_id = f"{arch}::{pmode}::{alpha}::{algo_a}::vs::{algo_b}"
+                pair_seed = _derive_pair_seed(base_seed, pair_id)
                 out[(arch, pmode, alpha, algo_a, algo_b)] = paired_bootstrap_delta(
                     cells,
                     a={"arch": arch, "algorithm": algo_a,
                        "partition_mode": pmode, "alpha": alpha},
                     b={"arch": arch, "algorithm": algo_b,
                        "partition_mode": pmode, "alpha": alpha},
-                    n_boot=n_boot,
+                    n_boot=n_boot, seed=pair_seed,
                 )
     return out
 
