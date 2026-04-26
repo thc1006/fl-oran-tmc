@@ -1,0 +1,56 @@
+# Phase 3a-revised: parametric Dirichlet stress sweep (α∈{0.05, 0.1}).
+#
+# Per ADR-001 2026-04-27 revision: replaces original Phase 3a single
+# α=0.1 plan with parametric sweep α∈{0.05, 0.1} to extend Mangi 2026's
+# leave-one-regime-out evaluation onto a continuous parametric axis.
+#
+# Cell count: 3 archs × 2 algos × 2 alphas × 3 seeds = 36 cells, ~45 min
+# GPU on RTX 4080 (per Phase 2 minimum 70-90s/cell baseline).
+
+description: Phase 3a-revised parametric Dirichlet stress (α∈{0.05, 0.10})
+adr_reference: ADR-001 D-22 + 2026-04-27 revision
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - name: fedavg
+  - name: fedprox
+    kwargs:
+      mu: 0.01
+
+partitions:
+  - mode: dirichlet
+    alpha: 0.05
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.10
+    n_clients: 7
+
+seeds: [42, 0, 1]
+
+# Per-cell shared hyperparameters (M5 baseline; same as phase2_min.yaml).
+shared:
+  num_rounds: 20
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train       # ADR D-12
+  cudnn_deterministic: true     # ADR D-15
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 1.0e-4                  # ADR D-20 surrogate gradient stability
+    lr_warmup_rounds: 5

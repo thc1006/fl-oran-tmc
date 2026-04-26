@@ -1,0 +1,47 @@
+# Phase 3c: cross-GPU robustness smoke (1 cell, multiple hardware).
+#
+# Single-cell spec to be executed on multiple hardware platforms:
+#   - RTX 4080 (16 GB, sm_89, local)         <- baseline
+#   - NVIDIA T4 (16 GB, sm_75, cloud)        <- consumer-edge proxy
+#   - NVIDIA A100 (40/80 GB, sm_80, cloud)   <- data-center proxy
+#
+# Goal: confirm that cudnn_deterministic + bf16 + fixed-seed yields
+# AUC results within seed CI95 across all three GPU architectures.
+# Latency/EDP will differ (paper §setup discloses RTX 4080 specificity).
+#
+# Cell count: 1 cell × 3 hardware = 3 runs (executed manually per
+# hardware; not via this spec which is hardware-agnostic).
+# Estimated cost: ~$10 cloud + ~3 min wallclock per hardware.
+
+description: Phase 3c cross-GPU robustness smoke (single canonical cell)
+adr_reference: ADR-001 2026-04-27 revision (preempts reviewer cross-hardware question)
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedavg
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 20
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4

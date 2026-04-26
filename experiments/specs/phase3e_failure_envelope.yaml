@@ -1,0 +1,70 @@
+# Phase 3e: failure-envelope α stress sweep.
+#
+# Empirical evidence for paper's central "separability assumption fails"
+# claim. By sweeping α∈{0.01, 0.05, 0.1, 0.5, 1.0, 5.0} we expose:
+#   - Where each architecture collapses (different α boundaries?)
+#   - Whether algorithm × architecture × α coupling is non-trivial
+#
+# Phase 3e uses fedavg (the reference algorithm) and 1 seed per cell,
+# trading statistical depth for parametric breadth. Per-axis CI is
+# obtained from Phase 2 minimum + 3a-revised; Phase 3e maps the
+# envelope shape.
+#
+# Cell count: 6 alphas × 3 archs × 1 algo × 1 seed = 18 cells, ~25 min
+# GPU on RTX 4080.
+
+description: Phase 3e failure-envelope α∈{0.01,0.05,0.1,0.5,1,5} stress
+adr_reference: ADR-001 2026-04-27 revision (separability assumption empirical evidence)
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - name: fedavg
+
+partitions:
+  - mode: dirichlet
+    alpha: 0.01
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.05
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.10
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.50
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 1.00
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 5.00
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 20
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 1.0e-4
+    lr_warmup_rounds: 5

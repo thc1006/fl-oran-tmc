@@ -1,0 +1,77 @@
+# Phase 5: Stage 2 FULL sweep for IEEE TMC submission.
+#
+# Per ADR §S2-W1..3 (minus MOON; deferred per D-22). The TMC-quality
+# empirical foundation: 3 archs × 5 algos × 5 alphas × 10 seeds = 750
+# cells. Estimated ~16 hours GPU on RTX 4080 (per Phase 2 minimum
+# 70-90s/cell baseline; Stage 2 full uses same per-cell budget).
+#
+# REQUIRES EXPLICIT USER AUTHORIZATION before launch (CLAUDE.md hard
+# rule #6) — 16 hr GPU is a major commitment.
+#
+# Phase 2 minimum (`phase2_min.yaml`) is the smoke that validates the
+# pipeline; Phase 5 is the full benchmark whose numbers go into the
+# TMC paper Tables 2-4 and the released open dataset.
+
+description: Phase 5 Stage 2 FULL sweep — IEEE TMC submission
+adr_reference: ADR-001 §S2-W1..3 + 2026-04-27 revision (TMC primary venue)
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - name: fedavg
+  - name: fedprox
+    kwargs:
+      mu: 0.01                  # canonical FedProx-2018 baseline
+  - name: fedadam
+    kwargs:
+      server_lr: 0.01           # FedAdam server-side learning rate
+  - name: scaffold
+  - name: feddyn
+    kwargs:
+      alpha: 0.01               # FedDyn regularization (NOT V7Config.alpha)
+
+partitions:
+  - mode: dirichlet
+    alpha: 0.05
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.10
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.50
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 1.00
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 5.00
+    n_clients: 7
+
+# 10 seeds for paired-bootstrap CI95 + Bonferroni multi-comparison.
+seeds: [42, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+shared:
+  num_rounds: 20
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train       # ADR D-12
+  cudnn_deterministic: true     # ADR D-15
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 1.0e-4                  # ADR D-20 surrogate gradient stability
+    lr_warmup_rounds: 5
