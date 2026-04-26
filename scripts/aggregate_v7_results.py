@@ -57,15 +57,28 @@ from scipy import stats as sps
 # ---------------------------------------------------------------------------
 
 _V7_HELPER_PATH = Path(__file__).resolve().parent / "_v7_cell_metadata.py"
+_V7_HELPER_MODULE_KEY = "_v7_cell_metadata"
 
 
 def _load_v7_helper():
+    """Load _v7_cell_metadata once per process.
+
+    Uses the canonical module key + ``sys.modules.setdefault`` so that
+    other tools loading the same helper (e.g. ``_v7_spec_loader``) share
+    one instance — otherwise each loader would re-import v6's runner
+    module (transitively pulling in torch) and the per-module
+    ``_RUNNER_CACHE`` would be wasted.
+    """
+    cached = sys.modules.get(_V7_HELPER_MODULE_KEY)
+    if cached is not None:
+        return cached
     spec = importlib.util.spec_from_file_location(
-        "_v7_cell_metadata_for_aggregator", _V7_HELPER_PATH,
+        _V7_HELPER_MODULE_KEY, _V7_HELPER_PATH,
     )
     if spec is None or spec.loader is None:
         raise RuntimeError(f"could not load v7 helper from {_V7_HELPER_PATH}")
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[_V7_HELPER_MODULE_KEY] = mod
     spec.loader.exec_module(mod)
     return mod
 
@@ -82,8 +95,12 @@ _REQUIRED_SUMMARY_FIELDS = (
 
 
 def _warn(msg: str) -> None:
-    """Single point of truth for warnings so tests can capture them."""
-    print(f"warning: {msg}")
+    """Single point of truth for warnings so tests can capture them.
+
+    Written to stderr so CI/cron logs cleanly separate warnings from the
+    final ``wrote ...`` success line on stdout.
+    """
+    print(f"warning: {msg}", file=sys.stderr)
 
 
 def load_cells(sweep_dir: Path) -> dict:
@@ -186,9 +203,19 @@ def per_group_stats(cells: dict) -> dict:
             [float(v.get("test_accuracy", float("nan"))) for v in items],
             dtype=float,
         )
+        # NaN for missing so _nanmean returns None (vs silently averaging
+        # in 0 and dragging the table value down).
         params = np.array(
-            [int(v.get("params_count", 0)) for v in items], dtype=int,
+            [float(v["params_count"]) if v.get("params_count") is not None
+             else float("nan") for v in items],
+            dtype=float,
         )
+        n_missing_params = int(np.isnan(params).sum())
+        if n_missing_params:
+            _warn(
+                f"group {key}: {n_missing_params}/{len(items)} cells missing "
+                "params_count — mean computed over present cells only"
+            )
         seeds = sorted(int(v["seed"]) for v in items)
         out[key] = {
             "arch": key[0],
@@ -201,7 +228,7 @@ def per_group_stats(cells: dict) -> dict:
             "test_f1_mean": _nanmean(f1s),
             "test_f1_std": _nanstd(f1s),
             "test_accuracy_mean": _nanmean(accs),
-            "params_count_mean": float(params.mean()) if len(params) else 0.0,
+            "params_count_mean": _nanmean(params),
             "seeds": seeds,
         }
     return out
@@ -271,6 +298,7 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
         return {
             "n_paired_seeds": int(n),
             "delta_mean": float(deltas.mean()) if n else 0.0,
+            "delta_std": None,
             "ci_lo": None,
             "ci_hi": None,
             "wilcoxon_p": None,
@@ -371,10 +399,12 @@ def render_results_md(stats: dict, deltas: dict) -> str:
         f1_cell = "n/a" if f1_mean is None else f"{f1_mean:.4f}"
         std_val = s["test_auc_std"]
         std_str = "n/a" if std_val is None else f"{std_val:.4f}"
+        params_mean = s["params_count_mean"]
+        params_cell = "n/a" if params_mean is None else f"{int(params_mean)}"
         lines.append(
             f"| {arch} | {algo} | {pmode} | {_alpha_str(alpha)} | {s['n']} | "
             f"{s['test_auc_mean']:.4f} ± {std_str} | "
-            f"{f1_cell} | {int(s['params_count_mean'])} |"
+            f"{f1_cell} | {params_cell} |"
         )
     lines.append("")
 

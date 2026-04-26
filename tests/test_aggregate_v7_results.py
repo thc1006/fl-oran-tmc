@@ -158,6 +158,49 @@ def test_load_cells_returns_empty_when_dir_empty(agg, tmp_path):
     assert agg.load_cells(sweep) == {}
 
 
+def test_warn_writes_to_stderr_not_stdout(agg, tmp_path, capsys):
+    """Review I2: warnings should go to stderr so production stdout
+    stays clean (only the final 'wrote ...' line)."""
+    sweep = tmp_path / "stderr_check"
+    sweep.mkdir()
+    bad_cell = sweep / "v7_lstm_fedavg_iid_s99"
+    bad_cell.mkdir()
+    (bad_cell / "summary.json").write_text("{not valid json")
+    agg.load_cells(sweep)
+    captured = capsys.readouterr()
+    assert "warning" in captured.err.lower()
+    assert "warning" not in captured.out.lower()
+
+
+def test_per_group_stats_handles_missing_params_count(agg, tmp_path, capsys):
+    """Review I1: a cell missing ``params_count`` must not silently
+    contribute 0 to the mean (which would drag the table value down).
+    Mean is computed over present cells only; a warning surfaces the
+    skipped cell count."""
+    sweep = tmp_path / "missing_params"
+    # 3 cells, 1 of which lacks params_count.
+    _write_cell(sweep, arch="lstm", algorithm="fedavg", partition_mode="iid",
+                alpha=None, seed=42, test_auc=0.8, params_count=44553)
+    _write_cell(sweep, arch="lstm", algorithm="fedavg", partition_mode="iid",
+                alpha=None, seed=0, test_auc=0.8, params_count=44553)
+    # Third cell with explicit params_count=None to trigger the guard.
+    cell = sweep / "v7_lstm_fedavg_iid_s1"
+    cell.mkdir()
+    (cell / "summary.json").write_text(json.dumps({
+        "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
+        "alpha": None, "seed": 1, "test_auc": 0.8, "params_count": None,
+    }))
+    (cell / "history.csv").write_text("round\n0\n")
+    cells = agg.load_cells(sweep)
+    stats = agg.per_group_stats(cells)
+    s = stats[("lstm", "fedavg", "iid", None)]
+    # Mean over the 2 present params; the missing one is excluded
+    # rather than counted as 0.
+    assert s["params_count_mean"] == pytest.approx(44553.0)
+    captured = capsys.readouterr()
+    assert "params_count" in (captured.out + captured.err)
+
+
 def test_load_cells_warns_on_duplicate_metadata_key(agg, tmp_path, capsys):
     """Two cell dirs with identical (arch, algo, partition, alpha, seed)
     are a data-integrity bug (typically a rename/copy mistake). Last-
@@ -229,6 +272,28 @@ def test_paired_bootstrap_delta_holds_axes_fixed(agg, synthetic_sweep):
     assert d["delta_mean"] == pytest.approx(0.04, abs=1e-9)
     assert d["ci_lo"] is not None and d["ci_hi"] is not None
     assert d["ci_lo"] > 0  # Mamba arm's lower CI bound is above 0
+
+
+def test_paired_bootstrap_delta_dict_shape_consistent_across_branches(agg, tmp_path):
+    """Review B1: the n<2 early return must include the same keys as the
+    n>=2 branch (specifically ``delta_std``) so JSON consumers /
+    downstream code do not KeyError on single-seed cells."""
+    sweep = tmp_path / "shape"
+    _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                partition_mode="iid", alpha=None, seed=42, test_auc=0.7)
+    _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                partition_mode="iid", alpha=None, seed=42, test_auc=0.8)
+    cells = agg.load_cells(sweep)
+    d_n1 = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=200,
+    )
+    assert "delta_std" in d_n1, f"n<2 dict missing delta_std: {sorted(d_n1)}"
+    assert d_n1["delta_std"] is None
 
 
 def test_paired_bootstrap_delta_returns_none_ci_when_under_two_seeds(agg, tmp_path):
