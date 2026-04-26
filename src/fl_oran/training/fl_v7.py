@@ -161,9 +161,34 @@ class V7Config:
 
     def __post_init__(self) -> None:
         if not self.name:
-            alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
+            # Partition + n_clients aware auto-name: EVERY dimension
+            # that affects the produced data must be in the name to
+            # prevent silent cell-directory overwrite when matrix
+            # sweeps cross multiple values. The legacy v7 format
+            # ``a<alpha>`` alone collided when running IID + Dirichlet
+            # at the same default alpha=0.5 (alpha is meaningless for
+            # IID but lived in cfg). For future n_clients ablation
+            # sweeps it would also collide on n=5 vs n=7 in dirichlet.
+            #
+            # Format per partition_mode:
+            #   iid:        v7_<arch>_<algo>_iid_n<N>_s<seed>
+            #   dirichlet:  v7_<arch>_<algo>_dirichlet_a<alpha>_n<N>_s<seed>
+            #   other:      v7_<arch>_<algo>_<mode>_a<alpha>_n<N>_s<seed>
+            if self.partition_mode == "iid":
+                part_tag = f"iid_n{self.n_clients}"
+            elif self.partition_mode == "dirichlet":
+                alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
+                part_tag = f"dirichlet_a{alpha_tag}_n{self.n_clients}"
+            else:
+                # Fallback for future modes (e.g. noniid_slice): keep
+                # both alpha + n_clients for safety. Update this
+                # branch when adding a mode where alpha is meaningless.
+                alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
+                part_tag = (
+                    f"{self.partition_mode}_a{alpha_tag}_n{self.n_clients}"
+                )
             self.name = (
-                f"v7_{self.arch}_{self.algorithm}_a{alpha_tag}_s{self.seed}"
+                f"v7_{self.arch}_{self.algorithm}_{part_tag}_s{self.seed}"
             )
         self.unified_parquet = Path(self.unified_parquet)
         self.output_dir = Path(self.output_dir)

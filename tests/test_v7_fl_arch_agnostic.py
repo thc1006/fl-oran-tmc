@@ -645,6 +645,45 @@ def test_v7_sweep_idempotent_AND_seed_actually_matters(
     )
 
 
+@pytest.mark.parametrize(
+    "partition_mode,alpha,n_clients,expected_part_tag",
+    [
+        # IID: alpha is meaningless (partition.py ignores), but
+        # n_clients still in name for future ablation safety.
+        ("iid", 0.5, 7, "iid_n7"),
+        ("iid", 0.1, 5, "iid_n5"),
+        # Dirichlet: alpha + n_clients both in name (both affect data).
+        ("dirichlet", 0.5, 7, "dirichlet_a0p50_n7"),
+        ("dirichlet", 0.1, 7, "dirichlet_a0p10_n7"),
+        ("dirichlet", 0.5, 5, "dirichlet_a0p50_n5"),
+        ("dirichlet", 10.0, 7, "dirichlet_a10p00_n7"),
+    ],
+)
+def test_v7_config_name_partition_AND_n_clients_aware(
+    partition_mode, alpha, n_clients, expected_part_tag,
+):
+    """V7Config.__post_init__ auto-name MUST include partition_mode +
+    alpha + n_clients to prevent silent cell-directory overwrite when
+    matrix sweep crosses multiple values.
+
+    Original bug class (caught 2026-04-26 ultrathink before Phase 2
+    launch): IID + Dirichlet at same default cfg.alpha=0.5 produced
+    identical legacy name ``v7_<arch>_<algo>_a0p50_s<seed>`` →
+    second-run cells silently overwrote first-run cells. Without this
+    fix the planned Phase 2+3a 54-cell matrix would have produced 18
+    cells of garbage data. n_clients added at the same time for
+    future-proofing against ablation sweeps.
+    """
+    fl_v7 = _import_fl_v7()
+    cfg = fl_v7.V7Config(
+        arch="lstm", algorithm="fedavg",
+        partition_mode=partition_mode, alpha=alpha, n_clients=n_clients,
+        seed=42,
+    )
+    expected = f"v7_lstm_fedavg_{expected_part_tag}_s42"
+    assert cfg.name == expected, f"got {cfg.name!r}, want {expected!r}"
+
+
 def test_v7_config_pos_weight_split_default_train_per_D12():
     """ADR D-12 audit fix: pos_weight derives from train split
     (not test) to avoid label-distribution leakage. fl_v7 must
