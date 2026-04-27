@@ -239,13 +239,15 @@ def test_expanded_cells_iid_alpha_is_none(expanded):
 # ---------------------------------------------------------------------------
 
 def test_lr_overrides_applied_per_arch(expanded):
-    """Per ADR D-20, Spiking variants need lr=1e-4; LSTM/Mamba use 5e-4.
+    """Per ADR D-20 audit (2026-04-25 20:09 + Stage A 2026-04-28),
+    all three archs use lr=5e-4. The original D-20 description had
+    Spiking at lr=1e-4 (claimed unstable at 5e-4) but the post-audit
+    Stage 1 ARCH_REGISTRY (run_v6_arch_sweep.py:87-96) and
+    audit-corrected fl_v7 specs use lr=5e-4 across all archs.
     The expander must honour ``arch_overrides`` from the spec."""
     for cell in expanded:
-        if cell["arch"] in ("lstm", "mamba"):
+        if cell["arch"] in ("lstm", "mamba", "spiking_expand2"):
             assert cell["lr"] == pytest.approx(5e-4)
-        elif cell["arch"] == "spiking_expand2":
-            assert cell["lr"] == pytest.approx(1e-4)
         else:
             pytest.fail(f"unexpected arch in expanded spec: {cell['arch']}")
 
@@ -276,9 +278,13 @@ def test_warmup_steps_match_adr_d20_per_arch(expanded):
 
 def test_shared_fields_propagate_to_every_cell(expanded):
     """Fields under ``shared:`` must appear on every cell with the
-    same value (unless overridden per-arch)."""
+    same value (unless overridden per-arch). num_rounds bumped 20→100
+    in Stage A (2026-04-28) for Stage 1 ARCH_REGISTRY parity (25k
+    grads/cell after C2-corrected showed spiking IID escapes only at
+    r=30-40 and Mamba+FedProx at r=30+ — 20 rounds was systematically
+    under-training across archs and algos)."""
     for cell in expanded:
-        assert cell["num_rounds"] == 20
+        assert cell["num_rounds"] == 100
         assert cell["clients_per_round"] == 5
         assert cell["max_steps_per_round"] == 50
         assert cell["batch_size"] == 64
