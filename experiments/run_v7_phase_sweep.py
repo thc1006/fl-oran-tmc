@@ -350,6 +350,19 @@ def main() -> None:
                 )
                 break
 
+        # Phase 1.5n cleanup (2026-04-28 Phase 5 perf fix, defense-in-
+        # depth): reset torch.compile / dynamo state and force GC even
+        # if the cell crashed (run_v7_sweep's own cleanup at function
+        # end is bypassed on exception → next cell would inherit stale
+        # state → linear slowdown over 900 cells). Belt + suspenders
+        # with the in-function cleanup.
+        try:
+            import torch._dynamo as _dynamo
+            _dynamo.reset()
+        except Exception:
+            pass
+        import gc as _gc
+        _gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 

@@ -868,4 +868,22 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         cfg.name, best_val_auc,
         test_m.get("auc", 0.0), test_m["accuracy"], test_m["f1"],
     )
+
+    # Phase 1.5n cleanup (2026-04-28 Phase 5 perf fix): reset
+    # torch.compile / dynamo state and force GC so per-cell CUDA Graphs
+    # cache doesn't accumulate across the sweep. Without this, observed
+    # linear slowdown of 1.6s/round → 14s/round over 75 cells (cache
+    # grows ~15s of overhead per cell as Dirichlet partition shape
+    # variation triggers recompilation). torch.cuda.empty_cache() in
+    # the launcher only frees free blocks, not dynamo cache.
+    try:
+        import torch._dynamo as _dynamo
+        _dynamo.reset()
+    except Exception:
+        pass
+    import gc as _gc
+    _gc.collect()
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
     return result
