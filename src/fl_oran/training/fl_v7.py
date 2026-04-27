@@ -290,6 +290,129 @@ def _select_compile_mode(cfg: V7Config) -> str | None:
     return None if cfg.arch.startswith("spiking") else "reduce-overhead"
 
 
+# ---------------------------------------------------------------------------
+# NVML training-energy helpers (Phase 1.5i Stage B B2, 2026-04-28)
+# ---------------------------------------------------------------------------
+#
+# Stage 2 paper §6.5 (latency) and §6.6 (EDP) need per-cell training
+# energy in addition to Stage 1's per-inference energy. This block
+# adds three helpers that ``run_v7_sweep`` calls around its training
+# loop. Per ML.ENERGY 2024 best practices the caller is responsible
+# for ``torch.cuda.synchronize()`` brackets around energy reads.
+#
+# Library preference: ``nvidia_ml_py`` (preferred 2025+ post-pynvml-
+# deprecation) → fall back to ``pynvml``. Either way, on any import
+# / nvmlInit / API failure the helpers degrade gracefully — return
+# ``None``s / 0.0 — so training proceeds even when energy can't be
+# recorded (e.g. CPU runs, broken driver).
+
+
+def _try_init_nvml() -> tuple[object | None, object | None, str | None]:
+    """Initialize NVML and probe Energy API support.
+
+    Returns ``(lib, handle, method)`` where:
+      * ``lib`` is the imported NVML module (or None if unavailable)
+      * ``handle`` is the GPU 0 handle (or None)
+      * ``method`` is ``"energy_api"`` if Volta+ Energy API is
+        supported, ``"polling"`` for older GPUs, or ``None`` if NVML
+        couldn't be initialized at all.
+
+    Caller treats ``(None, None, None)`` as "no energy recording";
+    training proceeds normally without energy in summary.json.
+    """
+    lib = None
+    try:
+        import nvidia_ml_py as _lib_candidate  # type: ignore[import]
+        lib = _lib_candidate
+    except ImportError:
+        try:
+            import pynvml as _lib_candidate  # type: ignore[import]
+            lib = _lib_candidate
+        except ImportError:
+            return None, None, None
+
+    try:
+        lib.nvmlInit()
+        handle = lib.nvmlDeviceGetHandleByIndex(0)
+    except Exception:  # NVMLError, RuntimeError, anything
+        return None, None, None
+
+    # Probe Energy API (Volta+ supports it; RTX 4080 sm_89 ✓).
+    try:
+        _ = lib.nvmlDeviceGetTotalEnergyConsumption(handle)
+        return lib, handle, "energy_api"
+    except Exception:
+        return lib, handle, "polling"
+
+
+def _energy_snapshot_mJ(lib, handle, method: str | None) -> float:
+    """Read one energy/power sample.
+
+    For ``method='energy_api'`` returns cumulative energy in **mJ**
+    since driver load (caller subtracts two snapshots for a delta).
+    For ``method='polling'`` returns instantaneous power in **mW**
+    (caller integrates over time externally).
+
+    Returns 0.0 if NVML is unavailable, so callers can sum/diff
+    snapshots without conditional branching.
+    """
+    if lib is None:
+        return 0.0
+    try:
+        if method == "energy_api":
+            return float(lib.nvmlDeviceGetTotalEnergyConsumption(handle))
+        return float(lib.nvmlDeviceGetPowerUsage(handle))  # mW
+    except Exception:
+        return 0.0
+
+
+def _measure_idle_baseline_mw(
+    lib, handle, method: str | None, seconds: float = 2.0,
+) -> float:
+    """Measure idle GPU power in **mW** (averaged over ``seconds``).
+
+    For ``method='energy_api'`` uses the two-endpoint difference:
+    ``mW = (E_after - E_before) / seconds``. For polling, samples
+    Power API at ~20 Hz and averages.
+
+    Returns 0.0 if NVML unavailable. Caller treats 0.0 as "idle
+    subtraction skipped" (so the reported energy is total rather
+    than model-attributable). The 2-second default is a balance
+    between accuracy and stalling the training pipeline.
+    """
+    if lib is None:
+        return 0.0
+    if method == "energy_api":
+        e0 = _energy_snapshot_mJ(lib, handle, method)
+        time.sleep(seconds)
+        e1 = _energy_snapshot_mJ(lib, handle, method)
+        denom = max(seconds, 1e-9)
+        return (e1 - e0) / denom  # mW = mJ / s
+    # Polling fallback: sample at 20 Hz, average mW.
+    samples: list[float] = []
+    period = 0.05
+    end = time.time() + seconds
+    while time.time() < end:
+        try:
+            samples.append(float(lib.nvmlDeviceGetPowerUsage(handle)))
+        except Exception:
+            break  # NVMLError mid-sample → stop, return what we have
+        time.sleep(period)
+    if not samples:
+        return 0.0
+    return float(sum(samples) / len(samples))
+
+
+def _finalize_nvml(lib) -> None:
+    """Best-effort NVML shutdown; safe to call when lib is None."""
+    if lib is None:
+        return
+    try:
+        lib.nvmlShutdown()
+    except Exception:
+        pass  # already-shutdown / driver-gone — non-blocking
+
+
 def setup_torch_perf(device: torch.device, deterministic: bool = True) -> None:
     """Idempotent workstation perf switches; mirror ``fl_v5.setup_torch_perf``.
 
@@ -366,6 +489,28 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     log_cuda_info(device)
     setup_torch_perf(device, deterministic=cfg.cudnn_deterministic)
     amp_enabled, amp_dtype = autocast_dtype(cfg.mixed_precision)
+
+    # Phase 1.5i Stage B B2: NVML init + idle baseline. Done early so the
+    # idle measurement happens during a clean window (GPU is genuinely
+    # idle before parquet load + scaler fit + tensor pinning, all of
+    # which are CPU-bound). The 2-sec sleep adds ~25 min over a 750-cell
+    # Phase 5 sweep — acceptable for paper-quality energy data.
+    nvml_lib, nvml_handle, nvml_method = _try_init_nvml()
+    nvml_idle_mw = 0.0
+    if nvml_lib is not None:
+        nvml_idle_mw = _measure_idle_baseline_mw(
+            nvml_lib, nvml_handle, nvml_method, seconds=2.0,
+        )
+        log.info(
+            "NVML initialized: method=%s, idle=%.1f W",
+            nvml_method, nvml_idle_mw / 1000.0,
+        )
+    else:
+        log.warning(
+            "NVML unavailable (neither nvidia_ml_py nor pynvml importable, "
+            "or nvmlInit failed). Energy measurements will not be recorded; "
+            "training proceeds normally. Install nvidia-ml-py to enable."
+        )
 
     # Fail-fast on MOON before parquet load (helper raises NotImplementedError).
     algo_cls = _select_algorithm(cfg)
@@ -535,6 +680,12 @@ def run_v7_sweep(cfg: V7Config) -> dict:
 
     # ---- Training rounds ----
     t_phase = time.time()
+    # NVML training-energy snapshot bracket (per ML.ENERGY 2024 best
+    # practice: torch.cuda.synchronize() before each energy read).
+    if device.type == "cuda" and nvml_lib is not None:
+        torch.cuda.synchronize()
+    e_train_start = _energy_snapshot_mJ(nvml_lib, nvml_handle, nvml_method)
+
     cids = sorted(client_cpu.keys())
     rng = np.random.default_rng(cfg.seed)
     history: list[dict] = []
@@ -544,9 +695,18 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     # cold compile / cudnn warmup overhead (per perf-checklist diagnostic).
     first_round_dt: float | None = None
     steady_round_dts: list[float] = []
+    # Per-round energy (mJ); only populated when method=='energy_api'
+    # since polling fallback can't cleanly attribute energy to a
+    # specific round (polling samples power, would need a thread).
+    energy_per_round_mJ: list[float] = []
 
     for r in range(1, cfg.num_rounds + 1):
         t_round = time.time()
+        if device.type == "cuda" and nvml_lib is not None:
+            torch.cuda.synchronize()
+        e_round_start = _energy_snapshot_mJ(
+            nvml_lib, nvml_handle, nvml_method,
+        )
         k = min(cfg.clients_per_round, len(cids))
         selected = rng.choice(cids, size=k, replace=False).tolist()
         global_state = {
@@ -605,6 +765,21 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         else:
             steady_round_dts.append(dt)
 
+        # Per-round NVML snapshot (after sync). For energy_api method
+        # the delta is the round's energy in mJ; for polling method we
+        # skip per-round (would need a separate sampling thread).
+        if device.type == "cuda" and nvml_lib is not None:
+            torch.cuda.synchronize()
+        e_round_end = _energy_snapshot_mJ(
+            nvml_lib, nvml_handle, nvml_method,
+        )
+        if nvml_method == "energy_api":
+            energy_per_round_mJ.append(max(0.0, e_round_end - e_round_start))
+
+    if device.type == "cuda" and nvml_lib is not None:
+        torch.cuda.synchronize()
+    e_train_end = _energy_snapshot_mJ(nvml_lib, nvml_handle, nvml_method)
+
     phase_timings["7_training_total"] = time.time() - t_phase
     if first_round_dt is not None:
         phase_timings["7a_first_round"] = first_round_dt
@@ -641,6 +816,30 @@ def run_v7_sweep(cfg: V7Config) -> dict:
             torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
         ),
     }
+    # Phase 1.5i Stage B B2: emit NVML training-energy block. Always
+    # present (with 'available': false when NVML couldn't init), so
+    # downstream aggregator can detect missing-energy cells uniformly.
+    training_dt = phase_timings.get("7_training_total", 0.0)
+    if nvml_method == "energy_api":
+        training_total_mJ = max(0.0, e_train_end - e_train_start)
+    else:
+        # Polling: no clean cumulative; report 0 and rely on idle * dt
+        # for an indicative figure. Caller treats as approximate.
+        training_total_mJ = 0.0
+    idle_attributed_mJ = nvml_idle_mw * training_dt  # mW × s = mJ
+    training_model_mJ = max(0.0, training_total_mJ - idle_attributed_mJ)
+    energy_block = {
+        "available": nvml_lib is not None,
+        "method": nvml_method,
+        "idle_baseline_mW": nvml_idle_mw,
+        "training_duration_s": training_dt,
+        "training_total_mJ": training_total_mJ,
+        "training_idle_attributed_mJ": idle_attributed_mJ,
+        "training_model_attributable_mJ": training_model_mJ,
+        "per_round_mJ": energy_per_round_mJ,
+    }
+    _finalize_nvml(nvml_lib)
+
     result = {
         "config": cfg.to_dict(),
         "env": env_meta,
@@ -652,6 +851,8 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         # Phase timings (added 2026-04-26 perf-checklist) — keys
         # 1_..8_TOTAL plus 7a/7b first-vs-steady round breakdown.
         "phase_timings_s": phase_timings,
+        # NVML training-energy (added 2026-04-28 Phase 1.5i Stage B B2).
+        "energy_measured": energy_block,
     }
     cell_dir = cfg.output_dir / cfg.name
     cell_dir.mkdir(parents=True, exist_ok=True)

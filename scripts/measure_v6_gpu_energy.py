@@ -92,11 +92,19 @@ ARCH_CTOR = {
 
 
 def _try_import_pynvml():
+    """Prefer ``nvidia_ml_py`` (2025+ post-pynvml-deprecation), fall
+    back to ``pynvml`` for environments where only the old binding
+    is installed. Returns the imported module or None.
+    """
     try:
-        import pynvml
+        import nvidia_ml_py as pynvml  # type: ignore[import]
         return pynvml
     except ImportError:
-        return None
+        try:
+            import pynvml  # type: ignore[import]
+            return pynvml
+        except ImportError:
+            return None
 
 
 def _parse_cell_dir(name: str) -> tuple[str, int, str]:
