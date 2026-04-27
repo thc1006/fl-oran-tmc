@@ -81,5 +81,13 @@ arch_overrides:
   mamba:
     lr: 5.0e-4
   spiking_expand2:
-    lr: 1.0e-4                  # surrogate gradient is unstable at 5e-4
-    lr_warmup_rounds: 5         # → 1250 warmup steps, per ADR D-20
+    lr: 5.0e-4                  # ADR D-20 audit (2026-04-25 20:09): lr=1e-4
+                                # was severely under-training. Audit-corrected
+                                # to 5e-4 matches run_v6_arch_sweep.py
+                                # ARCH_REGISTRY["spiking_expand2"]["lr"]=5e-4
+                                # (commit 2026-04-27: fixed config bug found
+                                # via C2-corrected verification cell yielding
+                                # +0.21 test_auc).
+    lr_warmup_rounds: 3         # → 750 warmup steps, matching Stage 1
+                                # ARCH_REGISTRY warmup_steps=750. Was 5
+                                # rounds (1250 steps) per outdated D-20.

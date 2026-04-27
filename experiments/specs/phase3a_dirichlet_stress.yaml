@@ -52,5 +52,5 @@ arch_overrides:
   mamba:
     lr: 5.0e-4
   spiking_expand2:
-    lr: 1.0e-4                  # ADR D-20 surrogate gradient stability
-    lr_warmup_rounds: 5
+    lr: 5.0e-4                  # ADR D-20 audit-corrected (was 1e-4 outdated)
+    lr_warmup_rounds: 3         # 750 warmup steps, matching Stage 1 ARCH_REGISTRY
