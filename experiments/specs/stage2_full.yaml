@@ -12,8 +12,13 @@
 # pipeline; Phase 5 is the full benchmark whose numbers go into the
 # TMC paper Tables 2-4 and the released open dataset.
 
-description: Phase 5 Stage 2 FULL sweep — IEEE TMC submission
-adr_reference: ADR-001 §S2-W1..3 + 2026-04-27 revision (TMC primary venue)
+description: Phase 5 Stage 2 FULL sweep — IEEE TMC submission (900 cells)
+adr_reference: ADR-001 §S2-W1..3 + 2026-04-27 + 2026-04-28 redesign
+
+# 2026-04-28 redesign: added IID partition (3 archs × 5 algos × 6
+# partitions × 10 seeds = 900 cells). Was 750 cells (Dirichlet only)
+# but reviewer needs IID upper-bound reference. ETA ~90 hr GPU on
+# RTX 4080.
 
 archs:
   - lstm
@@ -34,6 +39,13 @@ algorithms:
       alpha: 0.01               # FedDyn regularization (NOT V7Config.alpha)
 
 partitions:
+  # IID baseline (added 2026-04-28 redesign): partitions by bs_id =
+  # 7 ColO-RAN gNBs each with their natural slice mix. Provides the
+  # "FL upper bound" reference vs Stage 1 centralized; needed for
+  # paper §results Table 4 to bracket the Dirichlet stress regime.
+  - mode: iid
+    n_clients: 7
+  # Dirichlet 5-alpha parametric stress (covariate skew over slice_id).
   - mode: dirichlet
     alpha: 0.05
     n_clients: 7
