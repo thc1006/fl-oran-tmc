@@ -60,17 +60,26 @@ class FedDyn:
         max_steps: int,
         batch_size: int,
         alpha: float,
-        update_mode: str = "canonical",
+        update_mode: str = "option_ii",
         n_total_clients: int = 1,
         grad_clip: float = 1.0,
         amp_enabled: bool = False,
         amp_dtype: torch.dtype | None = None,
     ) -> None:
-        # Phase 1.5j Stage B Option E (2026-04-28): default flipped
-        # from option_ii (Adam-friendly variant) to canonical (paper-
-        # faithful Acar 2021). See tests/test_v7_feddyn_canonical.py
-        # for the audit trail. Option-I and Option-II preserved as
-        # opt-in modes for §appendix C ablation if canonical-Adam fails.
+        # Phase 1.5j Stage B (2026-04-28): default reverted from
+        # canonical → option_ii after empirical verification (1-cell
+        # smoke 2026-04-28: lstm/feddyn(canonical)/IID/100r/Adam
+        # diverged to NaN around round 1-2). Canonical's h update
+        # `h_i += (w_l - w_g)` lacks an alpha decay term, so h_accum
+        # grows unboundedly across rounds; combined with Adam's
+        # adaptive parameter scaling and a server step that adds
+        # h_accum/N to weights, this triggers a positive-feedback
+        # divergence at our num_rounds=100 budget. Paper §appendix C
+        # documents this as an Adam-FedDyn methodology finding.
+        # Option-II (h_i -= alpha * grad_at_w_t) is Adam-friendly by
+        # construction (gradient magnitudes are normalized) and is now
+        # the default. Option-I and canonical preserved as opt-in for
+        # explicit paper-faithful SGD comparisons.
         if update_mode not in ("canonical", "option_i", "option_ii"):
             raise ValueError(
                 f"update_mode must be 'canonical' (paper-faithful Acar 2021, "

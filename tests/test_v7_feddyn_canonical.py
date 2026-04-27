@@ -51,17 +51,23 @@ from conftest import build_trio as _build_trio
 # ---------------------------------------------------------------------------
 
 
-def test_feddyn_default_mode_is_canonical():
-    """Stage B (2026-04-28) flips default from option_ii (Adam-friendly
-    variant) to canonical (paper-faithful Acar 2021). Ensures the
-    paper claim 'we evaluate FedDyn' is honest."""
+def test_feddyn_default_mode_is_option_ii_for_adam_compat():
+    """Stage B 2026-04-28: default reverted from canonical →
+    option_ii after empirical 1-cell smoke confirmed canonical
+    diverges to NaN under Adam local optimizer at num_rounds=100
+    (h_accum unbounded growth × Adam adaptive scaling positive
+    feedback). canonical preserved as opt-in for §appendix C
+    paper-faithful SGD comparison; option_ii is Adam-friendly by
+    construction (gradient magnitudes normalized)."""
     from fl_oran.federated.algorithms import REGISTRY
     feddyn = REGISTRY["feddyn"](
         max_steps=1, batch_size=1, alpha=0.01, n_total_clients=7,
     )
-    assert feddyn.update_mode == "canonical", (
-        "FedDyn default must be 'canonical' (paper-ref formula), "
-        "not option_i / option_ii"
+    assert feddyn.update_mode == "option_ii", (
+        "FedDyn default must be 'option_ii' (Adam-friendly) per the "
+        "Stage B 2026-04-28 NaN-divergence finding. Canonical works "
+        "under SGD (paper authors' setting) but not under our Adam "
+        "local optimizer pipeline."
     )
 
 
