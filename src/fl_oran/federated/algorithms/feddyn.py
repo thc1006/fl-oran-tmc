@@ -60,19 +60,35 @@ class FedDyn:
         max_steps: int,
         batch_size: int,
         alpha: float,
-        update_mode: str = "option_ii",
+        update_mode: str = "canonical",
+        n_total_clients: int = 1,
         grad_clip: float = 1.0,
         amp_enabled: bool = False,
         amp_dtype: torch.dtype | None = None,
     ) -> None:
-        if update_mode not in ("option_i", "option_ii"):
+        # Phase 1.5j Stage B Option E (2026-04-28): default flipped
+        # from option_ii (Adam-friendly variant) to canonical (paper-
+        # faithful Acar 2021). See tests/test_v7_feddyn_canonical.py
+        # for the audit trail. Option-I and Option-II preserved as
+        # opt-in modes for §appendix C ablation if canonical-Adam fails.
+        if update_mode not in ("canonical", "option_i", "option_ii"):
             raise ValueError(
-                f"update_mode must be 'option_i' or 'option_ii', got {update_mode!r}"
+                f"update_mode must be 'canonical' (paper-faithful Acar 2021, "
+                f"default), 'option_i' (paper-faithful for SGD only), or "
+                f"'option_ii' (Adam-friendly variant); got {update_mode!r}"
+            )
+        if n_total_clients < 1:
+            raise ValueError(
+                f"n_total_clients must be >= 1; got {n_total_clients}. "
+                "Required for canonical server step "
+                "(w_new = avg + h_accum / N_total). fl_v7 auto-injects "
+                "from cfg.n_clients when not user-supplied."
             )
         self.max_steps = max_steps
         self.batch_size = batch_size
         self.alpha = float(alpha)
         self.update_mode = update_mode
+        self.n_total_clients = int(n_total_clients)
         self.grad_clip = grad_clip
         self.amp_enabled = amp_enabled
         self.amp_dtype = amp_dtype
@@ -185,7 +201,19 @@ class FedDyn:
         # Update h_i.
         new_h_i: dict[str, torch.Tensor] = {}
         delta_h_i: dict[str, torch.Tensor] = {}
-        if self.update_mode == "option_ii":
+        if self.update_mode == "canonical":
+            # Paper-faithful per alpemreacar/FedDyn utils_methods.py:
+            #   local_param_list[clnt] += curr_model_par - cld_mdl_param
+            # i.e. h_i <- h_i + (w_l - w_global). NO alpha multiplier;
+            # POSITIVE sign on the drift term. The alpha enters only in
+            # the local objective's quadratic penalty (already applied
+            # via feddyn_correction above), not in the h update.
+            for name, p in local_model.named_parameters():
+                diff = p.detach() - global_snapshot[name]  # w_l - w_t
+                h_i_plus = h_i[name] + diff
+                new_h_i[name] = h_i_plus.detach().cpu()
+                delta_h_i[name] = (h_i_plus - h_i[name]).detach().cpu()
+        elif self.update_mode == "option_ii":
             # h_i <- h_i - alpha * grad_{L_i}(w_t). Compute grad at w_t on a
             # deterministic batch (optimizer-agnostic magnitude).
             cat_c, cont_c, y_c = client_tensors
@@ -246,10 +274,29 @@ class FedDyn:
                     self.h_accum[name] = self.h_accum[name] + d[name]
         log.debug("feddyn aggregate: accumulated %d delta_h_i into h_accum",
                   len(deltas))
-        # TODO(M3): paper-faithful server step is
-        #   new_w[name] += h_accum[name] / (alpha * N)
-        # where N is the total number of clients ever seen. That requires the
-        # sweep orchestrator to thread through N. Today we return plain FedAvg
-        # weights and keep h_accum as a side accumulator that downstream
-        # analysis can inspect.
+        # Phase 1.5j Stage B Option E (2026-04-28): canonical server step
+        # per alpemreacar/FedDyn utils_methods.py reference impl:
+        #
+        #   cld_mdl_param = avg_mdl_param + np.mean(local_param_list, axis=0)
+        #
+        # Equivalently: w_new = avg + h_accum / N_total (since unvisited
+        # clients contribute zeros to local_param_list, mean over ALL N
+        # equals h_accum / N_total). NO alpha division at server side
+        # (the previous TODO comment claiming `h_accum / (alpha * N)`
+        # was incorrect — verified via raw GitHub fetch of utils_methods.py).
+        #
+        # Option-I and Option-II preserved as opt-in modes for §appendix C
+        # ablation; in those modes server returns plain FedAvg (h_accum
+        # tracked as side accumulator only — current legacy behavior).
+        if self.update_mode == "canonical":
+            for name in new_w:
+                if name not in self.h_accum:
+                    continue
+                if not new_w[name].dtype.is_floating_point:
+                    continue
+                h_term = (
+                    self.h_accum[name].to(new_w[name].device)
+                    / float(self.n_total_clients)
+                )
+                new_w[name] = new_w[name] + h_term
         return new_w

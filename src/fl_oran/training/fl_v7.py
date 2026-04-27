@@ -524,6 +524,13 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         "amp_dtype": amp_dtype,
     }
     algo_kwargs.update(cfg.algo_kwargs)
+    # Phase 1.5j Stage B (2026-04-28): FedDyn canonical server step
+    # requires n_total_clients for `w_new = avg + h_accum / N`. Auto-
+    # inject from cfg.n_clients when user spec didn't specify (most
+    # specs won't, since N is an orchestrator concern, not algorithm
+    # hyperparameter). User-supplied value (e.g. for testing) wins.
+    if cfg.algorithm == "feddyn" and "n_total_clients" not in algo_kwargs:
+        algo_kwargs["n_total_clients"] = cfg.n_clients
     algo_inst = algo_cls(**algo_kwargs)
 
     # ---- Training rounds ----
