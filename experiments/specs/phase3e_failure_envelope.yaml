@@ -47,7 +47,7 @@ partitions:
 seeds: [42]
 
 shared:
-  num_rounds: 20
+  num_rounds: 100               # Bumped from 20 (2026-04-27 Stage A audit).
   clients_per_round: 5
   max_steps_per_round: 50
   batch_size: 64
@@ -67,4 +67,4 @@ arch_overrides:
     lr: 5.0e-4
   spiking_expand2:
     lr: 5.0e-4                  # ADR D-20 audit-corrected (was 1e-4 outdated)
-    lr_warmup_rounds: 3         # 750 warmup steps, matching Stage 1 ARCH_REGISTRY
+    lr_warmup_rounds: 5         # 1250 warmup steps; C2-corrected verified.

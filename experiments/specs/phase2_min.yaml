@@ -53,7 +53,16 @@ seeds: [42, 0, 1]
 # Total per-cell gradient steps = num_rounds × clients_per_round
 #   × max_steps_per_round = 20 × 5 × 50 = 5000.
 shared:
-  num_rounds: 20
+  num_rounds: 100               # Bumped from 20 (2026-04-27 Stage A audit):
+                                # 5 clients × 50 steps × 100 rounds = 25,000
+                                # grad updates, matching Stage 1 ARCH_REGISTRY
+                                # spiking_expand2 audit-corrected budget. With
+                                # FL per-round optimizer reset, this is still
+                                # less effective than centralized 25k contiguous
+                                # Adam steps but is the canonical comparison
+                                # baseline. C2-corrected verified spiking
+                                # IID+FedAvg reaches 0.84 at 80 rounds; 100
+                                # gives margin for stress regimes.
   clients_per_round: 5
   max_steps_per_round: 50
   batch_size: 64
@@ -81,13 +90,12 @@ arch_overrides:
   mamba:
     lr: 5.0e-4
   spiking_expand2:
-    lr: 5.0e-4                  # ADR D-20 audit (2026-04-25 20:09): lr=1e-4
-                                # was severely under-training. Audit-corrected
-                                # to 5e-4 matches run_v6_arch_sweep.py
-                                # ARCH_REGISTRY["spiking_expand2"]["lr"]=5e-4
-                                # (commit 2026-04-27: fixed config bug found
-                                # via C2-corrected verification cell yielding
-                                # +0.21 test_auc).
-    lr_warmup_rounds: 3         # → 750 warmup steps, matching Stage 1
-                                # ARCH_REGISTRY warmup_steps=750. Was 5
-                                # rounds (1250 steps) per outdated D-20.
+    lr: 5.0e-4                  # ADR D-20 audit-corrected (was 1e-4 outdated)
+    lr_warmup_rounds: 5         # 1250 warmup steps. Reverted from 3 (=750 steps,
+                                # Stage 1's per-step continuous ramp value)
+                                # because fl_v7 uses per-round step-function
+                                # warmup, which makes early lr more aggressive
+                                # than Stage 1's continuous ramp. C2-corrected
+                                # verified warmup_rounds=5 yields val_auc=0.84.
+                                # warmup_rounds=3 untested in fl_v7 spiking
+                                # context — defer to safer 5.
