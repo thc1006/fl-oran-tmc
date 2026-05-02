@@ -1,0 +1,85 @@
+# Phase 6: 2025-2026 SOTA SAM-family Comparison
+#
+# Tests two contemporary Sharpness-Aware FL algorithms (FedSWA Jul 2025
+# + FedSCAM Dec 2025) against our existing 5-algo Phase 5 baseline.
+#
+# Specifically tests whether SAM-family methods can rescue the
+# Mamba × SCAFFOLD catastrophic destructive interaction observed in
+# Phase 5 (-0.06 to -0.08 AUC drop, std 23x amplification).
+#
+# REQUIRES Phase 5 to be COMPLETE (all 900 cells in artifacts/v7_stage2_full).
+# Outputs go to artifacts/v7_phase6_sota/ (separate dir to keep Phase 5 results clean).
+
+description: Phase 6 SAM-family SOTA comparison (FedSWA + FedSCAM × 3 archs)
+adr_reference: 2026-04-30 SOTA gap closure pre-submission
+
+# Algorithms to add — names match new fl_oran/federated/algorithms/ classes
+# (must be implemented before launch).
+algorithms:
+  - name: fedswa
+    kwargs:
+      swa_start_frac: 0.5      # start SWA averaging at 50% of rounds
+      cycle_period: 5          # cyclical LR period in rounds
+      lr_max_mult: 1.5         # cyclical LR upper multiplier
+      lr_min_mult: 0.5         # cyclical LR lower multiplier
+  - name: fedscam
+    kwargs:
+      base_rho: 0.1            # SAM perturbation radius
+      drift_weight: 5.0        # heterogeneity penalty weight
+      mu: 0.0                  # set 0 to disable proximal (separate from FedProx)
+
+# Reuse Phase 5 spec architectures (LSTM, Mamba, Spiking)
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+# Reuse Phase 5 partitions (full 6-partition coverage to enable like-for-like
+# comparison vs FedAvg/Prox/Adam/SCAFFOLD/Dyn at every partition).
+partitions:
+  - mode: iid
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.05
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.10
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 0.50
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 1.00
+    n_clients: 7
+  - mode: dirichlet
+    alpha: 5.00
+    n_clients: 7
+
+# Reuse Phase 5 seeds (paired-bootstrap CI95 + Bonferroni vs Phase 5 baselines).
+seeds: [42, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+# Total: 2 algos × 3 archs × 6 partitions × 10 seeds = 360 cells
+# Estimated runtime (post-Phase-5): ~30-35 hr GPU on RTX 4080.
+
+shared:
+  num_rounds: 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 5.0e-4
+    lr_warmup_rounds: 5

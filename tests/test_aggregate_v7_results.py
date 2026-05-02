@@ -55,11 +55,22 @@ def _write_cell(sweep_dir: Path, *, arch: str, algorithm: str,
                 partition_mode: str, alpha, seed: int,
                 test_auc: float, test_f1: float = 0.5,
                 test_accuracy: float = 0.6,
-                params_count: int = 44553,
+                energy_model_mJ: float | None = 3500_000.0,
                 cell_name: str | None = None,
                 history: list[dict] | None = None,
                 extra: dict | None = None) -> Path:
-    """Materialise a single fl_v7 cell directory with summary + history."""
+    """Materialise a single fl_v7 cell directory mirroring the real
+    summary.json schema written by ``src/fl_oran/training/fl_v7.py``:
+
+    * config sub-object: arch / algorithm / partition_mode / alpha / seed
+    * test sub-object  : auc / accuracy / f1
+    * energy_measured  : training_model_attributable_mJ (post-Phase-1.5i NVML)
+    * test_auc top-level (mirrors test.auc; fl_v7 emits both)
+
+    Earlier drafts of this fixture wrote a flat top-level schema that
+    never matched fl_v7 itself; the aggregator now reads the nested
+    layout so the fixture must follow.
+    """
     if cell_name is None:
         if partition_mode == "iid":
             cell_name = f"v7_{arch}_{algorithm}_iid_s{seed}"
@@ -68,17 +79,29 @@ def _write_cell(sweep_dir: Path, *, arch: str, algorithm: str,
             cell_name = f"v7_{arch}_{algorithm}_dir_a{tag}_s{seed}"
     cell = sweep_dir / cell_name
     cell.mkdir(parents=True, exist_ok=True)
-    summary = {
-        "arch": arch,
-        "algorithm": algorithm,
-        "partition_mode": partition_mode,
-        "alpha": alpha,
-        "seed": seed,
+    summary: dict = {
+        "config": {
+            "arch": arch,
+            "algorithm": algorithm,
+            "partition_mode": partition_mode,
+            # fl_v7 leaves the V7Config default 0.5 in IID cells; the
+            # aggregator overrides it to None — replicate that behavior
+            # so tests exercise the override path.
+            "alpha": 0.5 if (partition_mode == "iid" and alpha is None) else alpha,
+            "seed": seed,
+        },
+        "test": {
+            "auc": float(test_auc),
+            "f1": float(test_f1),
+            "accuracy": float(test_accuracy),
+        },
         "test_auc": float(test_auc),
-        "test_f1": float(test_f1),
-        "test_accuracy": float(test_accuracy),
-        "params_count": int(params_count),
     }
+    if energy_model_mJ is not None:
+        summary["energy_measured"] = {
+            "training_model_attributable_mJ": float(energy_model_mJ),
+            "method": "energy_api",
+        }
     if extra:
         summary.update(extra)
     (cell / "summary.json").write_text(json.dumps(summary))
@@ -174,49 +197,85 @@ def test_warn_writes_to_stderr_not_stdout(agg, tmp_path, capsys):
 
 @pytest.mark.parametrize("bad_auc", [float("nan"), float("inf"), float("-inf")])
 def test_load_cells_skips_non_finite_test_auc(agg, tmp_path, capsys, bad_auc):
-    """Cells with NaN / Inf test_auc would propagate to per-group mean
+    """Cells with NaN / Inf test.auc would propagate to per-group mean
     and emit non-strict JSON ('NaN'). Skip with warning at load."""
     sweep = tmp_path / "nan_auc"
     cell = sweep / "v7_lstm_fedavg_iid_s99"
     cell.mkdir(parents=True)
     (cell / "summary.json").write_text(json.dumps({
-        "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
-        "alpha": None, "seed": 99, "test_auc": bad_auc,
+        "config": {
+            "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
+            "alpha": 0.5, "seed": 99,
+        },
+        "test": {"auc": bad_auc, "f1": 0.5, "accuracy": 0.6},
+        "test_auc": bad_auc,
     }))
-    (cell / "history.csv").write_text("round\n0\n")
     cells = agg.load_cells(sweep)
     assert cells == {}
     captured = capsys.readouterr()
     assert "finite" in (captured.out + captured.err).lower()
 
 
-def test_per_group_stats_handles_missing_params_count(agg, tmp_path, capsys):
-    """Review I1: a cell missing ``params_count`` must not silently
-    contribute 0 to the mean (which would drag the table value down).
-    Mean is computed over present cells only; a warning surfaces the
-    skipped cell count."""
-    sweep = tmp_path / "missing_params"
-    # 3 cells, 1 of which lacks params_count.
-    _write_cell(sweep, arch="lstm", algorithm="fedavg", partition_mode="iid",
-                alpha=None, seed=42, test_auc=0.8, params_count=44553)
-    _write_cell(sweep, arch="lstm", algorithm="fedavg", partition_mode="iid",
-                alpha=None, seed=0, test_auc=0.8, params_count=44553)
-    # Third cell with explicit params_count=None to trigger the guard.
-    cell = sweep / "v7_lstm_fedavg_iid_s1"
+def test_per_group_stats_uses_arch_params_map(agg, tmp_path):
+    """``params_count`` is no longer carried in summary.json (fl_v7
+    does not emit it). The aggregator looks it up from a hardcoded
+    per-arch map seeded from the v6 build_model tests; an unknown
+    arch resolves to ``None`` rather than crashing."""
+    sweep = tmp_path / "params_map"
+    for seed in (42, 0, 1):
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=seed, test_auc=0.8)
+    # Inject one cell whose arch is not in the map.
+    cell = sweep / "v7_unknownarch_fedavg_iid_s99"
     cell.mkdir()
     (cell / "summary.json").write_text(json.dumps({
-        "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
-        "alpha": None, "seed": 1, "test_auc": 0.8, "params_count": None,
+        "config": {
+            "arch": "unknownarch", "algorithm": "fedavg",
+            "partition_mode": "iid", "alpha": 0.5, "seed": 99,
+        },
+        "test": {"auc": 0.8, "f1": 0.5, "accuracy": 0.6},
+        "test_auc": 0.8,
     }))
-    (cell / "history.csv").write_text("round\n0\n")
     cells = agg.load_cells(sweep)
     stats = agg.per_group_stats(cells)
-    s = stats[("lstm", "fedavg", "iid", None)]
-    # Mean over the 2 present params; the missing one is excluded
-    # rather than counted as 0.
-    assert s["params_count_mean"] == pytest.approx(44553.0)
-    captured = capsys.readouterr()
-    assert "params_count" in (captured.out + captured.err)
+    s_known = stats[("lstm", "fedavg", "iid", None)]
+    s_unknown = stats[("unknownarch", "fedavg", "iid", None)]
+    assert s_known["params_count"] == 44553
+    assert s_unknown["params_count"] is None
+
+
+def test_load_cells_random_split_alpha_coerced_to_none(agg, tmp_path):
+    """random_split, like IID, ignores alpha by definition. fl_v7's
+    V7Config still emits the default alpha=0.5 for these cells; the
+    aggregator MUST coerce that to None, otherwise random_split cells
+    aggregate into a spurious (arch, algo, "random_split", 0.5) group
+    instead of (arch, algo, "random_split", None).
+
+    Regression for Phase 6 cleanup 2026-05-03: the original IID-only
+    coerce would have routed T-ABLATION's random_split cells into the
+    wrong group key, splitting the bootstrap sample size in half.
+    """
+    sweep = tmp_path / "rs"
+    cell = sweep / "v7_lstm_fedavg_randsplit_n7_s0"
+    cell.mkdir(parents=True)
+    (cell / "summary.json").write_text(json.dumps({
+        "config": {
+            "arch": "lstm", "algorithm": "fedavg",
+            "partition_mode": "random_split",
+            "alpha": 0.5,  # the V7Config default that should NOT survive
+            "seed": 0,
+        },
+        "test": {"auc": 0.85, "f1": 0.5, "accuracy": 0.7},
+        "test_auc": 0.85,
+    }))
+    cells = agg.load_cells(sweep)
+    assert len(cells) == 1
+    key = list(cells.keys())[0]
+    arch, algo, pmode, alpha, seed = key
+    assert pmode == "random_split"
+    assert alpha is None, (
+        f"random_split cell aggregated with alpha={alpha}; expected None"
+    )
 
 
 def test_load_cells_warns_on_duplicate_metadata_key(agg, tmp_path, capsys):

@@ -6,14 +6,30 @@ Reads each completed cell directory under ``--sweep-dir`` (default
 * ``--out-md``    Stage 2 paper Markdown (default ``docs/RESULTS_V7_PHASE2.md``)
 * ``--out-json``  machine-readable aggregated stats + paired-bootstrap deltas
 
-Per ADR-001 D-22 + S2-W1..3, Phase 2 sweep cells vary 5 dimensions::
+Sweep dimensions actually emitted by fl_v7 (Phase 5 + Phase 6 ablations)::
 
-    arch ∈ {lstm, mamba, spiking_expand2}        (3 values, +ablations)
-    algorithm ∈ {fedavg, fedprox, ...}           (6 in registry; MOON gated
-                                                   to LSTM-only per D-22)
-    partition_mode ∈ {iid, dirichlet}            (2 values)
-    alpha ∈ {0.05, 0.1, 0.5, 1.0, 10.0}          (Dirichlet only)
-    seed ∈ {42, 0, 1, 2, 3, 7, 11, 13, 17, 23}   (10 standardised seeds)
+    arch ∈ {lstm, mamba, spiking_expand2}        (3 values used across
+                                                   all FL phases; ARCH_REGISTRY
+                                                   also exposes ``mamba_expand2``
+                                                   and ``spiking`` for Stage 1
+                                                   centralised ablations only)
+    algorithm ∈ {fedavg, fedprox, fedadam,        (5 values; MOON deferred
+                 scaffold, feddyn}                  per ADR-001 D-22)
+    partition_mode ∈ {iid, dirichlet,             (4 values: Phase 5 used
+                      random_split,                 iid + dirichlet; Phase 6
+                      per_bs_dirichlet}             added random_split (T-ABLATION)
+                                                   and per_bs_dirichlet
+                                                   (Rank 3 mechanism
+                                                   disambiguation, §7.1.1).
+                                                   IID uses natural-by-BS
+                                                   over 7 ColO-RAN gNBs.
+    alpha ∈ {0.05, 0.10, 0.50, 1.00, 5.00, 10.00} (Dirichlet & per_bs_dirichlet
+                                                   only; alpha is FORCED to
+                                                   None for IID & random_split
+                                                   regardless of the V7Config
+                                                   default 0.5)
+    seed ∈ {42, 0, 1, 2, 3, ...}                 (5–10 seeds per cell
+                                                   depending on phase scope)
 
 Aggregation contract:
 
@@ -99,11 +115,35 @@ def _load_v7_helper():
 # Cell discovery + load
 # ---------------------------------------------------------------------------
 
-# Required summary.json fields. A cell missing any of these is malformed
-# and gets skipped with a warning.
-_REQUIRED_SUMMARY_FIELDS = (
-    "arch", "algorithm", "partition_mode", "seed", "test_auc",
-)
+# Required summary fields, by location inside the cell summary.
+#
+# fl_v7 writes config metadata (arch / algorithm / partition_mode / seed /
+# alpha) under ``summary["config"]`` and per-task metrics (auc / accuracy /
+# f1) under ``summary["test"]``. Earlier drafts of this aggregator looked
+# for these at the top level and skipped every cell — a 900-cell sweep was
+# silently dropped to zero. The schema below mirrors what
+# ``src/fl_oran/training/fl_v7.py`` actually emits.
+_REQUIRED_CONFIG_FIELDS = ("arch", "algorithm", "partition_mode", "seed")
+_REQUIRED_TEST_FIELDS = ("auc",)
+
+
+# Hard-coded per-arch parameter counts. Source: docs/RESULTS_V6_STAGE1_ANALYSIS.md
+# (Stage 1 audit) cross-checked against the v7 build_model tests
+# (``tests/test_v7_fl_arch_agnostic.py`` pins LSTM=44553, Mamba=40489,
+# spiking_expand2=43593 with name ``test_v7_build_model_*_pins_params_*``).
+# These three are the FL-phase archs (Phase 5 + Phase 6). The other two
+# entries in ARCH_REGISTRY — ``mamba_expand2`` and ``spiking`` — are
+# Stage 1 centralised ablation archs that no FL sweep cell uses, so
+# they're intentionally absent here; if a future FL phase adds them,
+# pin their param count via a ``test_v7_build_model_*_pins_params_*``
+# test first, then add the entry here. ``.get(arch)`` returns ``None``
+# for any missing arch, which renders as "n/a" in the Markdown table
+# rather than raising — keeps the aggregator forward-compatible.
+_ARCH_PARAMS_COUNT: dict[str, int] = {
+    "lstm": 44553,
+    "mamba": 40489,
+    "spiking_expand2": 43593,
+}
 
 
 def _warn(msg: str) -> None:
@@ -149,26 +189,43 @@ def load_cells(sweep_dir: Path) -> dict:
         if not isinstance(summary, dict):
             _warn(f"{cell_dir.name} — summary.json is not a JSON object; skipping")
             continue
-        missing = [f for f in _REQUIRED_SUMMARY_FIELDS if f not in summary]
-        if missing:
+        cfg = summary.get("config")
+        test_block = summary.get("test")
+        if not isinstance(cfg, dict):
+            _warn(f"{cell_dir.name} — summary.config missing or not a dict; skipping")
+            continue
+        if not isinstance(test_block, dict):
+            _warn(f"{cell_dir.name} — summary.test missing or not a dict; skipping")
+            continue
+        missing_cfg = [f for f in _REQUIRED_CONFIG_FIELDS if f not in cfg]
+        missing_test = [f for f in _REQUIRED_TEST_FIELDS if f not in test_block]
+        if missing_cfg or missing_test:
             _warn(
-                f"{cell_dir.name} — summary.json missing fields {missing}; skipping"
+                f"{cell_dir.name} — missing required fields "
+                f"config={missing_cfg} test={missing_test}; skipping"
             )
             continue
         try:
-            arch = str(summary["arch"])
-            algorithm = str(summary["algorithm"])
-            partition_mode = str(summary["partition_mode"])
-            seed = int(summary["seed"])
-            # alpha is optional and may be None for IID. Cast to float
-            # only if present and non-None.
-            alpha_raw = summary.get("alpha")
-            alpha = None if alpha_raw is None else float(alpha_raw)
-            test_auc = float(summary["test_auc"])
+            arch = str(cfg["arch"])
+            algorithm = str(cfg["algorithm"])
+            partition_mode = str(cfg["partition_mode"])
+            seed = int(cfg["seed"])
+            # IID and random_split ignore alpha by definition; fl_v7's
+            # V7Config leaves the default 0.5 in place for those cells,
+            # so we MUST coerce alpha → None here (overriding whatever
+            # the config emitted). Otherwise alpha-free cells would
+            # aggregate into a spurious (arch, algo, "iid", 0.5) group
+            # instead of (arch, algo, "iid", None). dirichlet and
+            # per_bs_dirichlet keep the configured alpha.
+            if partition_mode in {"iid", "random_split"}:
+                alpha = None
+            else:
+                alpha_raw = cfg.get("alpha")
+                alpha = None if alpha_raw is None else float(alpha_raw)
+            test_auc = float(test_block["auc"])
         except (TypeError, ValueError) as exc:
             _warn(
-                f"{cell_dir.name} — summary.json has invalid field types ({exc}); "
-                "skipping"
+                f"{cell_dir.name} — invalid field types ({exc}); skipping"
             )
             continue
         # AUC must be finite (mathematically AUC ∈ [0, 1]; NaN/Inf
@@ -176,14 +233,31 @@ def load_cells(sweep_dir: Path) -> dict:
         # would silently propagate as 'NaN' in the output JSON).
         if not np.isfinite(test_auc):
             _warn(
-                f"{cell_dir.name} — test_auc={test_auc} is not finite; skipping"
+                f"{cell_dir.name} — test.auc={test_auc} is not finite; skipping"
             )
             continue
-        # Normalise back into the dict so per_group_stats can rely on
-        # field types being correct.
+        # Promote nested fields to a flat normalised view so per_group_stats
+        # can read them without re-walking the schema. Mutates the loaded
+        # summary in place; that's fine because it's a freshly-parsed copy.
         summary["test_auc"] = test_auc
+        summary["test_f1"] = float(test_block["f1"]) if "f1" in test_block else None
+        summary["test_accuracy"] = (
+            float(test_block["accuracy"]) if "accuracy" in test_block else None
+        )
         summary["seed"] = seed
         summary["alpha"] = alpha
+        summary["arch"] = arch
+        summary["algorithm"] = algorithm
+        summary["partition_mode"] = partition_mode
+        # Energy: training_model_attributable_mJ is the paper §6 number
+        # (NVML idle-baseline subtracted). Other keys are kept on the
+        # cell summary; we only surface the headline figure here.
+        em = summary.get("energy_measured")
+        if isinstance(em, dict):
+            mj = em.get("training_model_attributable_mJ")
+            summary["energy_model_mJ"] = float(mj) if mj is not None else None
+        else:
+            summary["energy_model_mJ"] = None
         key = (arch, algorithm, partition_mode, alpha, seed)
         if key in cells:
             # Two cell dirs with identical metadata (re-run with a
@@ -213,30 +287,21 @@ def per_group_stats(cells: dict) -> dict:
     for (arch, algo, pmode, alpha, _seed), summary in cells.items():
         by_group[(arch, algo, pmode, alpha)].append(summary)
 
+    def _to_float_or_nan(x) -> float:
+        return float(x) if x is not None else float("nan")
+
     out: dict = {}
     for key, items in by_group.items():
         aucs = np.array([float(v["test_auc"]) for v in items])
-        f1s = np.array(
-            [float(v.get("test_f1", float("nan"))) for v in items], dtype=float,
-        )
+        f1s = np.array([_to_float_or_nan(v.get("test_f1")) for v in items], dtype=float)
         accs = np.array(
-            [float(v.get("test_accuracy", float("nan"))) for v in items],
-            dtype=float,
+            [_to_float_or_nan(v.get("test_accuracy")) for v in items], dtype=float,
         )
-        # NaN for missing so _nanmean returns None (vs silently averaging
-        # in 0 and dragging the table value down).
-        params = np.array(
-            [float(v["params_count"]) if v.get("params_count") is not None
-             else float("nan") for v in items],
-            dtype=float,
+        energies = np.array(
+            [_to_float_or_nan(v.get("energy_model_mJ")) for v in items], dtype=float,
         )
-        n_missing_params = int(np.isnan(params).sum())
-        if n_missing_params:
-            _warn(
-                f"group {key}: {n_missing_params}/{len(items)} cells missing "
-                "params_count — mean computed over present cells only"
-            )
         seeds = sorted(int(v["seed"]) for v in items)
+        params_count = _ARCH_PARAMS_COUNT.get(key[0])
         out[key] = {
             "arch": key[0],
             "algorithm": key[1],
@@ -248,7 +313,9 @@ def per_group_stats(cells: dict) -> dict:
             "test_f1_mean": _nanmean(f1s),
             "test_f1_std": _nanstd(f1s),
             "test_accuracy_mean": _nanmean(accs),
-            "params_count_mean": _nanmean(params),
+            "energy_model_mJ_mean": _nanmean(energies),
+            "energy_model_mJ_std": _nanstd(energies),
+            "params_count": params_count,
             "seeds": seeds,
         }
     return out
@@ -325,9 +392,11 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
             "seeds": common,
         }
     rng = np.random.default_rng(seed)
-    boot_means = np.empty(n_boot, dtype=float)
-    for i in range(n_boot):
-        boot_means[i] = rng.choice(deltas, size=n, replace=True).mean()
+    # Vectorised resample: draw an (n_boot, n) index matrix in one call,
+    # gather, then mean along the inner axis. ~10× faster than the
+    # per-bootstrap rng.choice loop on n_boot=10_000 + 100+ pairs.
+    idx = rng.integers(0, n, size=(n_boot, n))
+    boot_means = deltas[idx].mean(axis=1)
     alpha = 1.0 - ci_level
     ci_lo = float(np.percentile(boot_means, 100 * alpha / 2))
     ci_hi = float(np.percentile(boot_means, 100 * (1 - alpha / 2)))
@@ -384,6 +453,42 @@ def all_pairwise_algo_deltas(cells: dict, *, n_boot: int = 10_000,
     return out
 
 
+def all_pairwise_arch_deltas(cells: dict, *, n_boot: int = 10_000,
+                             base_seed: int = 2027) -> dict:
+    """Mirror of :func:`all_pairwise_algo_deltas` but holding ``algorithm``
+    and ``partition_mode`` + ``alpha`` fixed and pairing across
+    architectures. This answers the §1 contribution-4 question
+    ("architecture leverage dominates algorithm leverage") with a
+    proper paired-bootstrap CI95 instead of a group-mean comparison
+    (which would conflate seed noise into the architecture spread).
+
+    Uses ``base_seed=2027`` (different from the algo-pair sweep's 2026)
+    so the two pair sweeps' bootstrap streams are independent — joint
+    coverage claims across the two pair sets remain valid.
+
+    Returns dict keyed by ``(algorithm, pmode, alpha, arch_a, arch_b)``.
+    """
+    out: dict = {}
+    by_group: dict = defaultdict(set)
+    for (arch, algo, pmode, alpha, _seed) in cells:
+        by_group[(algo, pmode, alpha)].add(arch)
+    for (algo, pmode, alpha), archs in by_group.items():
+        archs_sorted = sorted(archs)
+        for i, arch_a in enumerate(archs_sorted):
+            for arch_b in archs_sorted[i + 1:]:
+                pair_id = f"{algo}::{pmode}::{alpha}::{arch_a}::vs::{arch_b}"
+                pair_seed = _derive_pair_seed(base_seed, pair_id)
+                out[(algo, pmode, alpha, arch_a, arch_b)] = paired_bootstrap_delta(
+                    cells,
+                    a={"arch": arch_a, "algorithm": algo,
+                       "partition_mode": pmode, "alpha": alpha},
+                    b={"arch": arch_b, "algorithm": algo,
+                       "partition_mode": pmode, "alpha": alpha},
+                    n_boot=n_boot, seed=pair_seed,
+                )
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Markdown rendering
 # ---------------------------------------------------------------------------
@@ -392,18 +497,24 @@ def _alpha_str(alpha) -> str:
     return "n/a (IID)" if alpha is None else f"{alpha:.2f}"
 
 
-def render_results_md(stats: dict, deltas: dict) -> str:
+def render_results_md(stats: dict, deltas: dict,
+                      arch_deltas: dict | None = None) -> str:
     """Render the Stage 2 §5 paper-grade Markdown summary.
 
     Layout:
       1. Table 4 (per-(algo, arch, partition, alpha) mean ± std AUC)
       2. Pairwise FL-algorithm deltas within each arch + partition cell
+      3. Pairwise architecture deltas within each algo + partition cell
+         (only emitted if ``arch_deltas`` is supplied — kept optional so
+         legacy callers that only pass two args still work).
     """
     lines: list[str] = []
-    lines.append("# Stage 2 Phase 2 Results — FL × Architecture Sweep on ColO-RAN\n")
+    lines.append("# Stage 2 Results — FL × Architecture Sweep on ColO-RAN\n")
     lines.append(
-        "Generated by `scripts/aggregate_v7_results.py`. See ADR-001 D-22 + "
-        "Phase 2 minimum scope.\n"
+        "Generated by `scripts/aggregate_v7_results.py`. The sweep scope "
+        "(Phase 2 minimum / Phase 5 full / ablation) is determined by the "
+        "``--sweep-dir`` argument; this report aggregates whatever cells "
+        "are present in that directory.\n"
     )
 
     if not stats:
@@ -413,9 +524,9 @@ def render_results_md(stats: dict, deltas: dict) -> str:
     lines.append("## Table 4: per-cell aggregated statistics\n")
     lines.append(
         "| arch | algorithm | partition | alpha | n_seeds | test AUC (mean ± std) "
-        "| test F1 | params |"
+        "| test F1 | model energy (J, mean ± std) | params |"
     )
-    lines.append("|---|---|---|---|---|---|---|---|")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
     # Stable sort: arch, then algorithm, then partition, then alpha
     # (None first so IID rows come before Dirichlet rows for the same arch+algo).
     def _sort_key(item):
@@ -428,12 +539,19 @@ def render_results_md(stats: dict, deltas: dict) -> str:
         f1_cell = "n/a" if f1_mean is None else f"{f1_mean:.4f}"
         std_val = s["test_auc_std"]
         std_str = "n/a" if std_val is None else f"{std_val:.4f}"
-        params_mean = s["params_count_mean"]
-        params_cell = "n/a" if params_mean is None else f"{int(params_mean)}"
+        e_mean = s.get("energy_model_mJ_mean")
+        e_std = s.get("energy_model_mJ_std")
+        if e_mean is None:
+            energy_cell = "n/a"
+        else:
+            e_std_str = "n/a" if e_std is None else f"{e_std / 1000.0:.2f}"
+            energy_cell = f"{e_mean / 1000.0:.2f} ± {e_std_str}"
+        params = s.get("params_count")
+        params_cell = "n/a" if params is None else f"{int(params)}"
         lines.append(
             f"| {arch} | {algo} | {pmode} | {_alpha_str(alpha)} | {s['n']} | "
             f"{s['test_auc_mean']:.4f} ± {std_str} | "
-            f"{f1_cell} | {params_cell} |"
+            f"{f1_cell} | {energy_cell} | {params_cell} |"
         )
     lines.append("")
 
@@ -460,6 +578,34 @@ def render_results_md(stats: dict, deltas: dict) -> str:
             lines.append(
                 f"| {arch} | {pmode} | {_alpha_str(alpha)} | "
                 f"{algo_a} − {algo_b} | {d['n_paired_seeds']} | "
+                f"{d['delta_mean']:+.4f} | {ci} | {wp} |"
+            )
+        lines.append("")
+
+    if arch_deltas:
+        lines.append(
+            "## Pairwise architecture deltas (within algo + partition cell)\n"
+        )
+        lines.append(
+            "Paired-bootstrap CI95 on per-seed AUC delta, holding "
+            "(algorithm, partition, alpha) fixed. Substantiates §1 "
+            "contribution 4 (architecture leverage).\n"
+        )
+        lines.append(
+            "| algorithm | partition | alpha | comparison | n | delta mean | "
+            "CI95 [lo, hi] | Wilcoxon p |"
+        )
+        lines.append("|---|---|---|---|---|---|---|---|")
+        for key, d in sorted(arch_deltas.items()):
+            algo, pmode, alpha, arch_a, arch_b = key
+            if d.get("ci_lo") is None:
+                ci = "n/a (n<2)"
+            else:
+                ci = f"[{d['ci_lo']:+.4f}, {d['ci_hi']:+.4f}]"
+            wp = "n/a" if d.get("wilcoxon_p") is None else f"{d['wilcoxon_p']:.4f}"
+            lines.append(
+                f"| {algo} | {pmode} | {_alpha_str(alpha)} | "
+                f"{arch_a} − {arch_b} | {d['n_paired_seeds']} | "
                 f"{d['delta_mean']:+.4f} | {ci} | {wp} |"
             )
         lines.append("")
@@ -492,6 +638,17 @@ def _deltas_to_jsonable(deltas: dict) -> dict:
     }
 
 
+def _arch_deltas_to_jsonable(arch_deltas: dict) -> dict:
+    """Mirror of :func:`_deltas_to_jsonable` for arch-pair entries.
+    Key order is ``algorithm::partition::alpha::arch_a::vs::arch_b`` —
+    distinguishable from algo-pair keys by the leading token (algo names
+    do not collide with arch names in our registries)."""
+    return {
+        "::".join([algo, pmode, _alpha_jsonkey(alpha), arch_a, "vs", arch_b]): v
+        for (algo, pmode, alpha, arch_a, arch_b), v in arch_deltas.items()
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -507,9 +664,11 @@ def main() -> None:
         help="Where to write the paper-grade Markdown.",
     )
     parser.add_argument(
-        "--out-json", type=str,
-        default="artifacts/v7_fl_arch_sweep/aggregated.json",
-        help="Where to write machine-readable aggregated stats.",
+        "--out-json", type=str, default=None,
+        help="Where to write machine-readable aggregated stats. "
+             "Defaults to ``<sweep_dir>/aggregated.json`` so a non-default "
+             "--sweep-dir does not silently land its JSON in the legacy "
+             "v7_fl_arch_sweep/ directory.",
     )
     parser.add_argument(
         "--n-boot", type=int, default=10_000,
@@ -518,6 +677,10 @@ def main() -> None:
     args = parser.parse_args()
 
     sweep_dir = Path(args.sweep_dir)
+    out_json_path = (
+        Path(args.out_json) if args.out_json is not None
+        else sweep_dir / "aggregated.json"
+    )
     cells = load_cells(sweep_dir)
     if not cells:
         raise RuntimeError(
@@ -528,19 +691,24 @@ def main() -> None:
 
     stats = per_group_stats(cells)
     deltas = all_pairwise_algo_deltas(cells, n_boot=args.n_boot)
+    arch_deltas = all_pairwise_arch_deltas(cells, n_boot=args.n_boot)
 
     helper = _load_v7_helper()
     out_md = Path(args.out_md)
-    out_json = Path(args.out_json)
-    helper.atomic_write_text(out_md, render_results_md(stats, deltas))
-    helper.atomic_write_text(out_json, json.dumps({
+    out_md.parent.mkdir(parents=True, exist_ok=True)
+    out_json_path.parent.mkdir(parents=True, exist_ok=True)
+    helper.atomic_write_text(
+        out_md, render_results_md(stats, deltas, arch_deltas=arch_deltas),
+    )
+    helper.atomic_write_text(out_json_path, json.dumps({
         "stats": _stats_to_jsonable(stats),
         "deltas": _deltas_to_jsonable(deltas),
+        "arch_deltas": _arch_deltas_to_jsonable(arch_deltas),
         "n_cells": len(cells),
     }, indent=2))
-    print(f"wrote {out_md} and {out_json}")
+    print(f"wrote {out_md} and {out_json_path}")
     print(f"aggregated {len(cells)} cells into {len(stats)} groups, "
-          f"{len(deltas)} pairwise deltas")
+          f"{len(deltas)} algo-pair deltas, {len(arch_deltas)} arch-pair deltas")
 
 
 if __name__ == "__main__":

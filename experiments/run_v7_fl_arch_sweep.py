@@ -69,11 +69,11 @@ def _parse_args() -> argparse.Namespace:
     # Partition.
     p.add_argument(
         "--partition-mode", default="dirichlet",
-        choices=["dirichlet", "iid"],
+        choices=["dirichlet", "iid", "random_split", "per_bs_dirichlet"],
     )
     p.add_argument(
         "--alpha", type=float, default=0.5,
-        help="Dirichlet concentration (ignored if partition-mode=iid)",
+        help="Dirichlet concentration (ignored if partition-mode in {iid, random_split})",
     )
     p.add_argument(
         "--n-clients", type=int, default=7,
