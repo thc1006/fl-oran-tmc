@@ -1,3 +1,10 @@
+---
+status: superseded
+as-of: 2026-05-05
+see: docs/PAPER_DRAFT.md §References
+reason: reference audit incorporated; paper §References list reflects all findings
+---
+
 # Reference Audit — PAPER_DRAFT.md §2 (Related Work)
 
 Date: 2026-05-01

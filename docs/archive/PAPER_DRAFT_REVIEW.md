@@ -1,3 +1,10 @@
+---
+status: superseded
+as-of: 2026-05-05
+see: docs/PAPER_DRAFT.md
+reason: review notes incorporated into the JSAC paper draft
+---
+
 # PAPER_DRAFT.md — Three-persona reviewer-style review
 
 **Reviewer:** Self-review by Claude (acting as 3 personas)

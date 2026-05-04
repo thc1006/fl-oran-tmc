@@ -1,3 +1,10 @@
+---
+status: superseded
+as-of: 2026-05-05
+see: memory/paper_split_status.md
+reason: status snapshot superseded by ongoing PR #1 commit log
+---
+
 # PAPER_DRAFT.md — Status / Changelog
 
 > Internal draft-tracking log. NOT in submission build.

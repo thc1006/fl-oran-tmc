@@ -1,3 +1,10 @@
+---
+status: superseded
+as-of: 2026-05-05
+see: docs/PAPER_DRAFT.md §7.1.1
+reason: T-ABLATION findings incorporated into §7.1.1 + supp App. A.1/A.2
+---
+
 # Ablation results: random_split partition vs natural-by-BS
 
 **Date:** 2026-05-02

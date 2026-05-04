@@ -1,3 +1,10 @@
+---
+status: superseded
+as-of: 2026-05-05
+see: docs/ADR-001-v5-tmc-paper-plan.md D-22
+reason: implementation plan executed; superseded by NVML + FedDyn current state
+---
+
 # Tomorrow (2026-04-28): NVML + FedDyn integration plan
 
 **Goal**: get fl_v7 paper-ready before Phase 5 launch.
