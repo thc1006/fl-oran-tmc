@@ -366,7 +366,8 @@ def _select_seed_aucs(cells: dict, axes: dict) -> dict[int, float]:
 
 def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
                            n_boot: int = 10_000, ci_level: float = 0.95,
-                           seed: int = 2026) -> dict:
+                           seed: int = 2026,
+                           bonferroni_n: int | None = None) -> dict:
     """delta_auc(a, b) via paired bootstrap on per-seed AUC pairs.
 
     ``a`` and ``b`` are dicts of axis filters (e.g.
@@ -375,6 +376,13 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
     filter combinations contribute. CI fields are ``None`` if fewer than
     2 paired seeds — bootstrap on n=1 is meaningless and would emit
     misleading point estimates.
+
+    When ``bonferroni_n`` is set (typically the family size — total
+    number of pairwise comparisons in the same sweep), the dict also
+    includes ``ci_lo_bonferroni`` / ``ci_hi_bonferroni`` computed at
+    the family-corrected level ``1 - (1 - ci_level) / bonferroni_n``.
+    Adjusted keys are always present (``None`` when not requested or
+    when n<2 paired seeds) so downstream JSON consumers do not KeyError.
     """
     aucs_a = _select_seed_aucs(cells, a)
     aucs_b = _select_seed_aucs(cells, b)
@@ -388,6 +396,8 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
             "delta_std": None,
             "ci_lo": None,
             "ci_hi": None,
+            "ci_lo_bonferroni": None,
+            "ci_hi_bonferroni": None,
             "wilcoxon_p": None,
             "seeds": common,
         }
@@ -400,6 +410,13 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
     alpha = 1.0 - ci_level
     ci_lo = float(np.percentile(boot_means, 100 * alpha / 2))
     ci_hi = float(np.percentile(boot_means, 100 * (1 - alpha / 2)))
+    if bonferroni_n is not None and bonferroni_n > 0:
+        alpha_adj = alpha / bonferroni_n
+        ci_lo_b = float(np.percentile(boot_means, 100 * alpha_adj / 2))
+        ci_hi_b = float(np.percentile(boot_means, 100 * (1 - alpha_adj / 2)))
+    else:
+        ci_lo_b = None
+        ci_hi_b = None
     try:
         wilcoxon_p = float(
             sps.wilcoxon(deltas, alternative="two-sided",
@@ -413,6 +430,8 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
         "delta_std": float(deltas.std(ddof=1)),
         "ci_lo": ci_lo,
         "ci_hi": ci_hi,
+        "ci_lo_bonferroni": ci_lo_b,
+        "ci_hi_bonferroni": ci_hi_b,
         "wilcoxon_p": wilcoxon_p,
         "seeds": common,
     }
@@ -436,6 +455,8 @@ def all_pairwise_algo_deltas(cells: dict, *, n_boot: int = 10_000,
     by_group: dict = defaultdict(set)
     for (arch, algo, pmode, alpha, _seed) in cells:
         by_group[(arch, pmode, alpha)].add(algo)
+    total_pairs = sum(len(algos) * (len(algos) - 1) // 2
+                      for algos in by_group.values())
     for (arch, pmode, alpha), algos in by_group.items():
         algos_sorted = sorted(algos)
         for i, algo_a in enumerate(algos_sorted):
@@ -449,6 +470,7 @@ def all_pairwise_algo_deltas(cells: dict, *, n_boot: int = 10_000,
                     b={"arch": arch, "algorithm": algo_b,
                        "partition_mode": pmode, "alpha": alpha},
                     n_boot=n_boot, seed=pair_seed,
+                    bonferroni_n=total_pairs,
                 )
     return out
 
@@ -472,6 +494,8 @@ def all_pairwise_arch_deltas(cells: dict, *, n_boot: int = 10_000,
     by_group: dict = defaultdict(set)
     for (arch, algo, pmode, alpha, _seed) in cells:
         by_group[(algo, pmode, alpha)].add(arch)
+    total_pairs = sum(len(archs) * (len(archs) - 1) // 2
+                      for archs in by_group.values())
     for (algo, pmode, alpha), archs in by_group.items():
         archs_sorted = sorted(archs)
         for i, arch_a in enumerate(archs_sorted):
@@ -485,6 +509,7 @@ def all_pairwise_arch_deltas(cells: dict, *, n_boot: int = 10_000,
                     b={"arch": arch_b, "algorithm": algo,
                        "partition_mode": pmode, "alpha": alpha},
                     n_boot=n_boot, seed=pair_seed,
+                    bonferroni_n=total_pairs,
                 )
     return out
 

@@ -430,6 +430,118 @@ def test_paired_bootstrap_delta_returns_none_ci_when_under_two_seeds(agg, tmp_pa
     assert d["ci_hi"] is None
 
 
+def test_paired_bootstrap_delta_emits_bonferroni_ci_when_requested(agg, tmp_path):
+    """GH#2: when ``bonferroni_n`` is set, the dict must include both the
+    raw paired CI95 and a Bonferroni-adjusted CI computed at the
+    family-corrected level ``1 - (1 - ci_level) / bonferroni_n``. The
+    adjusted interval is strictly wider than the raw interval (lower
+    bound lower, upper bound higher) since alpha is divided by
+    ``bonferroni_n``.
+
+    Uses a local fixture with *seed-varying* per-pair deltas so that the
+    bootstrap distribution has non-zero variance and the two intervals
+    are strictly distinct (the existing ``synthetic_sweep`` produces
+    constant 0.04 deltas — bootstrap variance collapses to zero and all
+    percentiles coincide)."""
+    sweep = tmp_path / "bonf_var"
+    # 7 paired seeds with non-constant deltas so bootstrap percentiles
+    # differ between CI95 (2.5/97.5%) and CI99.5 (0.25/99.75%).
+    lstm_aucs = [0.78, 0.80, 0.79, 0.81, 0.77, 0.82, 0.79]
+    mamba_aucs = [0.83, 0.86, 0.84, 0.88, 0.81, 0.89, 0.85]
+    for s, (la, ma) in enumerate(zip(lstm_aucs, mamba_aucs)):
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s, test_auc=la)
+        _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s, test_auc=ma)
+    cells = agg.load_cells(sweep)
+    d = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=5000, ci_level=0.95, seed=2026, bonferroni_n=10,
+    )
+    assert "ci_lo_bonferroni" in d
+    assert "ci_hi_bonferroni" in d
+    assert d["ci_lo_bonferroni"] is not None
+    assert d["ci_hi_bonferroni"] is not None
+    assert d["ci_lo_bonferroni"] < d["ci_lo"], (
+        f"adjusted lower bound must be lower (wider interval): "
+        f"adj={d['ci_lo_bonferroni']} vs raw={d['ci_lo']}"
+    )
+    assert d["ci_hi_bonferroni"] > d["ci_hi"], (
+        f"adjusted upper bound must be higher (wider interval): "
+        f"adj={d['ci_hi_bonferroni']} vs raw={d['ci_hi']}"
+    )
+
+
+def test_paired_bootstrap_delta_bonferroni_keys_present_when_unset(agg, tmp_path):
+    """Shape consistency (mirrors ``test_..._dict_shape_consistent_across_branches``):
+    bonferroni keys must always be present in the output dict so JSON
+    consumers do not KeyError when the wrapper passes ``bonferroni_n=None``
+    (or omits the kwarg entirely). Keys are ``None`` in that case."""
+    sweep = tmp_path / "no_bonf"
+    for s in (0, 1, 42):
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s,
+                    test_auc=0.7 + 0.01 * s)
+        _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s,
+                    test_auc=0.72 + 0.01 * s)
+    cells = agg.load_cells(sweep)
+    d_unset = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=500, seed=2026,
+    )
+    assert "ci_lo_bonferroni" in d_unset
+    assert "ci_hi_bonferroni" in d_unset
+    assert d_unset["ci_lo_bonferroni"] is None
+    assert d_unset["ci_hi_bonferroni"] is None
+
+
+def test_all_pairwise_algo_deltas_passes_bonferroni_n_to_each_pair(agg, tmp_path):
+    """GH#2 wrapper threading: ``all_pairwise_algo_deltas`` must compute
+    the family size (total number of pairs across all groups) and pass
+    it as ``bonferroni_n`` to every ``paired_bootstrap_delta`` call so
+    the emitted CIs are family-wise corrected by default."""
+    sweep = tmp_path / "fam"
+    # 3 algos × 2 seeds = C(3,2)=3 pairs in 1 (arch, partition, alpha) group
+    for algo in ("fedavg", "fedprox", "fedadam"):
+        for seed in (42, 0):
+            _write_cell(sweep, arch="lstm", algorithm=algo,
+                        partition_mode="iid", alpha=None, seed=seed,
+                        test_auc=0.7 + 0.01 * seed)
+    cells = agg.load_cells(sweep)
+
+    captured_bonf = []
+    real_paired = agg.paired_bootstrap_delta
+
+    def spy(cells, *, a, b, n_boot, seed, bonferroni_n=None, **kw):
+        captured_bonf.append(bonferroni_n)
+        return real_paired(cells, a=a, b=b, n_boot=n_boot, seed=seed,
+                           bonferroni_n=bonferroni_n, **kw)
+
+    agg.paired_bootstrap_delta = spy
+    try:
+        out = agg.all_pairwise_algo_deltas(cells, n_boot=200)
+    finally:
+        agg.paired_bootstrap_delta = real_paired
+
+    assert len(captured_bonf) == 3, captured_bonf
+    assert all(n == 3 for n in captured_bonf), (
+        f"every pair must receive bonferroni_n=3 (family size); got {captured_bonf}"
+    )
+    # Returned dicts also expose adjusted CIs (or None when n<2 paired)
+    for key, dct in out.items():
+        assert "ci_lo_bonferroni" in dct, (key, sorted(dct))
+        assert "ci_hi_bonferroni" in dct, (key, sorted(dct))
+
+
 # ---------------------------------------------------------------------------
 # 4. Markdown rendering
 # ---------------------------------------------------------------------------
