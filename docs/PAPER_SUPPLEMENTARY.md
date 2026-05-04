@@ -55,6 +55,8 @@ A Jupyter notebook (`notebooks/colosseum_oran_federated_slicing_demo.ipynb`) wal
 
 Each subsection below holds the full prose of an §8 limitation whose main-paper bullet was condensed to a 1-2 sentence headline. The §1 contribution(s) each item threatens are stated in the main-paper §8 bullet headers.
 
+**A note on internal references in C.1-C.6:** "Stage 1" refers to a predecessor single-architecture benchmark on ColO-RAN whose preregistered hardware budget, precision policy, and gradient-step count are inherited by Phase 5 (the federated extension reported in this paper). "ADR-001 D-N" denotes the N-th preregistered design decision in the project's Architecture Decision Record. Both artefacts are documented in the release archive for downstream reproduction.
+
 ### C.1 L9 full discussion: pos_weight_split=train choice (extends §8 L9)
 
 We compute the BCE positive-class weight from the train partition's positive rate (per ADR-001 D-12), in line with standard practice that prevents test-set positive-rate from leaking into the loss. Two alternative computations (val-derived pos_weight; held-out-fold pos_weight) would also be valid and might shift absolute AUC numbers slightly, but per §7.1 our V100 random_split ablation confirms the inverted-α mechanism direction is robust to the partition-axis shuffle, and the BCE loss reweighting is identical (globally pooled) across all clients regardless of which split the rate is computed from — so the *direction* of all our findings is invariant to this choice.
