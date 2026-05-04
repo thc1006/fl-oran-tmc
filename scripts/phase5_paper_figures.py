@@ -48,6 +48,15 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 ART = ROOT / "artifacts" / "v7_stage2_full"
+# GH#9: figures must include Phase 6 + T-ABLATION cells alongside the
+# Phase 5 main sweep. Each sweep lives in its own artifact directory;
+# load_cells walks all of them and yields a unified DataFrame.
+SWEEP_DIRS = [
+    ART,
+    ROOT / "artifacts" / "v7_phase6_per_bs_dirichlet",
+    ROOT / "artifacts" / "v7_phase6_threshold",
+    ROOT / "artifacts" / "v7_ablation_random_split",
+]
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "figures"
 
 ARCH_COLORS = {
@@ -123,10 +132,47 @@ def parse_cell_name(name: str) -> dict | None:
     if algo is None:
         return None
 
-    if s.startswith("iid_"):
+    # GH#9: branch on partition_mode prefix; Phase 6 introduced
+    # ``perbsdir`` (Rank 3 per-BS Dirichlet, no n_clients in name) and
+    # ``randsplit`` (T-ABLATION, no alpha). Standard ``iid`` /
+    # ``dirichlet`` cells may also carry an optional ``_t<thr>`` suffix
+    # (Rank 1 threshold-sensitivity ablation, e.g. _t05 = 5% BLER).
+    threshold: float | None = None
+    if s.startswith("perbsdir_"):
+        partition_mode = "per_bs_dirichlet"
+        s = s[len("perbsdir_"):]
+        if not s.startswith("a"):
+            return None
+        apart, _, s = s.partition("_")
+        try:
+            alpha = float(apart[1:].replace("p", "."))
+        except ValueError:
+            return None
+        # No n_clients token in this format; default to 7 (the per-BS
+        # partition implies the natural base-station count).
+        n_clients = 7
+    elif s.startswith("randsplit_"):
+        partition_mode = "random_split"
+        alpha = None
+        s = s[len("randsplit_"):]
+        if not s.startswith("n"):
+            return None
+        npart, _, s = s.partition("_")
+        try:
+            n_clients = int(npart[1:])
+        except ValueError:
+            return None
+    elif s.startswith("iid_"):
         partition_mode = "iid"
         alpha = None
         s = s[len("iid_"):]
+        if not s.startswith("n"):
+            return None
+        npart, _, s = s.partition("_")
+        try:
+            n_clients = int(npart[1:])
+        except ValueError:
+            return None
     elif s.startswith("dirichlet_"):
         partition_mode = "dirichlet"
         s = s[len("dirichlet_"):]
@@ -137,36 +183,59 @@ def parse_cell_name(name: str) -> dict | None:
             alpha = float(apart[1:].replace("p", "."))
         except ValueError:
             return None
+        if not s.startswith("n"):
+            return None
+        npart, _, s = s.partition("_")
+        try:
+            n_clients = int(npart[1:])
+        except ValueError:
+            return None
     else:
         return None
 
-    if not s.startswith("n"):
-        return None
-    npart, _, s = s.partition("_")
-    try:
-        n_clients = int(npart[1:])
-    except ValueError:
-        return None
     if not s.startswith("s"):
         return None
+    # Seed segment may be plain ``s<seed>`` or ``s<seed>_t<thr>`` (the
+    # Rank 1 threshold suffix encodes the BLER gate as percent ×10:
+    # _t05 → 0.05, _t15 → 0.15, _t20 → 0.20).
+    seed_tail = s[1:]
+    if "_t" in seed_tail:
+        seed_str, thr_str = seed_tail.split("_t", 1)
+        try:
+            threshold = int(thr_str) / 100.0
+        except ValueError:
+            return None
+    else:
+        seed_str = seed_tail
     try:
-        seed = int(s[1:])
+        seed = int(seed_str)
     except ValueError:
         return None
     return {
         "arch": arch, "algo": algo,
         "partition_mode": partition_mode, "alpha": alpha,
         "n_clients": n_clients, "seed": seed,
+        "threshold": threshold,
     }
 
 
 def load_cells() -> pd.DataFrame:
-    """Walk ART, return one row per completed cell with metadata,
-    AUC, energy, timing. Skips in-flight cells (no summary.json)."""
-    if not ART.exists():
-        return pd.DataFrame()
+    """Walk every directory in ``SWEEP_DIRS`` and return one row per
+    completed cell (any sweep) with metadata, AUC, energy, timing.
+    Skips in-flight cells (no summary.json) and missing sweep dirs.
+
+    GH#9: combining Phase 5 main sweep + Phase 6 mechanism ablations +
+    T-ABLATION random_split into a unified DataFrame so the paper
+    figures show all cells rather than silently dropping the Phase 6
+    rows that live in separate artifact directories.
+    """
     rows = []
-    for d in sorted(ART.glob("v7_*")):
+    cells_iter = (
+        d for sweep_dir in SWEEP_DIRS
+        if sweep_dir.exists()
+        for d in sorted(sweep_dir.glob("v7_*"))
+    )
+    for d in cells_iter:
         sj = d / "summary.json"
         if not sj.exists():
             continue
