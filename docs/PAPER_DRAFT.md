@@ -361,7 +361,7 @@ Upon paper acceptance, we will release the full benchmark artefact — spec-driv
 
 Five open directions, each detailed in App. D:
 
-* **Mechanism isolation re-run** — `sub_per_bs=2 + cpr=10` to disentangle slice-mixing from per-round participation in the §7.1.5 residual gap.
+* **Mechanism isolation re-run** — `sub_per_bs=2` with `clients-per-round=10` to disentangle slice-mixing from per-round participation in the §7.1.5 residual gap.
 * **BLER-threshold sensitivity** — perturb the 10 % gate to {5, 15, 20} % to confirm operational robustness.
 * **Scaling beyond N=7** — test whether inverted-α holds at the 100-client regime.
 * **Variance-aware sharpness** — FedSCAM and FedSynSAM as candidates beyond the FedAdam ceiling (§7.2).

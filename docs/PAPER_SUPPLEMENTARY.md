@@ -1,6 +1,6 @@
 # Supplementary Material
 
-Cross-architecture federated-learning benchmark on Colosseum/ColO-RAN: per-section appendix material moved out of the main paper for length compliance with the IEEE TMC / TNSM / MobiSys main-body conventions. Each section heading carries the originating main-paper section in parentheses.
+Cross-architecture federated-learning benchmark on Colosseum/ColO-RAN: per-section appendix material moved out of the main paper for length compliance with IEEE journal main-body conventions. Each section heading carries the originating main-paper section in parentheses.
 
 ---
 
@@ -55,7 +55,7 @@ A Jupyter notebook (`notebooks/colosseum_oran_federated_slicing_demo.ipynb`) wal
 
 Each subsection below holds the full prose of an §8 limitation whose main-paper bullet was condensed to a 1-2 sentence headline. The §1 contribution(s) each item threatens are stated in the main-paper §8 bullet headers.
 
-**A note on internal references in C.1-C.6:** "Stage 1" refers to a predecessor single-architecture benchmark on ColO-RAN whose preregistered hardware budget, precision policy, and gradient-step count are inherited by Phase 5 (the federated extension reported in this paper). "ADR-001 D-N" denotes the N-th preregistered design decision in the project's Architecture Decision Record. Both artefacts are documented in the release archive for downstream reproduction.
+**A note on internal references in C.1-C.6:** "Stage 1" refers to the predecessor centralized 3-architecture benchmark on ColO-RAN (LSTM, Mamba, Spiking-SSM) whose preregistered hardware budget, precision policy, and gradient-step count are inherited by Phase 5 (the federated extension reported in this paper). "ADR-001 D-N" denotes the N-th preregistered design decision in the project's Architecture Decision Record. Both artefacts are documented in the release archive for downstream reproduction.
 
 ### C.1 L9 full discussion: pos_weight_split=train choice (extends §8 L9)
 
