@@ -98,6 +98,35 @@ def _get_launcher_pid() -> int | None:
         return None
 
 
+def _detect_threshold_mb() -> int:
+    """Auto-detect GPU memory threshold as 75% of total card capacity.
+
+    Per GH#7: the previous hardcoded 12 GB / 16 GB default was tied to
+    RTX 4080 and would silently fail on V100 (32 GB) or A100 (40/80 GB)
+    — the threshold would never trigger because the absolute creep
+    level scales with capacity. Detect via ``nvidia-smi
+    --query-gpu=memory.total`` and use 75% as a hardware-portable
+    default.
+
+    Falls back to ``DEFAULT_GPU_THRESHOLD_MB`` (12 GB) if nvidia-smi is
+    unavailable or errors, so the watchdog still runs rather than
+    crashing on startup.
+    """
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            stderr=subprocess.DEVNULL,
+        )
+        total_mb = int(out.decode().strip().split("\n")[0])
+        return int(total_mb * 0.75)
+    except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        return DEFAULT_GPU_THRESHOLD_MB
+
+
 def _get_gpu_mem_mb() -> int:
     """GPU 0 memory.used in MiB; -1 on error."""
     try:
@@ -250,10 +279,15 @@ def _restart_cycle(pid: int | None, reason: str) -> int | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--threshold-mb", type=int, default=DEFAULT_GPU_THRESHOLD_MB)
+    ap.add_argument("--threshold-mb", type=int, default=None,
+                    help="GPU memory threshold (MB) to trigger restart. "
+                         "Default: 75%% of detected total via nvidia-smi "
+                         "(hardware-portable per GH#7).")
     ap.add_argument("--interval-s", type=int, default=DEFAULT_INTERVAL_S)
     ap.add_argument("--stall-s", type=int, default=DEFAULT_STALL_S)
     args = ap.parse_args()
+    if args.threshold_mb is None:
+        args.threshold_mb = _detect_threshold_mb()
 
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
