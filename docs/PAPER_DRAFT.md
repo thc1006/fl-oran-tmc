@@ -176,34 +176,23 @@ Every experiment cell is fully specified by a single YAML file under `experiment
 
 ### 5.2 Test infrastructure
 
-The release ships **89 passing tests** across four suites that protect numerical and pipeline-level invariants:
-
-* `tests/test_v7_*.py` — 14 unit + 3 integration tests for `fl_v7` trainer (model-build, partition correctness, scaler determinism, FedDyn canonical-vs-Option-II contract).
-* `tests/test_aggregate_v7_results.py` — 21 tests for the aggregator (paired-bootstrap, BLAKE2b decorrelation, JSON round-trip, schema-mismatch detection, 1260-cell scaling).
-* `tests/test_paper_draft_invariants.py` — 28 paper-text invariants (forbidden hallucinated facts; required corrected facts; license consistency; hardware specs).
-* `tests/test_paper_claims_sources.py` — 16 paper-vs-data claims tests that re-read `artifacts/step1_factfinding.json`, `step2_mechanism_search.json`, and `aggregated_phase5.json` and assert paper-reported numbers match the underlying measurements within rounding tolerance.
-
-The latter two suites (44 tests total) implement a paper-correctness CI gate: every PAPER_DRAFT.md edit re-runs them, preventing quick-claim regressions.
+The release ships 277 passing tests across four suites (202 trainer + 22 aggregator + 37 paper invariants + 16 paper claims-vs-data); the latter two (53 tests) gate every PAPER_DRAFT.md edit. Full breakdown in App. B.1.
 
 ### 5.3 Statistical pipeline
 
-`scripts/aggregate_v7_results.py` consumes the per-cell `summary.json` files and produces `aggregated_phase5.json` (90 group means + 270 paired-bootstrap distributions: 180 algorithm-pairs + 90 architecture-pairs) plus a paper-grade Markdown table. Each pairwise comparison's bootstrap RNG seed is derived from a BLAKE2b hash of the pair identifier added to a base seed (2026 for algorithm-pairs, 2027 for arch-pairs), guaranteeing independent bootstrap streams across all 270 distributions and supporting joint coverage claims (§4.5).
+`scripts/aggregate_v7_results.py` produces `aggregated_phase5.json` (90 group means + 270 paired-bootstrap distributions); BLAKE2b-hashed independent bootstrap streams support joint coverage claims (§4.5). Full pipeline detail in App. B.2.
 
-### 5.4 Croissant dataset metadata (release artefact)
+### 5.4 Croissant dataset metadata
 
-The Colosseum/ColO-RAN public release is upstream-licensed; our preprocessed `coloran_raw_unified.parquet` (≈18 M rows) and the partition specifications are documented in a Croissant 1.0 metadata file shipped with the release archive. The metadata block describes the (bs_id, slice_id, sched, tr) keying, the 17 continuous features (§3.1), the OOD train/val/test split (§3.3), and the `add_classification_target` derivation rule (§3.2).
+The preprocessed `coloran_raw_unified.parquet` is documented in a Croissant 1.0 metadata file shipped with the release archive (App. B.3).
 
 ### 5.5 Reproducible execution environment
 
-The release archive bundles:
-
-* `Dockerfile.repro` — pinned to the exact CUDA / PyTorch / `nvidia-ml-py` versions used in Phase 5 (CUDA 12.8, PyTorch 2.10, `nvidia-ml-py` 12.x);
-* `requirements.lock` — SHA256-pinned Python dependencies (74 packages);
-* `repro.sh` — one-line entry point that loads the parquet, runs a 1-cell smoke (LSTM, FedAvg, IID, seed=42, 5 rounds × 20 max-steps, ~30 s on RTX 4080), and verifies bit-equivalent test AUC against a stored reference value within 1e-6.
+Release archive bundles `Dockerfile.repro` (CUDA 12.8 / PyTorch 2.10 pinned), `requirements.lock` (SHA256-pinned 74 packages), and `repro.sh` (1-cell smoke + bit-equivalence check). Full detail in App. B.4.
 
 ### 5.6 Demo notebook
 
-A Jupyter notebook (`notebooks/colosseum_oran_federated_slicing_demo.ipynb`) walks through (a) loading aggregator JSON, (b) reproducing Figures 1-3, (c) running the §7.1.1 random_split ablation on a single GPU, and (d) regenerating §6 paired-bootstrap CI95 from raw cells. The notebook is the recommended onboarding entry point for downstream researchers extending the benchmark.
+`notebooks/colosseum_oran_federated_slicing_demo.ipynb` is the recommended onboarding entry point. See App. B.5.
 
 ---
 
@@ -280,11 +269,11 @@ We measured pairwise per-bs Kullback-Leibler divergence on every continuous feat
 
 #### 7.1.3 Applicability boundary
 
-The inverted-α finding is dataset-structural, not algorithm-mechanistic; the conditions under which it should replicate to other near-RT RIC forecasting workloads are detailed in App.A.1.
+The inverted-α finding is dataset-structural, not algorithm-mechanistic; the conditions under which it should replicate to other near-RT RIC forecasting workloads are detailed in App. A.1.
 
 #### 7.1.4 Hardware drift caveat for the §7.1.1 ablation
 
-§7.1.1 cells ran on 4× Tesla V100-SXM2-32GB while Phase 5 ran on RTX 4080. We bound the cross-hardware AUC drift by comparing V100 random_split AUC to 4080 Dirichlet α=5.00 AUC (both partition strategies destroy bs grouping): the residual delta is at most 0.0072 (LSTM), 0.0043 (Mamba), 0.0021 (Spiking-SSM), all within seed σ. Hardware drift is therefore bounded above by ~0.007 AUC, more than an order of magnitude smaller than the ~0.18 mechanism signal (ratio ≈ 25×). Full bf16-tensor-core argument and protocol detail in App.A.2.
+§7.1.1 cells ran on 4× Tesla V100-SXM2-32GB while Phase 5 ran on RTX 4080. We bound the cross-hardware AUC drift by comparing V100 random_split AUC to 4080 Dirichlet α=5.00 AUC (both partition strategies destroy bs grouping): the residual delta is at most 0.0072 (LSTM), 0.0043 (Mamba), 0.0021 (Spiking-SSM), all within seed σ. Hardware drift is therefore bounded above by ~0.007 AUC, more than an order of magnitude smaller than the ~0.18 mechanism signal (ratio ≈ 25×). Full bf16-tensor-core argument and protocol detail in App. A.2.
 
 #### 7.1.5 Per-BS Dirichlet ablation: bs grouping is necessary but not sufficient
 
@@ -344,17 +333,17 @@ We enumerate the limitations and threats to the validity of the §1 contribution
 
 * **L8 (threats contribution 2): SCAFFOLD interaction not exhaustively swept.** The §6.4 catastrophic-interaction finding uses canonical SCAFFOLD hyperparameters. A SCAFFOLD client-LR / control-variate-EMA grid sweep on Mamba × α=0.10 would establish whether the failure is recoverable in some hyperparameter region; we report the interaction with canonical hyperparameters to establish the existence of the failure mode rather than its precise envelope.
 
-* **L9 (threats §3.5, §6.6, §7.1): `pos_weight_split=train` is one of three valid choices.** The BCE loss reweighting is globally pooled across all clients (§7.1), so the *direction* of all findings is invariant to this choice; full alternative-computation discussion in App.C.1.
+* **L9 (threats §3.5, §6.6, §7.1): `pos_weight_split=train` is one of three valid choices.** The BCE loss reweighting is globally pooled across all clients (§7.1), so the *direction* of all findings is invariant to this choice; full alternative-computation discussion in App. C.1.
 
-* **L10 (threats contribution 5 reproducibility): bf16 mixed-precision training versus fp32.** All Phase 5 cells use bf16; we do not report an fp32 verification cell. Full numerical-precision argument in App.C.2.
+* **L10 (threats contribution 5 reproducibility): bf16 mixed-precision training versus fp32.** All Phase 5 cells use bf16; we do not report an fp32 verification cell. Full numerical-precision argument in App. C.2.
 
-* **L11 (threats contribution 1, §7.1): Per-client compute budget split as 100 rounds × 50 max-steps versus alternative splits.** We treat round count as a fixed reproducibility anchor; whether the §6.3 FedAdam-saturates-headroom finding survives at alternative splits is open. Full discussion in App.C.3.
+* **L11 (threats contribution 1, §7.1): Per-client compute budget split as 100 rounds × 50 max-steps versus alternative splits.** We treat round count as a fixed reproducibility anchor; whether the §6.3 FedAdam-saturates-headroom finding survives at alternative splits is open. Full discussion in App. C.3.
 
-* **L12 (threats contribution 1): SLA-threshold sensitivity not exhaustively swept.** The 10 % BLER threshold is the canonical ColO-RAN SLA gate (Polese et al. 2022, §V); a {5 %, 15 %, 20 %} sweep is the highest-leverage open ablation after §7.1.1. Full discussion in App.C.4.
+* **L12 (threats contribution 1): SLA-threshold sensitivity not exhaustively swept.** The 10 % BLER threshold is the canonical ColO-RAN SLA gate (Polese et al. 2022, §V); a {5 %, 15 %, 20 %} sweep is the highest-leverage open ablation after §7.1.1. Full discussion in App. C.4.
 
-* **L13 (threats contribution 5 reproducibility): Bootstrap CI uses percentile interval, not BCa.** At our n=10 paired seeds with approximately symmetric per-seed delta distributions, the BCa bias-correction term is bounded by O(1/√n) ≈ 0.32 standard errors — smaller than seed σ on every reported finding except §6.4's Mamba×SCAFFOLD. Full justification in App.C.5.
+* **L13 (threats contribution 5 reproducibility): Bootstrap CI uses percentile interval, not BCa.** At our n=10 paired seeds with approximately symmetric per-seed delta distributions, the BCa bias-correction term is bounded by O(1/√n) ≈ 0.32 standard errors — smaller than seed σ on every reported finding except §6.4's Mamba×SCAFFOLD. Full justification in App. C.5.
 
-* **L14 (threats contribution 2): FedAdam hyperparameter sensitivity untested.** β₁ = 0.9, β₂ = 0.99, η_server = 0.01 follow Reddi et al. 2021 preregistered values; (β₁, β₂, η_server) sensitivity sweep deferred. Full discussion in App.C.6.
+* **L14 (threats contribution 2): FedAdam hyperparameter sensitivity untested.** β₁ = 0.9, β₂ = 0.99, η_server = 0.01 follow Reddi et al. 2021 preregistered values; (β₁, β₂, η_server) sensitivity sweep deferred. Full discussion in App. C.6.
 
 ---
 

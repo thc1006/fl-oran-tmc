@@ -16,6 +16,41 @@ The §7.1.1 random_split ablation cells were run on 4× Tesla V100-SXM2-32GB (sm
 
 ---
 
+## Appendix B. Reproducibility infrastructure detail (extends §5)
+
+### B.1 Test infrastructure (extends §5.2)
+
+The release ships **277 passing tests** across four suites that protect numerical and pipeline-level invariants:
+
+* `tests/test_v7_*.py` — 202 unit + integration tests for `fl_v7` trainer (model-build, partition correctness, scaler determinism, FedDyn canonical-vs-Option-II contract).
+* `tests/test_aggregate_v7_results.py` — 22 tests for the aggregator (paired-bootstrap, BLAKE2b decorrelation, JSON round-trip, schema-mismatch detection, 1260-cell scaling).
+* `tests/test_paper_draft_invariants.py` — 37 paper-text invariants (forbidden hallucinated facts; required corrected facts; license consistency; hardware specs).
+* `tests/test_paper_claims_sources.py` — 16 paper-vs-data claims tests that re-read `artifacts/step1_factfinding.json`, `step2_mechanism_search.json`, and `aggregated_phase5.json` and assert paper-reported numbers match the underlying measurements within rounding tolerance.
+
+The latter two suites (53 tests total) implement a paper-correctness CI gate: every PAPER_DRAFT.md edit re-runs them, preventing quick-claim regressions.
+
+### B.2 Statistical pipeline (extends §5.3)
+
+`scripts/aggregate_v7_results.py` consumes the per-cell `summary.json` files and produces `aggregated_phase5.json` (90 group means + 270 paired-bootstrap distributions: 180 algorithm-pairs + 90 architecture-pairs) plus a paper-grade Markdown table. Each pairwise comparison's bootstrap RNG seed is derived from a BLAKE2b hash of the pair identifier added to a base seed (2026 for algorithm-pairs, 2027 for arch-pairs), guaranteeing independent bootstrap streams across all 270 distributions and supporting joint coverage claims (§4.5).
+
+### B.3 Croissant dataset metadata (extends §5.4)
+
+The Colosseum/ColO-RAN public release is upstream-licensed; our preprocessed `coloran_raw_unified.parquet` (≈18 M rows) and the partition specifications are documented in a Croissant 1.0 metadata file shipped with the release archive. The metadata block describes the (bs_id, slice_id, sched, tr) keying, the 17 continuous features (§3.1), the OOD train/val/test split (§3.3), and the `add_classification_target` derivation rule (§3.2).
+
+### B.4 Reproducible execution environment (extends §5.5)
+
+The release archive bundles:
+
+* `Dockerfile.repro` — pinned to the exact CUDA / PyTorch / `nvidia-ml-py` versions used in Phase 5 (CUDA 12.8, PyTorch 2.10, `nvidia-ml-py` 12.x);
+* `requirements.lock` — SHA256-pinned Python dependencies (74 packages);
+* `repro.sh` — one-line entry point that loads the parquet, runs a 1-cell smoke (LSTM, FedAvg, IID, seed=42, 5 rounds × 20 max-steps, ~30 s on RTX 4080), and verifies bit-equivalent test AUC against a stored reference value within 1e-6.
+
+### B.5 Demo notebook (extends §5.6)
+
+A Jupyter notebook (`notebooks/colosseum_oran_federated_slicing_demo.ipynb`) walks through (a) loading aggregator JSON, (b) reproducing Figures 1-3, (c) running the §7.1.1 random_split ablation on a single GPU, and (d) regenerating §6 paired-bootstrap CI95 from raw cells. The notebook is the recommended onboarding entry point for downstream researchers extending the benchmark.
+
+---
+
 ## Appendix C. Extended limitations and threats to validity (extends §8)
 
 Each subsection below holds the full prose of an §8 limitation whose main-paper bullet was condensed to a 1-2 sentence headline. The §1 contribution(s) each item threatens are stated in the main-paper §8 bullet headers.
