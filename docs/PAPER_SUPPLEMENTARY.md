@@ -47,7 +47,7 @@ The release archive bundles:
 
 ### B.5 Demo notebook (extends §5.6)
 
-A Jupyter notebook (`notebooks/colosseum_oran_federated_slicing_demo.ipynb`) walks through (a) loading aggregator JSON, (b) reproducing Figures 1-3, (c) running the §7.1.1 random_split ablation on a single GPU, and (d) regenerating §6 paired-bootstrap CI95 from raw cells. The notebook is the recommended onboarding entry point for downstream researchers extending the benchmark.
+A Jupyter notebook (`notebooks/colosseum_oran_federated_slicing_demo.ipynb`) walks through (a) loading aggregator JSON, (b) reproducing Figures 1-3, (c) running a downscaled smoke version of the §7.1.1 random_split ablation on a single GPU (the full ablation runs on the 4× V100 setup documented in App. A.2), and (d) regenerating §6 paired-bootstrap CI95 from raw cells. The notebook is the recommended onboarding entry point for downstream researchers extending the benchmark.
 
 ---
 
