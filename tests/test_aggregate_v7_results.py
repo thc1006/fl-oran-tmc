@@ -430,6 +430,50 @@ def test_paired_bootstrap_delta_returns_none_ci_when_under_two_seeds(agg, tmp_pa
     assert d["ci_hi"] is None
 
 
+def test_paired_bootstrap_delta_snapshot_pins_vectorized_resample(agg, tmp_path):
+    """GH#4: snapshot-pin the exact CI output for a deterministic input
+    + seed against the current vectorized ``rng.integers((n_boot, n))``
+    resample. PR #1 vectorized this from a per-iteration ``rng.choice``
+    loop; the new code is statistically equivalent but consumes the
+    rng state differently, so the same seed produces a numerically
+    different bootstrap distribution. Without a snapshot test, a future
+    re-vectorisation (e.g. switching to ``scipy.stats.bootstrap`` for
+    BCa) would silently change paper numbers.
+
+    **If you change the resample implementation, regenerate this
+    snapshot AND verify statistical equivalence via a KS test on
+    n_boot=10000 samples drawn from old vs new resamplers.**
+    """
+    deltas = [0.01, 0.02, -0.01, 0.03, 0.005,
+              0.015, -0.005, 0.025, 0.0, 0.02]
+    sweep = tmp_path / "snapshot"
+    for seed_i, d in enumerate(deltas):
+        # arch=lstm carries the baseline 0.5; arch=mamba carries 0.5 + d
+        # so paired-bootstrap deltas reconstruct exactly the spec list.
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=seed_i,
+                    test_auc=0.5)
+        _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=seed_i,
+                    test_auc=0.5 + d)
+    cells = agg.load_cells(sweep)
+    out = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=10_000, seed=2026, ci_level=0.95,
+    )
+    # Snapshot pinned 2026-05-05 against the vectorized
+    # rng.integers((n_boot, n)) resample on numpy default_rng.
+    assert out["n_paired_seeds"] == 10
+    assert out["delta_mean"] == pytest.approx(0.0110, abs=1e-6)
+    assert out["delta_std"] == pytest.approx(0.0132916014, abs=1e-6)
+    assert out["ci_lo"] == pytest.approx(0.0030, abs=1e-6)
+    assert out["ci_hi"] == pytest.approx(0.0185, abs=1e-6)
+
+
 @pytest.mark.parametrize("n_seeds", [0, 1, 2])
 def test_paired_bootstrap_n_too_small_returns_none_ci(agg, tmp_path, n_seeds):
     """GH#3: bootstrap on n<3 paired seeds is degenerate (n=1 gives a
