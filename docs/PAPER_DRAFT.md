@@ -359,7 +359,13 @@ Upon paper acceptance, we will release the full benchmark artefact — spec-driv
 
 ### 9.1 Future work
 
-Several open questions remain. **First**, §7.1.5 disambiguates the inverted-α mechanism (the strong reading of §7.1.1 (i) — bs grouping alone suffices — is refuted; (ii) per-client structural coherence is the additional necessary ingredient), but two design constraints (`sub_per_bs=2` halving per-client data, 5/14 sampling fraction vs Phase 5's 5/7) prevent a clean decomposition of the 1–4 pp residual gap to natural-by-BS; an isolation re-run keeping `sub_per_bs=2` while bumping `clients-per-round` to 10 (matches Phase 5's 5/7 sampling fraction at the doubled client count) would isolate the slice-mixing effect from per-round participation, following the per-axis isolation methodology of Borges et al. (arXiv:2503.17070, 2025) and the proximity-partition framing of ProFed (arXiv:2503.20618, 2025). **Second**, our 10 % BLER threshold should be perturbed to {5, 15, 20} % to confirm operational robustness, in line with recent rare-event metric-stability work (arXiv:2504.16185, 2025). **Third**, scaling beyond N = 7 base stations toward the 100-client regime studied by Chiarani et al. (arXiv:2503.12435, 2025) and Sezgin et al. (arXiv:2509.11421, 2025) would test whether inverted-α is a small-N artefact. **Fourth**, the FedAdam headroom-saturation finding may be soft: variance-aware sharpness methods such as FedSCAM (arXiv:2601.00853, 2026) and trajectory-matched FedSynSAM (arXiv:2602.11584, 2026) introduce per-client perturbation modulation that could extract additional accuracy. **Fifth**, integrating differential privacy via over-the-air channel noise (arXiv:2510.23463, 2026) and exploring neuromorphic deployment on Loihi 2 with sparse RNN kernels (arXiv:2502.01330, 2025; arXiv:2604.27004, 2026) would close the loop toward production-deployable privacy-preserving energy-efficient O-RAN slice prediction.
+Five open directions, each detailed in App. D:
+
+* **Mechanism isolation re-run** — `sub_per_bs=2 + cpr=10` to disentangle slice-mixing from per-round participation in the §7.1.5 residual gap.
+* **BLER-threshold sensitivity** — perturb the 10 % gate to {5, 15, 20} % to confirm operational robustness.
+* **Scaling beyond N=7** — test whether inverted-α holds at the 100-client regime.
+* **Variance-aware sharpness** — FedSCAM and FedSynSAM as candidates beyond the FedAdam ceiling (§7.2).
+* **Privacy + neuromorphic** — over-the-air DP and Loihi 2 sparse-RNN deployment.
 
 ---
 
