@@ -71,6 +71,22 @@ pytest tests/test_v5_*.py
 pytest --cov=src/fl_oran
 ```
 
+### Paper-claim source tests
+
+`tests/test_paper_claims_sources.py` validates each numerical claim in
+`docs/PAPER_DRAFT.md` against the underlying ground-truth artifacts.
+The artifacts are gitignored (computed locally, not in CI); on a fresh
+checkout these tests will SKIP with an informative regenerate hint.
+
+```bash
+# Regenerate paper artifacts before running the claim-source tests:
+python scripts/step1_fact_finding.py     # → artifacts/step1_factfinding.json
+python scripts/step2_mechanism_search.py # → artifacts/step2_mechanism_search.json
+
+# Then the full suite runs (claim-source tests no longer skip):
+pytest
+```
+
 **Training runs are not yet wired up** — the M3b orchestrator is in
 progress. `experiments/run_v3_centralized.py`, `run_v3_fl_iid.py`,
 `run_v3_fl_noniid.py`, `run_v4_all_seeds.py` replay the v3/v4 baselines

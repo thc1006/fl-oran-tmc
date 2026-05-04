@@ -42,6 +42,32 @@ def paper_text() -> str:
     return PAPER.read_text()
 
 
+@pytest.fixture(scope="module")
+def step1_data() -> dict:
+    """GH#8: load step1_factfinding.json or skip the test cleanly with a
+    regenerate hint. The artifact is gitignored (produced by
+    ``python scripts/step1_fact_finding.py``); a fresh checkout will
+    skip rather than fail-noisy when the file is absent."""
+    if not STEP1.exists():
+        pytest.skip(
+            f"{STEP1.relative_to(REPO)} missing. "
+            "Regenerate via: python scripts/step1_fact_finding.py"
+        )
+    return json.loads(STEP1.read_text())
+
+
+@pytest.fixture(scope="module")
+def step2_data() -> dict:
+    """GH#8: load step2_mechanism_search.json or skip cleanly. Artifact
+    is produced by ``python scripts/step2_mechanism_search.py``."""
+    if not STEP2.exists():
+        pytest.skip(
+            f"{STEP2.relative_to(REPO)} missing. "
+            "Regenerate via: python scripts/step2_mechanism_search.py"
+        )
+    return json.loads(STEP2.read_text())
+
+
 # ============================================================================
 # §3 dataset facts → step1_factfinding.json
 # ============================================================================
