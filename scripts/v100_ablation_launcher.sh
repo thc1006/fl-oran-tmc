@@ -92,7 +92,14 @@ PID3=$!
 
 echo "PIDs: $PID0 $PID1 $PID2 $PID3"
 echo "logs: $LOGDIR/v100_ablation_chain{0..3}.log"
-wait $PID0 $PID1 $PID2 $PID3
+# Per-PID `wait || true` so a single chain failure (set -e in run_cell)
+# doesn't make the launcher exit before the other 3 chains are reaped.
+# Without this, any chain failure → wait returns non-zero → set -e fires
+# → script exits → orphaned python procs continue holding GPUs while a
+# chain-watcher polling pgrep <launcher.sh> mistakenly fires the next
+# phase. Mirrors the fix in v100_phase6_rank{1,3}_launcher.sh
+# (Phase 6 Rank 3 audit 2026-05-03).
+for p in $PID0 $PID1 $PID2 $PID3; do wait "$p" || echo "[wait] chain pid=$p exited non-zero"; done
 echo "=== all chains complete ==="
 date
 ls -la "$OUTDIR" | head -20
