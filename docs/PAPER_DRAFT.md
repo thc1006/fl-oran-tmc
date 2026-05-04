@@ -176,7 +176,7 @@ Every experiment cell is fully specified by a single YAML file under `experiment
 
 ### 5.2 Test infrastructure
 
-The release ships 277 passing tests across four suites (202 trainer + 22 aggregator + 37 paper invariants + 16 paper claims-vs-data); the latter two (53 tests) gate every PAPER_DRAFT.md edit. Full breakdown in App. B.1.
+The release ships 277 passing tests across four suites (202 trainer + 22 aggregator + 37 paper invariants + 16 paper claims-vs-data); the latter two (53 tests) form a developer pre-commit gate that verifies every PAPER_DRAFT.md edit. Full breakdown in App. B.1.
 
 ### 5.3 Statistical pipeline
 
@@ -329,7 +329,7 @@ We enumerate the limitations and threats to the validity of the §1 contribution
 
 * **L6 (threats contribution 4): Pareto Spiking arm assumes hardware sparsity unavailable on RTX 4080.** The §6.5 architecture-leverage claim treats Spiking as a distinct vertical band at ~41 kJ/cell. On the deployed sparsity-aware target the Spiking arm's energy would compress (per §7.4 + Stage 1 §6.4), and the Pareto envelope between LSTM and Spiking would tighten substantively. Operators targeting commodity GPU should read the §6.5 ranking as-is; operators targeting Loihi-2 / NorthPole should read the §6.5 ranking with a 2-3× downward correction on Spiking energy.
 
-* **L7 (threats contribution 1§7.1): Mechanism for the inverted-α finding is partially open.** §7.1 reports a `random_split` controlled ablation (15 cells × 3 archs × 5 seeds, run on 4× V100-SXM2-32GB) that tests the leading hypothesis (natural-by-BS preserves bs-conditioned continuous-feature signal). Two prior candidates (per-client class-imbalance specialisation; bs↔slice mixture correlation) were eliminated by direct measurement before the ablation (§7.1, §7.1.2). If the `random_split` ablation also fails to recover the §6.2 monotonicity, the §6.6 mechanism question is left open and is the highest-priority follow-up for the camera-ready revision.
+* **L7 (threats contribution 1, §7.1): Mechanism for the inverted-α finding is partially open.** §7.1 reports a `random_split` controlled ablation (15 cells × 3 archs × 5 seeds, run on 4× V100-SXM2-32GB) that tests the leading hypothesis (natural-by-BS preserves bs-conditioned continuous-feature signal). Two prior candidates (per-client class-imbalance specialisation; bs↔slice mixture correlation) were eliminated by direct measurement before the ablation (§7.1, §7.1.2). If the `random_split` ablation also fails to recover the §6.2 monotonicity, the §6.6 mechanism question is left open and is the highest-priority follow-up for the camera-ready revision.
 
 * **L8 (threats contribution 2): SCAFFOLD interaction not exhaustively swept.** The §6.4 catastrophic-interaction finding uses canonical SCAFFOLD hyperparameters. A SCAFFOLD client-LR / control-variate-EMA grid sweep on Mamba × α=0.10 would establish whether the failure is recoverable in some hyperparameter region; we report the interaction with canonical hyperparameters to establish the existence of the failure mode rather than its precise envelope.
 

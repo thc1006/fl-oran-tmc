@@ -27,7 +27,7 @@ The release ships **277 passing tests** across four suites that protect numerica
 * `tests/test_paper_draft_invariants.py` — 37 paper-text invariants (forbidden hallucinated facts; required corrected facts; license consistency; hardware specs).
 * `tests/test_paper_claims_sources.py` — 16 paper-vs-data claims tests that re-read `artifacts/step1_factfinding.json`, `step2_mechanism_search.json`, and `aggregated_phase5.json` and assert paper-reported numbers match the underlying measurements within rounding tolerance.
 
-The latter two suites (53 tests total) implement a paper-correctness CI gate: every PAPER_DRAFT.md edit re-runs them, preventing quick-claim regressions.
+The latter two suites (53 tests total) form a paper-correctness developer pre-commit gate: every PAPER_DRAFT.md edit is verified by re-running them, preventing quick-claim regressions.
 
 ### B.2 Statistical pipeline (extends §5.3)
 
