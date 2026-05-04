@@ -389,7 +389,11 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
     common = sorted(set(aucs_a) & set(aucs_b))
     deltas = np.array([aucs_a[s] - aucs_b[s] for s in common], dtype=float)
     n = len(deltas)
-    if n < 2:
+    if n < 3:
+        # GH#3: n=1 gives zero-width CI (every bootstrap sample is the
+        # same observation); n=2 gives a 3-point CI bracket. Both are
+        # degenerate and would mislead readers into interpreting them
+        # as tight estimates. Refuse and emit an explicit warning.
         return {
             "n_paired_seeds": int(n),
             "delta_mean": float(deltas.mean()) if n else 0.0,
@@ -399,6 +403,7 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
             "ci_lo_bonferroni": None,
             "ci_hi_bonferroni": None,
             "wilcoxon_p": None,
+            "warning": f"bootstrap CI requires n>=3 paired seeds, got n={n}",
             "seeds": common,
         }
     rng = np.random.default_rng(seed)
@@ -433,6 +438,7 @@ def paired_bootstrap_delta(cells: dict, *, a: dict, b: dict,
         "ci_lo_bonferroni": ci_lo_b,
         "ci_hi_bonferroni": ci_hi_b,
         "wilcoxon_p": wilcoxon_p,
+        "warning": None,
         "seeds": common,
     }
 

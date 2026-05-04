@@ -430,6 +430,48 @@ def test_paired_bootstrap_delta_returns_none_ci_when_under_two_seeds(agg, tmp_pa
     assert d["ci_hi"] is None
 
 
+@pytest.mark.parametrize("n_seeds", [0, 1, 2])
+def test_paired_bootstrap_n_too_small_returns_none_ci(agg, tmp_path, n_seeds):
+    """GH#3: bootstrap on n<3 paired seeds is degenerate (n=1 gives a
+    zero-width CI; n=2 gives a 3-point CI brackets). The function must
+    explicitly refuse and return ``None`` for ``ci_lo`` / ``ci_hi`` for
+    n<3, plus a ``warning`` key explaining why, so JSON consumers /
+    paper readers do not mistake a degenerate CI for a tight estimate."""
+    sweep = tmp_path / f"thin_n{n_seeds}"
+    # Write n_seeds matched cells per arch; n_seeds=0 case writes none
+    # for mamba so no paired seeds exist.
+    if n_seeds >= 1:
+        for s in range(n_seeds):
+            _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                        partition_mode="iid", alpha=None, seed=s,
+                        test_auc=0.7 + 0.01 * s)
+            _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                        partition_mode="iid", alpha=None, seed=s,
+                        test_auc=0.8 + 0.01 * s)
+    else:
+        # n=0 case: write a non-paired cell so load_cells returns
+        # something but the (mamba, fedavg) filter has no overlap with
+        # (lstm, fedavg) — n_paired_seeds = 0.
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=0, test_auc=0.7)
+    cells = agg.load_cells(sweep)
+    d = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=500, seed=2026,
+    )
+    assert d["n_paired_seeds"] == n_seeds
+    assert d["ci_lo"] is None, f"n={n_seeds}: ci_lo must be None, got {d['ci_lo']}"
+    assert d["ci_hi"] is None, f"n={n_seeds}: ci_hi must be None, got {d['ci_hi']}"
+    assert "warning" in d, f"n<3 dict must carry 'warning' key; got {sorted(d)}"
+    assert d["warning"] is not None and "n>=3" in d["warning"], (
+        f"warning must explain n<3 refusal (n>=3 required); got {d['warning']!r}"
+    )
+
+
 def test_paired_bootstrap_delta_emits_bonferroni_ci_when_requested(agg, tmp_path):
     """GH#2: when ``bonferroni_n`` is set, the dict must include both the
     raw paired CI95 and a Bonferroni-adjusted CI computed at the
