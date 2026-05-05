@@ -478,7 +478,27 @@ We enumerate the limitations and threats to the validity of the Section~\ref{sec
 \end{itemize}
 
 
-% TODO(S11-G): \section{Conclusion}\label{sec:conclusion}
+\section{Conclusion}\label{sec:conclusion}
+
+We have presented the first comprehensive 4-axis federated-learning benchmark on the publicly-available Colosseum/ColO-RAN testbed for slice-level SLA-violation prediction, sweeping \{LSTM, Mamba, Spiking-SSM\} $\times$ \{FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn\} $\times$ \{natural-by-BS, Dirichlet $\alphadir \in [0.05, 5.0]$\} $\times$ 10 seeds $= 900$ cells with NVML idle-baseline-subtracted training-energy measurement on commodity-tier RTX~4080, augmented by a 15-cell V100 ablation that tests the leading mechanism hypothesis for the headline inverted-$\alphadir$ finding.
+
+The principal finding is that \textbf{client heterogeneity in O-RAN slice SLA federation is structurally helpful, not harmful}: the natural base-station partition uniformly outperforms every parametric Dirichlet $\alphadir$ across all 3 architectures $\times$ 5 algorithms, and AUC monotonically increases as $\alphadir \rightarrow 0$ within the Dirichlet sweep. We do not claim a closed-form mechanism for this inversion in the conclusion; Section~\ref{sec:why-heterogeneity-helps} reports a controlled \lstinline|random_split| ablation that tests the leading ``natural-by-BS preserves bs-conditioned signal'' hypothesis, and two prior mechanism candidates (per-client class-imbalance specialisation; bs$\leftrightarrow$slice mixture correlation) were eliminated by direct measurement. The empirical inversion is the deployment-relevant claim; the mechanism is partially open. The three secondary findings (FedAdam saturating algorithmic headroom; Mamba $\times$ SCAFFOLD catastrophic interaction; architecture leverage dominating algorithm leverage on energy) are detailed in Section~\ref{sec:intro} contributions 2--4 and Sections~\ref{sec:fedadam-ceiling}--\ref{sec:arch-leverage}; we do not restate the numbers here.
+
+The community-level implication is the one operationalisable insight beyond the per-cell numbers: standard FL practice --- \emph{partition clients by inducing artificial uniformity, then deploy sharpness-aware aggregation to suppress the heterogeneity-induced noise} --- is the wrong protocol for O-RAN edge-FL when natural client structure (one gNB, one client) is already heterogeneous in the prediction-relevant axis. The recommendation reverses: \textbf{preserve the natural client partition, and treat any synthetic re-partitioning of the client population as a deployment anti-pattern} to be justified by a specific operational constraint (e.g., privacy-aware aggregation), not adopted as a default benchmarking convention. For O-RAN edge-FL practitioners, the operational recommendation is concrete: deploy on the natural base-station partition rather than re-shuffle clients to enforce IID-like uniformity; select architecture for the energy-AUC trade-off (LSTM at the low-energy frontier on commodity GPU; Spiking-SSM remains a research direction pending sparsity-aware accelerator availability --- its $10\times$ higher energy on dense GPU is hardware-specific, not a fundamental architectural property, and a deployment recommendation must wait until target neuromorphic / sparsity-aware hardware is empirically characterised, see Section~\ref{sec:arch-leverage-discussion} + Section~\ref{sec:limits} L1, L6); choose algorithm based on operational constraints (state size, communication overhead, straggler tolerance) rather than chase $\leq 0.02$ AUC gains, with the explicit caveat that selective-SSM $\times$ control-variate combinations need partition-aware validation before deployment.
+
+Upon paper acceptance, we will release the full benchmark artefact --- spec-driven YAML pipeline, pre-flight algorithm validation, paired-bootstrap statistical inference, NVML training-energy instrumentation, Croissant dataset metadata, and a Zenodo-archived release tag --- as a reference baseline for further FL-on-O-RAN research.
+
+\subsection{Future work}
+
+Five open directions, each detailed in App.~D:
+
+\begin{itemize}
+  \item \textbf{Mechanism isolation re-run} --- \lstinline|sub_per_bs=2| with \lstinline|clients-per-round=10| to disentangle slice-mixing from per-round participation in the Section~\ref{sec:per-bs-ablation} residual gap~\cite{Borges2025, ProFed2025}.
+  \item \textbf{BLER-threshold sensitivity} --- perturb the $10\%$ gate to $\{5, 15, 20\}\%$ to confirm operational robustness~\cite{arXiv2504_16185}.
+  \item \textbf{Scaling beyond $N = 7$} --- test whether inverted-$\alphadir$ holds at the 100-client regime~\cite{Chiarani2025, Sezgin2025}.
+  \item \textbf{Variance-aware sharpness} --- FedSCAM~\cite{FedSCAM2026} and FedSynSAM~\cite{FedSynSAM2026} as candidates beyond the FedAdam ceiling (Section~\ref{sec:why-fedadam-saturates}).
+  \item \textbf{Privacy + neuromorphic} --- over-the-air DP~\cite{arXiv2510_23463} and Loihi~2 sparse-RNN deployment~\cite{arXiv2502_01330, arXiv2604_27004}.
+\end{itemize}
 
 
 \bibliographystyle{IEEEtran}
