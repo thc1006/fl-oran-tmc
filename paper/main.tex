@@ -177,7 +177,95 @@ A v4-era audit established that the previously documented \lstinline|allocation_
 The 18\,M-row unified parquet (\lstinline|coloran_raw_unified.parquet|) is materialised once and streamed lazily through four pipeline stages: (i)~per-(\lstinline|bs_id|, \lstinline|slice_id|) sequence construction with \lstinline|build_run_sequences| (rolling \lstinline|seq_len=5| windows, positive-rate computed from train rows only via \lstinline|pos_weight_split=train| (preregistered) --- this avoids test-set leakage into the loss function); (ii)~leak-free \lstinline|ContinuousScaler| fit on the train partition only and applied to validation and test; (iii)~categorical encoding of \lstinline|slice_id| $\times$ \lstinline|sched| $\times$ \lstinline|tr| via \lstinline|nn.Embedding| lookups; (iv)~Dirichlet-or-natural-by-BS client partition (Section~\ref{sec:partition}). All four stages are implemented as pure functions in \lstinline|src/fl_oran/data_v2/| and tested in \lstinline|tests/test_v5_*| for determinism and seed-reproducibility (single-source-of-truth contract). The same sequence index is shared across all algorithms within an (arch, partition, seed) triple via a \lstinline|SharedSplits| cache; this is the perf inheritance from prior centralized work.
 
 
-% TODO(S11-E): \section{Method}\label{sec:method}
+\section{Method}\label{sec:method}
+
+\subsection{Three architectures with a shared encoder--classifier shell}
+
+All three architectures share an identical encoder and an identical classifier head; only the temporal backbone differs. The encoder concatenates \lstinline|nn.Embedding|-projected categorical features with the continuous features pre-standardised by the leak-free scaler (Section~\ref{sec:dataset}), producing a per-step input vector. The classifier head is a two-layer MLP \lstinline|Linear(b -> 64) -> ReLU -> Linear(64 -> 1)| consuming the backbone's last-step activation, where $b$ is the backbone's exposed dimension. Hyperparameter parity within $\pm 10\%$ of the LSTM baseline parameter count is preregistered and verified by \lstinline|tests/test_v6_param_count.py| (LSTM 44\,553, Mamba 40\,489, Spiking-expand2 43\,593). The negative direction of the Mamba parity gap ($-9\%$ relative to LSTM, vs Spiking-expand2's $-2\%$) reflects Mamba's structurally smaller state-space block at our preregistered configuration $(d_{\mathrm{model}}=64, d_{\mathrm{state}}=16, \mathit{expand}=1)$; we did not search over Mamba block dimensions to close this gap because (a)~the v6 architecture audit pinned these block dimensions and (b)~$\pm 10\%$ parity was the preregistered design constraint, not a hyperparameter optimisation outcome. The asymmetry should not be interpreted as compute-budget shortfall: at fixed \lstinline|seq_len=5| and \lstinline|max_steps=50|, gradient-step compute is dominated by the linear encoder/classifier shared across architectures, not by the backbone's parameter count.
+
+\textbf{LSTM baseline (\lstinline|ForecasterV2|).} Two-layer stacked \lstinline|nn.LSTM| (input $\rightarrow$ 64 $\rightarrow$ 32). Unchanged since v3. Backbone exposes $b=32$.
+
+\textbf{Mamba-S6 (\lstinline|MambaForecaster|).} \lstinline|Linear(input -> 64)| $\rightarrow$ $2 \times$ \lstinline|MambaS6Block| ($d_{\mathrm{model}}=64$, $d_{\mathrm{state}}=16$, $d_{\mathrm{conv}}=4$, $\mathit{expand}=1$) $\rightarrow$ \lstinline|Linear(64 -> 32)|. Each block performs (a)~input-dependent projection of $(\Delta t, B, C)$, (b)~depthwise causal 1-D convolution on the gating branch with SiLU non-linearity, (c)~sequential discretised SSM scan, and (d)~gated down-projection --- implementing the selective state-space block of Gu and Dao~\cite{GuDao2023_Mamba}. We use a pure-PyTorch sequential-scan implementation rather than the \lstinline|mamba-ssm| Triton kernel so the reproducibility artefact requires only a PyTorch + CUDA runtime, not a system CUDA-dev toolkit. Backbone exposes $b=32$.
+
+\textbf{Spiking-SSM (\lstinline|spiking_expand2|).} \lstinline|Linear(input -> 56)| $\rightarrow$ $2 \times$ \lstinline|SpikingSSMBlock| ($d_{\mathrm{model}}=56$, $d_{\mathrm{state}}=16$, $\mathit{expand}=2 \Rightarrow d_{\mathrm{inner}}=112$, \lstinline|lif_threshold=1.0|, \lstinline|lif_beta=0.9|, \lstinline|atan_alpha=2.0|) $\rightarrow$ \lstinline|Linear(56 -> 32)|. Each block performs (a)~input projection, (b)~diagonal SSM recurrence with learnable $B, C, D$ matrices and log-parameterised $A$ initialised at $-[1, 2, \ldots, d_{\mathrm{state}}]$ per channel, (c)~per-channel \lstinline|snntorch.Leaky| LIF neuron emitting binary spikes via the atan surrogate gradient~\cite{Wei2018_atan}, (d)~\lstinline|out_proj| linear consuming the binary spike train. The $\mathit{expand}=2$ widening (vs $\mathit{expand}=1$ for the v6 default) is the architectural variant identified during prior wide-state experiments --- it dominates the alternative wide-Mamba (\lstinline|mamba_expand2|) variant on energy-AUC trade-off ($-11\%$ energy at parity AUC vs $+12\%$ theoretical / $+4\%$ measured energy at no AUC gain). Backbone exposes $b=32$.
+
+\subsection{Five federated-learning algorithms}\label{sec:fl-algorithms}
+
+We benchmark five algorithms drawn from the canonical preregistered set. In what follows we use $\alphadir$ for the Dirichlet partition concentration parameter (Section~\ref{sec:partition}) and $\alphadyn$ for the FedDyn regularisation coefficient, to disambiguate two distinct $\alpha$'s that appear in the FL literature with the same Greek letter.
+
+\textbf{FedAvg}~\cite{McMahan2017_FedAvg} --- server-side aggregate is the per-client \lstinline|num_examples|-weighted average of client final states (\lstinline|scripts/aggregation.py:weighted_average_state_dicts|). In our spec each client trains for \lstinline|max_steps_per_round=50| $\times$ \lstinline|batch_size=64| $= 3200$ examples per round, so \lstinline|num_examples| is constant across clients and the weighted average reduces to a uniform mean --- but we mention the implementation detail explicitly because the released artefact aggregates by \lstinline|num_examples| and a different spec (varying \lstinline|max_steps| per client) would no longer give uniform weighting.
+
+\textbf{FedProx}~\cite{Li2020_FedProx} --- FedAvg client step augmented with the canonical proximal regulariser, eq.~\eqref{eq:fedprox}, with $\mu = 0.01$.
+
+\begin{equation}\label{eq:fedprox}
+  \mathcal{L}_{\mathrm{prox}}^{(i)} = \mathcal{L}^{(i)} + \frac{\mu}{2}\,\bigl\lVert w - w_g \bigr\rVert^2
+\end{equation}
+
+We inject the equivalent $\mu \cdot (w - w_g)$ correction directly into \lstinline|p.grad| after \lstinline|loss.backward()| (this is mathematically equivalent to adding the prox term to the loss but avoids building autograd nodes over every parameter).
+
+\textbf{FedAdam}~\cite{Reddi2021_FedAdam} --- server-side Adam over the FedAvg pseudogradient $(v_t - \theta_{t-1})$ with first/second-moment coefficients $\beta_1 = 0.9$, $\beta_2 = 0.99$ (note: $\beta_2 = 0.99$ follows the FedAdam paper's choice rather than the canonical Adam default $0.999$) and server learning rate $\eta_{\mathrm{server}} = 0.01$.
+
+\textbf{SCAFFOLD}~\cite{Karimireddy2020_SCAFFOLD} --- FedAvg client step augmented with a per-client control-variate correction $+(c_{\mathrm{global}} - c_{\mathrm{local},i})$ applied to gradients post-backward via the \lstinline|train_one_client_capped(grad_hook=...)| extension point introduced in our prior algorithm-interface design. For the per-client control-variate update we adopt the Adam-friendly Option-II variant as the default; eq.~\eqref{eq:scaffold} lists both options:
+
+\begin{equation}\label{eq:scaffold}
+  c_{\mathrm{local},i} \leftarrow
+  \begin{cases}
+    \nabla \mathcal{L}_i(w_g) & \text{(Option-II, default)} \\
+    \dfrac{w_g - w_l}{K \, \eta} & \text{(Option-I, canonical SGD)}
+  \end{cases}
+\end{equation}
+
+Option-I implicitly assumes SGD dynamics where weight drift scales with $\mathit{grad} \cdot \eta$; under our Adam local optimiser the drift is $\sim \eta$ regardless of gradient magnitude, making the Option-I $c_i$ estimate $\sim 100\times$ the true gradient magnitude and unstable across rounds.
+
+\textbf{FedDyn}~\cite{Acar2021_FedDyn} --- we use the Adam-friendly Option-II variant as the default (with $\alphadyn = 0.01$); the canonical SGD-friendly variant diverges to NaN under our Adam local optimiser at the 100-round budget (root-cause analysis: positive-feedback between Adam's adaptive scaling and the unbounded $h$-accumulator growth). Both options are listed in eq.~\eqref{eq:feddyn}; the canonical variant is preserved as an opt-in \lstinline|update_mode="canonical"| for downstream researchers running SGD-only client optimisers.
+
+\begin{equation}\label{eq:feddyn}
+  h_i \leftarrow
+  \begin{cases}
+    h_i - \alphadyn \cdot \nabla \mathcal{L}_i(w_t) & \text{(Option-II, default)} \\
+    h_i + (w_l - w_g) & \text{(canonical SGD)}
+  \end{cases}
+\end{equation}
+
+MOON~\cite{Li2021_MOON} is deferred (preregistered before evaluation): its \lstinline|forecaster_encode_fn| is hard-bound to the LSTM backbone in v5 and the contrastive-feature extraction does not generalise cleanly to selective-scan SSM or to spiking-SSM activations; we leave the cross-architecture extension to future work and exclude MOON from the headline comparison rather than benchmark it on LSTM-only.
+
+The five algorithms share a common \lstinline|FLAlgorithm| protocol with explicit \lstinline|init_state| / \lstinline|local_train| / \lstinline|server_aggregate| methods; each algorithm-specific contribution is injected as a closure over the shared \lstinline|train_one_client_capped| function, never as a duplicate training loop. The single deviation from the v5 $\rightarrow$ v7 design is one optional grad-hook parameter on \lstinline|train_one_client_capped| for the SCAFFOLD control-variate correction.
+
+\subsection{Partition schemes: natural-by-BS and parametric Dirichlet}\label{sec:partition}
+
+We evaluate two partition families holding 7 clients fixed.
+
+\textbf{Natural-by-BS.} One client per ColO-RAN base station (\lstinline|bs_id| $\in\{1, \ldots, 7\}$). Each client receives its own gNB's full slice mix, scheduler distribution, and traffic-config samples (within the train \lstinline|tr| range). This is the partition that arises naturally in deployment, and is the central object of contribution~1 (Section~\ref{sec:intro}). \emph{Code-name caveat:} in our codebase this partition is implemented as \lstinline|partition_clients(mode="iid")|. The string \lstinline|"iid"| is a misnomer inherited from earlier development before we measured the per-bs distributions; the partition is \emph{not} statistically IID across clients on this dataset (per-bs continuous-feature distributions differ measurably --- see Section~\ref{sec:kl}). We keep the legacy \lstinline|mode="iid"| API name for backwards compatibility with the v5 / v6 codebase but refer to the partition as ``natural-by-BS'' throughout the paper. Researchers reproducing our pipeline should expect the file structure \lstinline|artifacts/v7_stage2_full/v7_<arch>_<algo>_iid_n7_s<seed>/| to correspond to natural-by-BS cells.
+
+\textbf{Parametric Dirichlet.} For each value of $\alphadir \in \{0.05, 0.10, 0.50, 1.00, 5.00\}$, we draw per-client slice-id mixing proportions from $\mathrm{Dirichlet}([\alphadir, \alphadir, \alphadir])$ (3-dim, one component per \lstinline|slice_id| $\in\{0, 1, 2\}$) and assign train rows to clients according to those proportions. $\alphadir \rightarrow 0$ concentrates each client on a single dominant slice (extreme covariate skew); $\alphadir \rightarrow \infty$ approaches stratified uniform. This follows the canonical Hsu et al.\ construction~\cite{Hsu2019_Dirichlet} and is cross-comparable with NIID-Bench~\cite{Li2022_NIIDBench}. Implementation: \lstinline|src/fl_oran/data_v2/partition.py partition_clients(mode="dirichlet")|.
+
+For every partition we use 7 clients, 100 rounds, 50 max steps per round, batch size 64, bf16 mixed precision, and \lstinline|cudnn_deterministic=True|. The per-round client sample is 5 of 7 ($71\%$ participation). Architecture-specific hyperparameter overrides (\lstinline|lr=5e-4| across all three; \lstinline|lr_warmup_rounds=5| for Spiking-SSM, 3 for the others) are preregistered in \lstinline|experiments/specs/stage2_full.yaml|.
+
+\subsection{NVML training-energy measurement}
+
+Per-round training energy is measured via \lstinline|nvmlDeviceGetTotalEnergyConsumption| (NVIDIA Energy API, available on Volta+ architectures) bracketed by \lstinline|torch.cuda.synchronize()| at round boundaries. We record both the raw cumulative energy and an \textbf{idle-baseline subtraction}: a 2-second NVML sample is taken before training to estimate the GPU's idle power draw $P_{\mathrm{idle}}$ (mW), and per-round training energy is reported per eq.~\eqref{eq:nvml}, yielding \lstinline|training_model_attributable_mJ| --- the model-attributable component used in Section~\ref{sec:results} and Figure~3 (Pareto).
+
+\begin{equation}\label{eq:nvml}
+  E_{\mathrm{round}} = E_{\mathrm{total}} - P_{\mathrm{idle}} \cdot \Delta t_{\mathrm{round}}
+\end{equation}
+
+This protocol follows the ML.ENERGY 2025 best-practices recommendation~\cite{Chung2025_MLEnergy} of preferring the cumulative Energy API over polling-power Riemann integration. Single-GPU only (multi-GPU not handled by design); \lstinline|nvidia-ml-py| is the canonical Python binding (the deprecated \lstinline|pynvml| package is used only as a fallback, with a deprecation warning logged at startup).
+
+\subsection{Statistical inference}\label{sec:stats}
+
+Statistical inference protocol (preregistered):
+
+\begin{enumerate}
+  \item \textbf{Per-cell summary statistic.} Mean $\pm$ standard deviation of test AUC across the 10 seeds.
+  \item \textbf{Pairwise comparison statistic.} Paired-bootstrap CI$_{95}$ on the per-seed AUC delta via \lstinline|scripts/aggregate_v7_results.py:paired_bootstrap_delta| ($n_{\mathrm{boot}} = 10\,000$, percentile interval). We choose percentile over BCa because $n = 10$ with approximately symmetric per-seed delta distributions makes the BCa bias-correction term smaller than the seed $\sigma$ on every reported finding (Section~\ref{sec:limits}).
+  \item \textbf{Pairwise axis fix.} Each pairwise comparison holds all axes other than the contrasted one fixed (e.g., FedAdam-vs-FedAvg holds (arch, partition) constant; Spiking-vs-LSTM holds (algorithm, partition) constant).
+  \item \textbf{Bootstrap RNG decorrelation.} Each pairwise comparison draws an independent BLAKE2b-derived seed offset added to the base bootstrap seed. Without this, every pair would resample at exactly the same indices, producing artificially correlated CIs and breaking any joint coverage claim across the 270 paired-bootstrap distributions.
+  \item \textbf{Pair-set base seeds.} 2026 for the 180 algorithm-pair sweep; 2027 for the 90 architecture-pair sweep. The two sweeps' bootstrap streams are independent.
+  \item \textbf{Secondary check.} Wilcoxon signed-rank $p$-value, as a directional sanity check; the paired-bootstrap CI is the primary statistic (preregistered).
+  \item \textbf{Multi-comparison correction.} $p$-values reported uncorrected per finding. Family-wise Bonferroni at $\alpha = 0.05$ corresponds to threshold $0.05 / 180 \approx 2.78 \times 10^{-4}$ over the algorithm-pair family and $0.05 / 90 \approx 5.56 \times 10^{-4}$ over the arch-pair family. For the strictest joint coverage claim across the entire 270-pair set, the Mamba $\times$ SCAFFOLD finding (uncorrected Wilcoxon $p = 0.002$, see Section~\ref{sec:results}) sits above the corrected threshold, but its paired-bootstrap CI$_{95}$ excludes 0 with margin ($\Delta = -0.0915$, CI $[-0.1288, -0.0544]$). Readers seeking strict family-wise control should treat this Wilcoxon as supportive but not primary evidence.
+\end{enumerate}
+
+
 % TODO(S11-E): \section{Reproducibility}\label{sec:repro}
 % TODO(S11-F): \section{Results}\label{sec:results}
 % TODO(S11-F): \section{Discussion}\label{sec:discussion}
