@@ -51,6 +51,31 @@ If this hypothesis holds, **part of the C1 (natural-by-BS dominance) finding
 may be a tr-embedding-bug artefact** rather than a structural property of
 heterogeneity.
 
+## Empirical verification (added 2026-05-05 post-Phase-0 code review)
+
+**Decisive test**: load `artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s0/best.pt`,
+construct a fresh `ForecasterV2` with `seed_everything(0, deterministic=True)`,
+and compute per-row L2 delta `||trained - fresh||`. Rows that received gradient
+during training will have delta > 0; rows that never received gradient will be
+bit-identical to fresh init (delta = 0 modulo float32 round-off).
+
+| Row range | Category | Mean L2 delta | Interpretation |
+|---|---|---|---|
+| 0-21 | TRAIN tr | **3.0e-01** | Real training drift |
+| 22-24 | VAL tr | 4.0e-08 | Float32 round-off only |
+| 25-27 | TEST tr | 7.5e-08 | Float32 round-off only |
+| 28-29 | UNUSED (+1 padding) | 3.0e-08 | Float32 round-off only |
+
+**6+ orders of magnitude separation** between trained and untrained rows.
+The mechanism prediction holds exactly: PyTorch `nn.Embedding` only updates
+indexed rows, so rows 22-29 (never indexed during train) are byte-identical
+to seed-0 init values.
+
+Methodology lesson for future P0 audits: per-row L2 norm alone is insufficient
+to distinguish trained from untrained embeddings (both can fall in the
+N(0,1)-magnitude band). Direct comparison with fresh seed-deterministic init
+is the decisive test.
+
 ## Action
 
 P1.2 sanity-check experiment proceeds as designed:

@@ -6,8 +6,10 @@
 ## Evidence chain
 
 `src/fl_oran/data_v2/features.py`:
-- L31: continuous feature canonical list includes `"dl_bler", "ul_bler"` (among 17 names)
-- L60: feature-projection helper also lists `"dl_bler", "ul_bler"` in the continuous block
+- L22-36: `CLEAN_FEATURES` list defines **19 names** (17 raw + 2 derived trend
+  features: `tx_brate_dl_roll3`, `tx_brate_dl_volatility`)
+- L31: continuous feature list contains `"dl_bler", "ul_bler"`
+- L60: feature-projection helper also lists `"dl_bler", "ul_bler"`
 - L89-91: target derivation:
   ```python
   next_ul_bler = df.groupby(key, observed=True)["ul_bler"].shift(-1) \
@@ -17,6 +19,12 @@
 
 `src/fl_oran/data_raw/merge.py`:
 - L114-118: `ul_bler` is derived from `rx_errors_ul_pct` upstream column.
+
+**Verified count**: `src/fl_oran/training/centralized_v3.py:42` defines
+`V3_CONTINUOUS` with `len() == 17` — this is what the model actually consumes
+(the 2 trend features in `CLEAN_FEATURES` are dropped before model input).
+Paper §3 claim of "17 continuous features" is consistent with what enters the
+embedding-fed-LSTM/Mamba/Spiking forward pass.
 
 ## Implication
 
