@@ -493,12 +493,13 @@ def main() -> int:
     agg = aggregate(df)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    plot_pareto(agg, args.out_dir / "pareto.png")
-    plot_interaction_heatmap(agg, args.out_dir / "interaction_heatmap.png")
-    plot_algo_ranking(agg, args.out_dir / "algo_ranking.png")
+    for ext in ("png", "pdf", "svg"):
+        plot_pareto(agg, args.out_dir / f"pareto.{ext}")
+        plot_interaction_heatmap(agg, args.out_dir / f"interaction_heatmap.{ext}")
+        plot_algo_ranking(agg, args.out_dir / f"algo_ranking.{ext}")
     agg.to_csv(args.out_dir / "results_table.csv", index=False)
 
-    print(f"saved 3 figures + results_table.csv to {args.out_dir}")
+    print(f"saved 3 figures (png+pdf+svg) + results_table.csv to {args.out_dir}")
     print(f"  total cells loaded:  {len(df)}")
     print(f"  groups (arch×algo×partition): {len(agg)}")
     print(f"  groups with full 10 seeds:    {int((agg['n_seeds']>=10).sum())}")

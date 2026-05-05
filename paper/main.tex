@@ -303,7 +303,7 @@ We report results from Phase~5, the full Stage-2 sweep --- 3 architectures $\tim
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{../artifacts/figures/algo_ranking.png}
+\includegraphics[width=\columnwidth]{../artifacts/figures/algo_ranking.pdf}
 \caption{Per-architecture algorithm ranking (mean best-validation AUC, averaged over Dirichlet partitions $\alphadir \in \{0.05, 0.10, 0.50, 1.00, 5.00\}$ and 10 seeds; $n = 50$ per bar). Three panels: LSTM / Mamba / Spiking-SSM.}
 \label{fig:algo-ranking}
 \end{figure}
@@ -314,7 +314,7 @@ Figure~\ref{fig:algo-ranking} summarises the Dirichlet-averaged best-validation 
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{../artifacts/figures/interaction_heatmap.png}
+\includegraphics[width=\textwidth]{../artifacts/figures/interaction_heatmap.pdf}
 \caption{Architecture $\times$ algorithm $\times$ partition interaction heatmap. Three rows (LSTM / Mamba / Spiking-SSM) $\times$ six partition columns (natural-by-BS $+$ Dirichlet $\alphadir \in \{0.05, 0.10, 0.50, 1.00, 5.00\}$). Each cell colour-codes mean test AUC over 10 seeds, with mean $\pm$ std overlaid. The Mamba $\times$ SCAFFOLD $\times$ $\alphadir \in \{0.10, 0.50\}$ red region is the catastrophic interaction (Section~\ref{sec:mamba-scaffold}).}
 \label{fig:interaction-heatmap}
 \end{figure*}
@@ -333,7 +333,7 @@ The flat-algorithm observation does not generalise across all (arch, algo) combi
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{../artifacts/figures/pareto.png}
+\includegraphics[width=\columnwidth]{../artifacts/figures/pareto.pdf}
 \caption{Energy--AUC Pareto front on RTX~4080. Per-cell mean best-validation AUC vs per-cell NVML idle-baseline-subtracted training energy (kJ). Points coloured by architecture (LSTM blue, Mamba orange, Spiking-SSM red); marker shape encodes algorithm. Three vertical bands at $3.51$--$4.31$ / $10.27$--$11.06$ / $40.39$--$41.51$ kJ/cell.}
 \label{fig:pareto}
 \end{figure}
