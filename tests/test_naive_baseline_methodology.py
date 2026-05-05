@@ -33,11 +33,9 @@ def _import_from(path: Path, module_name: str):
 
 # ---------- last-BLER persistence baseline ----------
 
-@pytest.mark.xfail(strict=True, reason="P1.1-GREEN: implement scripts/baseline_last_bler.py")
 def test_baseline_last_bler_script_exists() -> None:
-    """RED: scripts/baseline_last_bler.py must exist (P1.1-GREEN creates it).
-    xfail strict=True → when GREEN lands, this test must pass and xfail
-    marker must be removed."""
+    """GREEN (xfail removed 2026-05-06): scripts/baseline_last_bler.py
+    exists per P1.1-GREEN commit."""
     assert LAST_BLER_PATH.exists(), (
         f"{LAST_BLER_PATH} not found. Implement P1.1-GREEN: a script that "
         f"loads the test parquet, extracts ul_bler at offset seq_len-1 "
@@ -64,10 +62,9 @@ def test_baseline_last_bler_predict_returns_correct_shape() -> None:
 
 # ---------- logistic regression baseline ----------
 
-@pytest.mark.xfail(strict=True, reason="P1.1-GREEN: implement scripts/baseline_logreg.py")
 def test_baseline_logreg_script_exists() -> None:
-    """RED: scripts/baseline_logreg.py must exist (P1.1-GREEN creates it).
-    xfail strict=True → when GREEN lands, remove this marker."""
+    """GREEN (xfail removed 2026-05-06): scripts/baseline_logreg.py
+    exists per P1.1-GREEN commit."""
     assert LOGREG_PATH.exists(), (
         f"{LOGREG_PATH} not found. Implement P1.1-GREEN: a script that "
         f"trains sklearn LogisticRegression on V3_CONTINUOUS features "

@@ -26,7 +26,6 @@ def _read(path: Path) -> str:
 
 # ---------- forbidden over-claim language ----------
 
-@pytest.mark.xfail(strict=True, reason="P1.4-GREEN: tone-down PAPER_DRAFT.md abstract")
 def test_no_strong_heterogeneity_helps_claim_in_markdown() -> None:
     """RED: PAPER_DRAFT.md must NOT contain 'structurally helpful, not
     harmful' — this language overstates what the data show. The actual
@@ -40,7 +39,6 @@ def test_no_strong_heterogeneity_helps_claim_in_markdown() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="P1.4-GREEN: propagate tone-down to main.tex")
 def test_no_strong_heterogeneity_helps_claim_in_latex() -> None:
     text = _read(MAIN_TEX)
     assert "structurally helpful, not harmful" not in text, (
@@ -49,7 +47,6 @@ def test_no_strong_heterogeneity_helps_claim_in_latex() -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="P1.4-GREEN: replace 'deployment anti-pattern' phrase")
 def test_no_deployment_anti_pattern_phrase() -> None:
     """RED: 'deployment anti-pattern' language is too prescriptive for the
     evidence base; soften to 'should be justified by specific operational
@@ -62,7 +59,6 @@ def test_no_deployment_anti_pattern_phrase() -> None:
         )
 
 
-@pytest.mark.xfail(strict=True, reason="P1.4-GREEN: hedge FedSWA dismiss language")
 def test_no_dismiss_language_for_fedswa_family() -> None:
     """RED: §2.6 + §7.5 must not use 'dismiss' / 'rule out' / 'cannot
     exceed' for the FedSWA / FedSCAM / FedMoSWA family. The mechanism
@@ -78,7 +74,6 @@ def test_no_dismiss_language_for_fedswa_family() -> None:
             )
 
 
-@pytest.mark.xfail(strict=True, reason="P1.4-GREEN: add implementation-specific caveat to C4")
 def test_implementation_specific_caveat_in_c4() -> None:
     """RED: §1 contribution 4 (architecture-leverage claim) must contain
     an 'on this implementation' caveat. Mamba uses pure-PyTorch sequential
