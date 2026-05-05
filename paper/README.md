@@ -93,21 +93,24 @@ Author/venue placeholders. S11-I batch (commit pending) lifted arXiv IDs and ven
 - [x] `arXiv2602_12009_DPSNNFL` — added ICASSP 2026 venue
 - [x] `SpikingPointMamba2025` / `SpikingSSMs2025` — venue confirmed (ICCV 2025 / AAAI 2025); author list TBD note added
 
-### Remaining (need external lookup at camera-ready)
+### Resolved by camera-ready web batch (WebFetch arxiv abstracts + WebSearch)
 
-- [ ] `Statistical2021_B5G` — exact IEEE conf/journal + author list (markdown References lists no arxiv ID)
-- [ ] `CDFaware2021` — IEEE venue + author list (markdown References has no specifics)
-- [ ] `Groen2023_TRACTOR` — full author list + specific IEEE venue (likely INFOCOM/Globecom; markdown References gives no specifics)
-- [ ] `Chen2024_SpikMamba` — venue + co-authors (markdown References lists Chen 2024 no arxiv id)
-- [ ] `arXiv2408_11823_MambaSpike` — author list
-- [ ] `arXiv2510_04595_SpikingMamba` — author list
-- [ ] `arXiv2509_05276_SpikingBrain` — author list
-- [ ] `arXiv2106_06579_FLSNN` — author list
-- [ ] `arXiv2407_17672_VFL_SNN` — author list
-- [ ] `arXiv2501_03306_RobustSNNFL` — author list
-- [ ] `arXiv2511_21181_PrivSNNFL` — author list
-- [ ] `pFedFDA2024` — confirm NeurIPS 2024 venue + full author list
-- [ ] `Wei2018_atan` — exact paper for the atan surrogate gradient (markdown source says "Wei et al. 2018"; cited via snntorch documentation; common candidates are Wu et al. 2018 STBP or Neftci et al. 2019)
-- [ ] `FedMoSWA2025` — exact author list + venue + arXiv ID (markdown §7.5 only lists name)
+- [x] `Groen2023_TRACTOR` — Groen, Yang, Muruganandham, Belgiovine, Ying, Chowdhury + arXiv:2312.07896 + corrected title ("From Classification to Optimization: Slicing and Resource Management with TRACTOR")
+- [x] `Chen2024_SpikMamba` — Chen, Yang, Deng, Teng, Pan + arXiv:2410.16746 + 6th ACM MMAsia 2024 venue + corrected subtitle
+- [x] `arXiv2408_11823_MambaSpike` — Qin, Liu + CGI 2024 venue
+- [x] `arXiv2510_04595_SpikingMamba` — 8-author list + TMLR 2026 venue + corrected subtitle ("Energy-Efficient LLMs via Knowledge Distillation from Mamba")
+- [x] `arXiv2509_05276_SpikingBrain` — 19-author SpikingBrain team (Pan/Feng/Zhuang/...Li) + corrected title
+- [x] `arXiv2106_06579_FLSNN` — Venkatesha, Kim, Tassiulas, Panda + IEEE Transactions on Signal Processing
+- [x] `arXiv2407_17672_VFL_SNN` — Abbasihafshejani, Maiti, Jadliwala + corrected subtitle ("Performance Trade-offs")
+- [x] `arXiv2501_03306_RobustSNNFL` — Nguyen, Zhao, Deng, Wu + corrected title ("Against Non-omniscient Byzantine Attacks")
+- [x] `arXiv2511_21181_PrivSNNFL` — Aksu, Martinez del Rincon, Alouani
+- [x] `pFedFDA2024` — Mclaughlin, Su + NeurIPS 2024 confirmed + arXiv:2411.00329 + corrected title ("Personalized Federated Learning via Feature Distribution Adaptation")
+- [x] `FedMoSWA2025` — same paper as Liu2025_FedSWA (Liu et al., ICML 2025, arXiv:2507.20016); FedMoSWA is the momentum-augmented variant introduced in the same paper, kept as separate cite key
+- [x] `Wei2018_atan` — replaced "Wei et al. 2018" misattribution with the canonical surrogate-gradient reference: Neftci, Mostafa, Zenke, IEEE Signal Processing Magazine 2019, arXiv:1901.09948 (the actual basis for snntorch's `ATan` surrogate). Cite key retained to avoid main.tex churn; bib note documents the substitution rationale.
 
-(`{(authors)}` placeholder convention from `18640f4` S11-D pass — never strip the placeholder, only fill it.)
+### Truly remaining (no arXiv ID; require author-specific external lookup)
+
+- [ ] `Statistical2021_B5G` — generic IEEE 2021 RAN-slicing FL paper. Source markdown lists no arxiv ID and the title is too generic for safe attribution. Author must provide specific reference at camera-ready (the paper exists in §2.2 prose; the citation key needs a definite source).
+- [ ] `CDFaware2021` — same situation as Statistical2021_B5G. Author must provide specific IEEE 2021 reference.
+
+(`{(authors)}` placeholder convention from `18640f4` S11-D pass — never strip the placeholder, only fill it. Bib entries for these 2 retain placeholder + descriptive title; all other entries now have verified author lists.)
