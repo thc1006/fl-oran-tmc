@@ -95,5 +95,6 @@ Author/venue placeholders introduced during the §2 migration. Each entry has a 
 - [ ] `Spyra2025_BeyondBackprop` — venue + co-authors
 - [ ] `pFedFDA2024` — confirm NeurIPS 2024 + author list
 - [ ] `Wei2018_atan` — exact paper for the atan surrogate gradient (markdown source says "Wei et al. 2018"; common candidates are Wu et al. 2018 STBP or Neftci et al. 2019; verify before camera-ready)
+- [ ] `FedMoSWA2025` — exact author list + venue (markdown §7.5 lists it alongside FedSWA + FedSCAM; arXiv ID TBD)
 
 (`{(authors)}` placeholder convention from `18640f4` S11-D pass — never strip the placeholder, only fill it.)
