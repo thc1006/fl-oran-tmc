@@ -1,5 +1,6 @@
-# LaTeX auxiliary build artefacts; the actual paper output (main.pdf) is
-# tracked so reviewers can preview without local texlive install.
+# LaTeX auxiliary build artefacts; the actual paper outputs (main.pdf,
+# supplementary.pdf) are tracked so reviewers can preview without
+# local texlive install.
 *.aux
 *.log
 *.bbl

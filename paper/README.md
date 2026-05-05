@@ -15,7 +15,7 @@ In-progress migration; see PR #1 task tracker `S11-A` through `S11-I`.
 | S11-E | §2–§5 (Related, Dataset, Method, Repro) | done (commits `a69a3a1` §2, `30a9840` §3, `087242b` §4, `7e15d3c` §5) |
 | S11-F | §6–§7 (Results, Discussion) + figures | done (commits `c02843f` §6+3 figures, `6777b68` §7+2 tables) |
 | S11-G | §8–§9 (Limitations, Conclusion) | done (commits `6495f8f` §8+14 bullets, `3718a8d` §9+9 arxiv-cite wires) |
-| S11-H | Supplementary App. A–D | not started |
+| S11-H | Supplementary App. A–D | done (`supplementary.tex` standalone IEEEtran, 3pp PDF, 12 \cite{} all resolve) |
 | S11-I | Content-equivalence audit | not started |
 
 ## Build
@@ -35,19 +35,26 @@ Then build:
 
 ```bash
 cd paper
+# Main paper
 pdflatex main.tex
 bibtex main
 pdflatex main.tex
 pdflatex main.tex   # second pass resolves cross-refs
+
+# Supplementary (independent build, shares bibliography.bib)
+pdflatex supplementary.tex
+bibtex supplementary
+pdflatex supplementary.tex
+pdflatex supplementary.tex
 ```
 
-Output: `paper/main.pdf`.
+Outputs: `paper/main.pdf` (16pp), `paper/supplementary.pdf` (3pp).
 
 ## Layout
 
 * `main.tex` — top-level LaTeX. `\documentclass[journal]{IEEEtran}` for JSAC regular paper.
 * `bibliography.bib` — BibTeX entries; one per `\cite{}` in `main.tex` or `supplementary.tex`. Closes audit Finding B (the 9 previously-dangling arxiv inline refs in §9.1 / App. D now have entries here, even where venue/authors are placeholder pending camera-ready resolution).
-* `supplementary.tex` — (S11-H) appendices A–D mirroring `docs/PAPER_SUPPLEMENTARY.md`.
+* `supplementary.tex` — appendices A–D mirroring `docs/PAPER_SUPPLEMENTARY.md`. Standalone IEEEtran document (independent compile, own page numbering); shares `bibliography.bib`. Cross-paper refs to main use `\S\,X.Y` literal form (cannot `\ref` across documents).
 
 ## Citation key convention
 
