@@ -1,0 +1,13 @@
+# LaTeX auxiliary build artefacts; the actual paper output (main.pdf) is
+# tracked so reviewers can preview without local texlive install.
+*.aux
+*.log
+*.bbl
+*.blg
+*.out
+*.toc
+*.lof
+*.lot
+*.fdb_latexmk
+*.fls
+*.synctex.gz
