@@ -62,21 +62,71 @@ def test_train_tr_range_is_0_to_21() -> None:
     )
 
 
-@pytest.mark.skipif(
-    not __import__("pathlib").Path(
-        "artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s0/best.pt"
-    ).exists(),
-    reason="Phase 5 LSTM seed-0 IID checkpoint not present; skip empirical check.",
-)
-def test_tr_embedding_rows_22_to_29_byte_identical_to_fresh_init() -> None:
-    """Decisive empirical test: rows 22-29 of trained tr embedding must be
-    bit-identical (modulo float32 round-off) to a fresh seed-0 init.
+def test_test_tr_range_is_25_to_27() -> None:
+    """Default test_tr split must be [25, 26, 27] = 3 configs. The audit
+    claim that 'at test time the model receives random-init vectors for
+    tr ∈ {25..27}' depends on this exact range."""
+    from fl_oran.data_v2.split import ood_split_by_tr
+    import inspect
+    sig = inspect.signature(ood_split_by_tr)
+    test_tr_default = sig.parameters["test_tr"].default
+    assert tuple(test_tr_default) == (25, 26, 27), (
+        f"test_tr default = {test_tr_default}, expected (25, 26, 27). "
+        f"If test split changed, re-derive which embedding rows are "
+        f"random-init at test time."
+    )
 
-    If this fails, EITHER (a) the bug has been fixed (great — update audit
-    docs and remove this regression test), OR (b) some new code path is
-    inadvertently updating the unused rows (investigate, may have introduced
-    a new bug)."""
-    import torch
+
+def test_sla_bler_threshold_is_0_10() -> None:
+    """The 10% BLER SLA threshold is paper §3.2 + Polese 2022 §V canonical
+    value. The naive last-BLER persistence baseline depends on this exact
+    threshold for prediction equivalence."""
+    from fl_oran.data_v2.features import SLA_BLER_THRESHOLD
+    assert SLA_BLER_THRESHOLD == 0.10, (
+        f"SLA_BLER_THRESHOLD = {SLA_BLER_THRESHOLD}, expected 0.10 "
+        f"(canonical ColO-RAN gate, Polese 2022 §V; paper §3.2 claim "
+        f"30.9% positive rate is computed at this threshold)."
+    )
+
+
+_DECISIVE_TEST_CHECKPOINTS = {
+    # arch_label → (relative path, model class import path)
+    # The state-dict key for tr embedding is auto-detected: LSTM/Mamba use
+    # `_orig_mod.embeddings.tr.weight` (torch.compile wrapper) while Spiking
+    # uses `embeddings.tr.weight` (uncompiled or different compile path).
+    "lstm": (
+        "artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s0/best.pt",
+        "fl_oran.models.forecaster_v2.ForecasterV2",
+    ),
+    "mamba": (
+        "artifacts/v7_stage2_full/v7_mamba_fedavg_iid_n7_s0/best.pt",
+        "fl_oran.models.mamba_forecaster.MambaForecaster",
+    ),
+    "spiking_expand2": (
+        "artifacts/v7_stage2_full/v7_spiking_expand2_fedavg_iid_n7_s0/best.pt",
+        "fl_oran.models.spiking_forecaster.SpikingForecaster",
+    ),
+}
+
+
+def _resolve_tr_embedding_key(state_dict: dict) -> str | None:
+    """Return whichever key holds the tr embedding weight, or None if absent.
+
+    Handles both compile-wrapped (`_orig_mod.embeddings.tr.weight`) and
+    bare (`embeddings.tr.weight`) state-dict layouts."""
+    for candidate in ("_orig_mod.embeddings.tr.weight", "embeddings.tr.weight"):
+        if candidate in state_dict:
+            return candidate
+    return None
+
+
+def _build_fresh_model_and_extract_tr_embedding(
+    model_class_path: str,
+) -> "np.ndarray":
+    """Build a seed-0 fresh model of the given class and return its
+    initial tr-embedding weights as numpy. Reproduces what fl_v7's
+    `_build_model` did at training time."""
+    import importlib
     from fl_oran.utils.seed import seed_everything
     from fl_oran.data_v2.encoders import FeatureSchema
     from fl_oran.training.centralized_v3 import (
@@ -84,36 +134,61 @@ def test_tr_embedding_rows_22_to_29_byte_identical_to_fresh_init() -> None:
         V3_CAT_SIZES,
         V3_CONTINUOUS,
     )
-    from fl_oran.models.forecaster_v2 import ForecasterV2
 
+    module_path, cls_name = model_class_path.rsplit(".", 1)
+    cls = getattr(importlib.import_module(module_path), cls_name)
     seed_everything(0, deterministic=True)
     schema = FeatureSchema(
         categorical=V3_CATEGORICAL,
         categorical_sizes=V3_CAT_SIZES,
         continuous=V3_CONTINUOUS,
     )
-    fresh = ForecasterV2(schema=schema, task="classification", seq_len=5)
-    fresh_tr = fresh.embeddings["tr"].weight.detach().numpy()
+    model = cls(schema=schema, task="classification", seq_len=5)
+    return model.embeddings["tr"].weight.detach().numpy()
 
-    trained = torch.load(
-        "artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s0/best.pt",
-        map_location="cpu",
-        weights_only=False,
+
+@pytest.mark.parametrize("arch", list(_DECISIVE_TEST_CHECKPOINTS.keys()))
+def test_tr_embedding_rows_22_to_29_byte_identical_to_fresh_init(arch: str) -> None:
+    """Decisive empirical test (parameterized over 3 archs): rows 22-29 of
+    trained tr embedding must be bit-identical (modulo float32 round-off)
+    to fresh seed-0 init. The bug is mechanical (PyTorch nn.Embedding only
+    updates indexed rows) so the same conclusion should hold across all
+    3 architectures.
+
+    If any arch passes (rows 22-29 byte-identical to init), the bug holds
+    for that arch. Per-arch parameterize means a partial fix (e.g.,
+    Mamba's tr embedding gets accidentally updated via a different code
+    path) would surface as one arch failing while others pass.
+
+    Test skips per-arch if the seed-0 IID checkpoint is missing (allows
+    partial dev environments to still run the rest of the suite)."""
+    import pathlib
+    import torch
+
+    ckpt_path, model_class_path = _DECISIVE_TEST_CHECKPOINTS[arch]
+    if not pathlib.Path(ckpt_path).exists():
+        pytest.skip(f"checkpoint missing: {ckpt_path}")
+
+    fresh_tr = _build_fresh_model_and_extract_tr_embedding(model_class_path)
+    trained = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    sd_key = _resolve_tr_embedding_key(trained)
+    assert sd_key is not None, (
+        f"[{arch}] No tr embedding key found in {ckpt_path}; checkpoint "
+        f"layout has changed in an unexpected way. Inspect with "
+        f"`torch.load(...).keys()` and update _resolve_tr_embedding_key."
     )
-    trained_tr = trained["_orig_mod.embeddings.tr.weight"].numpy()
+    trained_tr = trained[sd_key].numpy()
 
     deltas = np.linalg.norm(trained_tr - fresh_tr, axis=1)
 
-    # TRAIN rows 0-21 should have substantial drift
     assert deltas[0:22].mean() > 0.1, (
-        f"TRAIN rows mean Δ = {deltas[0:22].mean():.4e}, expected > 0.1; "
-        f"checkpoint may not be the trained model."
+        f"[{arch}] TRAIN rows 0-21 mean Δ = {deltas[0:22].mean():.4e}, "
+        f"expected > 0.1; checkpoint may not be the trained model."
     )
-    # VAL/TEST/UNUSED rows 22-29 should be bit-identical (delta < 1e-5
-    # accounts for float32 round-off across save/load roundtrip)
     assert deltas[22:30].max() < 1e-5, (
-        f"Rows 22-29 max Δ = {deltas[22:30].max():.4e} > 1e-5; "
+        f"[{arch}] Rows 22-29 max Δ = {deltas[22:30].max():.4e} > 1e-5; "
         f"the audit hypothesis (rows 22-29 bit-identical to fresh init) "
-        f"is falsified. Either bug is fixed or new update path was added; "
-        f"re-run artifacts/audit/tr_embedding_audit.md decisive test."
+        f"is falsified for {arch}. Either bug is fixed for this arch or "
+        f"a new update path was added; re-derive "
+        f"artifacts/audit/tr_embedding_audit.md."
     )
