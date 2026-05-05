@@ -67,3 +67,32 @@ Output: `paper/main.pdf`.
 * Greek letters in inline numerics: `\alpha`, `\Delta`, `\sigma`, `\beta_1`, etc.
 * `≈ ± × ≥ ≤ →` → `\approx \pm \times \geq \leq \rightarrow`.
 * Figure inputs from `artifacts/figures/*.png` via relative path: `\includegraphics[width=\columnwidth]{../artifacts/figures/pareto.png}`.
+
+## Bibliography TODOs (S11-E pass)
+
+Author/venue placeholders introduced during the §2 migration. Each entry has a `{(authors)}` author block or generic `(venue TBD)` slot that must be resolved before camera-ready. Resolve in one batch after S11-E + S11-F + S11-G complete to avoid churn.
+
+- [ ] `Shchur2025_fevbench` — fev-bench paper authors + venue (NeurIPS 2025?)
+- [ ] `Statistical2021_B5G` — exact IEEE conf/journal + author list
+- [ ] `CDFaware2021` — IEEE venue + author list
+- [ ] `Groen2023_TRACTOR` — full author list + IEEE venue (likely INFOCOM/Globecom)
+- [ ] `Hayek2025` — full author list + venue
+- [ ] `Chen2024_SpikMamba` — venue (NeurIPS 2024?) + co-authors
+- [ ] `arXiv2408_11823_MambaSpike` — author list
+- [ ] `SpikingPointMamba2025` — confirm ICCV 2025 + author list
+- [ ] `SpikingSSMs2025` — confirm AAAI 2025 + author list
+- [ ] `arXiv2510_04595_SpikingMamba` — author list
+- [ ] `arXiv2509_05276_SpikingBrain` — author list
+- [ ] `arXiv2106_06579_FLSNN` — author list
+- [ ] `arXiv2412_17305_FedLEC` — author list
+- [ ] `arXiv2407_17672_VFL_SNN` — author list
+- [ ] `arXiv2501_03306_RobustSNNFL` — author list
+- [ ] `arXiv2511_21181_PrivSNNFL` — author list
+- [ ] `arXiv2602_12009_DPSNNFL` — author list
+- [ ] `Shen2023_BitBudget` — venue + co-authors
+- [ ] `Asperti2021_alphaFLOPs` — venue + co-authors
+- [ ] `Chung2026_Joules` — venue + arXiv ID
+- [ ] `Spyra2025_BeyondBackprop` — venue + co-authors
+- [ ] `pFedFDA2024` — confirm NeurIPS 2024 + author list
+
+(`{(authors)}` placeholder convention from `18640f4` S11-D pass — never strip the placeholder, only fill it.)
