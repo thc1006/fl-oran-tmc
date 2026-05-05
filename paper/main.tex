@@ -1,0 +1,88 @@
+% Federated O-RAN Slice SLA Prediction — JSAC submission target
+% Source of truth: docs/PAPER_DRAFT.md (Markdown, this LaTeX file mirrors).
+% Build: see paper/README.md.
+\documentclass[journal]{IEEEtran}
+
+% Math + symbols
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{textcomp}                 % \textmu, \textohm, etc
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    citecolor=blue!50!black,
+    urlcolor=blue!50!black,
+    pdftitle={Federated O-RAN Slice SLA Prediction},
+    pdfauthor={Hao-Chun Tsai}
+}
+
+% Tables + figures
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+
+% Code listings (for inline ``backtick`` constants)
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true}
+
+% Greek inline-text (\(\alpha\) preferred, but for some inline numerics)
+\newcommand{\alphadir}{\ensuremath{\alpha_{\mathrm{dir}}}}
+\newcommand{\alphadyn}{\ensuremath{\alpha_{\mathrm{dyn}}}}
+
+\begin{document}
+
+\title{Federated O-RAN Slice SLA Prediction:\\
+A Cross-Architecture Empirical Benchmark on Colosseum/ColO-RAN}
+
+\author{%
+    Hao-Chun~Tsai,~\IEEEmembership{Student Member,~IEEE}%
+    \thanks{H.-C. Tsai is with the Department of Computer Science,
+    National Yang Ming Chiao Tung University, Hsinchu, Taiwan.
+    E-mail: hctsai1006@cs.nctu.edu.tw.
+    ORCID: 0009-0009-7115-0149.}%
+}
+
+\markboth{IEEE Journal on Selected Areas in Communications}%
+{Tsai: Federated O-RAN Slice SLA Prediction}
+
+\maketitle
+
+\begin{abstract}
+Federated learning (FL) on O-RAN edge gNBs is the natural paradigm for slice-level SLA-violation forecasting because per-user telemetry cannot be centrally pooled. Despite a decade of FL benchmark research, the deployment design space --- sequence model architecture, federation algorithm, client-heterogeneity partition, commodity edge hardware --- has been studied one axis at a time, leaving the joint behaviour under realistic O-RAN traffic characterised only anecdotally. This paper presents the first cross-architecture empirical FL benchmark on the publicly-available Colosseum/ColO-RAN testbed: 3 sequence backbones (LSTM, Mamba, Spiking-SSM) $\times$ 5 algorithms (FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn) $\times$ 6 partitions (natural-by-BS $+$ Dirichlet $\alpha\in\{0.05, 0.10, 0.50, 1.00, 5.00\}$) $\times$ 10 seeds $=$ 900 cells, with NVML idle-baseline-subtracted training-energy measurement on RTX~4080 commodity hardware, augmented by a 15-cell controlled random-split ablation on $4\times$ Tesla V100-SXM2-32GB to probe the leading mechanism hypothesis. We report four empirical findings: (1) \textbf{client heterogeneity in O-RAN is structurally helpful, not harmful} --- the natural base-station partition uniformly outperforms every parametric Dirichlet $\alpha$ across all 3 architectures $\times$ 5 algorithms, inverting the standard FL-benchmark assumption; (2) the algorithm-design space is flat at FedAdam-saturated headroom ($\leq+0.016$~AUC over FedAvg), bounding the room available to recent sharpness-aware methods; (3) selective-state-space backbones interact catastrophically with control-variate algorithms at moderate partition skew (Mamba $\times$ SCAFFOLD $\times$ $\alpha\in\{0.10, 0.50\}$); (4) architecture choice traverses $10\times$ in commodity-GPU energy and an order-of-magnitude larger AUC range than algorithm choice, dwarfing the algorithmic-leverage scale. We provide a reference benchmark with paired-bootstrap CI$_{95}$ over 270 paired distributions, NVML-instrumented per-cell energy, and pre-registered statistical protocol; the artefact is released under Apache-2.0 with Croissant dataset metadata and a Zenodo DOI on paper acceptance.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Federated learning, O-RAN, slice management, SLA prediction, state-space models, spiking neural networks, NVML energy measurement, paired-bootstrap inference.
+\end{IEEEkeywords}
+
+
+\section{Introduction}\label{sec:intro}
+
+\IEEEPARstart{O}{pen} Radio Access Networks (O-RAN) decomposes the cellular base station into commodity hardware components controlled by ML-driven xApps and rApps running on disaggregated RAN Intelligent Controllers (RICs)~\cite{Polese2022}. Slice-level Service Level Agreement (SLA) violation forecasting is one near-RT RIC xApp pattern of practical interest: each gNB simultaneously serves heterogeneous traffic slices (the ColO-RAN release exercises eMBB constant-bitrate, MTC Poisson, and URLLC Poisson --- see Section~\ref{sec:dataset}), and proactive forecasting of next-second SLA risk informs near-RT RIC resource-allocation decisions within its 10\,ms\,--\,1\,s control loop. Because edge gNBs accumulate per-user telemetry that cannot be centrally pooled, federated learning (FL) is the natural training paradigm: each gNB trains a local sequence model on its own traces and shares only weight updates with the FL aggregator. We place the aggregator in the non-RT RIC / SMO orchestration layer ($\geq 1$\,s timescale fits our 100-round federated training cadence per Section~\ref{sec:method}); a near-RT-RIC-internal xApp aggregator would alternatively be possible if cross-cell xApp messaging supports the federation protocol --- we do not engage with that deployment alternative beyond noting it.
+
+Standard FL practice --- codified by a decade of toy-image benchmarks --- treats client heterogeneity as a \emph{wound} to be healed: lower Dirichlet $\alpha$ (more skew) drives lower accuracy, motivating sharpness-aware methods, control variates, and proximal regularizers. \textbf{In O-RAN slice SLA prediction, this premise inverts.} When clients are the \emph{natural} base stations of a Colosseum/ColO-RAN testbed (one client per gNB), the federated average across 7 base-station-natural clients consistently outperforms every uniform-Dirichlet partition of the same training data on the same model + algorithm. Empirically (Section~\ref{sec:results}, all values are out-of-sample test AUC averaged over 10 seeds), the natural-by-BS partition achieves AUC 0.913--0.918 on LSTM (5-algo range; $\Delta\approx0.005$), 0.8998--0.9186 on Mamba (with SCAFFOLD as the lower outlier and the other four algorithms in 0.911--0.919), and 0.840--0.856 on Spiking-SSM, \textbf{strictly above the AUC obtained at any parametric Dirichlet $\alpha$} for every (arch, algo) pair, and monotonically increasing as $\alpha \rightarrow 0$ within the Dirichlet sweep. The $\alpha=5.0 \rightarrow \alpha=0.05$ AUC gap is $\approx 0.10$--$0.12$ on the dense LSTM/Mamba backbones; on Spiking-SSM the gap is smaller ($\approx 0.022$) but still positive, and across all five algorithms heterogeneity is associated with higher AUC, not lower. The mechanism is open --- natural-by-BS is \emph{not} the low-$\alpha$ limit of the Dirichlet sweep (the two partition families redistribute rows along orthogonal axes, see Section~\ref{sec:partition}) --- and we present a controlled \texttt{random\_split} ablation in Section~\ref{sec:ablation} (15 cells $\times$ 3 architectures on $4\times$ Tesla V100-SXM2-32GB) showing that any partition that breaks bs grouping (whether by per-slice Dirichlet redistribution at $\alpha=5.00$ or by uniform random shuffling) collapses AUC to a tight band $\sim 0.18$ below natural-by-BS, and is statistically equivalent to Dirichlet $\alpha=5.00$ within seed $\sigma$. The mechanism direction (preservation of bs grouping) is therefore confirmed; the precise dataset axis the model exploits via bs grouping (channel-state features, see Section~\ref{sec:kl}) remains under further investigation.
+
+% TODO(S11-C): continue §1 from "Despite the explosion of FL benchmarks since 2018"
+% paragraph through the 5 contribution bullets and the §-roadmap final paragraph.
+% Citations to add: LEAF 2018, FedScale 2022, FLAIR 2022, pfl-research 2024,
+% NeuroBench 2025, STEP 2025, Fed-LSTM 2022, arxiv 2508.08479, Mangi 2026,
+% Bonati 2024.
+
+
+% TODO(S11-E): \section{Related Work}\label{sec:related}
+% TODO(S11-E): \section{Dataset}\label{sec:dataset}
+% TODO(S11-E): \section{Method}\label{sec:method}
+% TODO(S11-E): \section{Reproducibility}\label{sec:repro}
+% TODO(S11-F): \section{Results}\label{sec:results}
+% TODO(S11-F): \section{Discussion}\label{sec:discussion}
+% TODO(S11-G): \section{Limitations}\label{sec:limits}
+% TODO(S11-G): \section{Conclusion}\label{sec:conclusion}
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{bibliography}
+
+\end{document}
