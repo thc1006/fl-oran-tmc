@@ -16,7 +16,7 @@ In-progress migration; see PR #1 task tracker `S11-A` through `S11-I`.
 | S11-F | §6–§7 (Results, Discussion) + figures | done (commits `c02843f` §6+3 figures, `6777b68` §7+2 tables) |
 | S11-G | §8–§9 (Limitations, Conclusion) | done (commits `6495f8f` §8+14 bullets, `3718a8d` §9+9 arxiv-cite wires) |
 | S11-H | Supplementary App. A–D | done (`supplementary.tex` standalone IEEEtran, 3pp PDF, 12 \cite{} all resolve) |
-| S11-I | Content-equivalence audit | not started |
+| S11-I | Content-equivalence audit + bib batch lift | done (structural 48/48 main + 17/17 supp; 16 numerical sites verified; 11 bib entries enriched with arXiv IDs/venues from PAPER_DRAFT.md References) |
 
 ## Build
 
@@ -75,33 +75,39 @@ Outputs: `paper/main.pdf` (16pp), `paper/supplementary.pdf` (3pp).
 * `≈ ± × ≥ ≤ →` → `\approx \pm \times \geq \leq \rightarrow`.
 * Figure inputs from `artifacts/figures/*.png` via relative path: `\includegraphics[width=\columnwidth]{../artifacts/figures/pareto.png}`.
 
-## Bibliography TODOs (S11-E pass)
+## Bibliography TODOs (post S11-I batch lift)
 
-Author/venue placeholders introduced during the §2 migration. Each entry has a `{(authors)}` author block or generic `(venue TBD)` slot that must be resolved before camera-ready. Resolve in one batch after S11-E + S11-F + S11-G complete to avoid churn.
+Author/venue placeholders. S11-I batch (commit pending) lifted arXiv IDs and venues from `docs/PAPER_DRAFT.md` References section (L371-421) into bib entries — 11 entries now have arXiv IDs and/or venues that were missing. Remaining placeholders are entries the author's References list also marks as incomplete; they require external lookup at camera-ready.
 
-- [ ] `Shchur2025_fevbench` — fev-bench paper authors + venue (NeurIPS 2025?)
-- [ ] `Statistical2021_B5G` — exact IEEE conf/journal + author list
-- [ ] `CDFaware2021` — IEEE venue + author list
-- [ ] `Groen2023_TRACTOR` — full author list + IEEE venue (likely INFOCOM/Globecom)
-- [ ] `Hayek2025` — full author list + venue
-- [ ] `Chen2024_SpikMamba` — venue (NeurIPS 2024?) + co-authors
+### Resolved by S11-I batch (lifted from PAPER_DRAFT.md References)
+
+- [x] `Shchur2025_fevbench` — added Shchur first author + arXiv:2509.26468
+- [x] `Barker2025_REAL` — added 4-author list + IEEE ICC Workshops 2025 venue
+- [x] `Hayek2025` — added arXiv:2504.04678
+- [x] `Asperti2021_alphaFLOPs` — added 3-author list + arXiv:2107.11949 + LOD 2021 venue
+- [x] `Shen2023_BitBudget` — added arXiv:2311.10802 + CVPR 2024 venue
+- [x] `Chung2026_Joules` — added arXiv:2601.22076
+- [x] `Spyra2025_BeyondBackprop` — added arXiv:2509.19063 + Spyra first author
+- [x] `Li2022_NIIDBench` — added arXiv:2102.02079
+- [x] `arXiv2412_17305_FedLEC` — added IJCAI 2025 venue
+- [x] `arXiv2602_12009_DPSNNFL` — added ICASSP 2026 venue
+- [x] `SpikingPointMamba2025` / `SpikingSSMs2025` — venue confirmed (ICCV 2025 / AAAI 2025); author list TBD note added
+
+### Remaining (need external lookup at camera-ready)
+
+- [ ] `Statistical2021_B5G` — exact IEEE conf/journal + author list (markdown References lists no arxiv ID)
+- [ ] `CDFaware2021` — IEEE venue + author list (markdown References has no specifics)
+- [ ] `Groen2023_TRACTOR` — full author list + specific IEEE venue (likely INFOCOM/Globecom; markdown References gives no specifics)
+- [ ] `Chen2024_SpikMamba` — venue + co-authors (markdown References lists Chen 2024 no arxiv id)
 - [ ] `arXiv2408_11823_MambaSpike` — author list
-- [ ] `SpikingPointMamba2025` — confirm ICCV 2025 + author list
-- [ ] `SpikingSSMs2025` — confirm AAAI 2025 + author list
 - [ ] `arXiv2510_04595_SpikingMamba` — author list
 - [ ] `arXiv2509_05276_SpikingBrain` — author list
 - [ ] `arXiv2106_06579_FLSNN` — author list
-- [ ] `arXiv2412_17305_FedLEC` — author list
 - [ ] `arXiv2407_17672_VFL_SNN` — author list
 - [ ] `arXiv2501_03306_RobustSNNFL` — author list
 - [ ] `arXiv2511_21181_PrivSNNFL` — author list
-- [ ] `arXiv2602_12009_DPSNNFL` — author list
-- [ ] `Shen2023_BitBudget` — venue + co-authors
-- [ ] `Asperti2021_alphaFLOPs` — venue + co-authors
-- [ ] `Chung2026_Joules` — venue + arXiv ID
-- [ ] `Spyra2025_BeyondBackprop` — venue + co-authors
-- [ ] `pFedFDA2024` — confirm NeurIPS 2024 + author list
-- [ ] `Wei2018_atan` — exact paper for the atan surrogate gradient (markdown source says "Wei et al. 2018"; common candidates are Wu et al. 2018 STBP or Neftci et al. 2019; verify before camera-ready)
-- [ ] `FedMoSWA2025` — exact author list + venue (markdown §7.5 lists it alongside FedSWA + FedSCAM; arXiv ID TBD)
+- [ ] `pFedFDA2024` — confirm NeurIPS 2024 venue + full author list
+- [ ] `Wei2018_atan` — exact paper for the atan surrogate gradient (markdown source says "Wei et al. 2018"; cited via snntorch documentation; common candidates are Wu et al. 2018 STBP or Neftci et al. 2019)
+- [ ] `FedMoSWA2025` — exact author list + venue + arXiv ID (markdown §7.5 only lists name)
 
 (`{(authors)}` placeholder convention from `18640f4` S11-D pass — never strip the placeholder, only fill it.)
