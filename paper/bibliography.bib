@@ -1,0 +1,574 @@
+% Bibliography for the JSAC submission. Each entry must correspond to a
+% \cite{key} in main.tex or supplementary.tex. Adding entries via S11-D
+% by walking inline citations in docs/PAPER_DRAFT.md and PAPER_SUPPLEMENTARY.md.
+% Closes audit Finding B (9 dangling arxiv inline refs without §References).
+
+@article{Polese2022,
+    author    = {Polese, Michele and Bonati, Leonardo and D'Oro, Salvatore
+                 and Basagni, Stefano and Melodia, Tommaso},
+    title     = {{ColO-RAN}: Developing Machine Learning-based {xApps} for
+                 {Open RAN} Closed-loop Control on Programmable Experimental
+                 Platforms},
+    journal   = {IEEE Transactions on Mobile Computing},
+    year      = {2022}
+}
+
+@article{Bonati2024,
+    author    = {Bonati, Leonardo and others},
+    title     = {{Colosseum}: Large-Scale Wireless Experimentation Through
+                 Hardware-in-the-Loop Network Emulation},
+    journal   = {IEEE Open Journal of the Communications Society},
+    year      = {2024},
+    month     = aug
+}
+
+% --- FL benchmarks (S11-C / §1 paragraph 3 + §2.1) ---
+
+@article{Caldas2018_LEAF,
+    author    = {Caldas, Sebastian and Duddu, Sai Meher Karthik and Wu, Peter
+                 and Li, Tian and Kone\v{c}n\'y, Jakub and McMahan, H. Brendan
+                 and Smith, Virginia and Talwalkar, Ameet},
+    title     = {{LEAF}: A Benchmark for Federated Settings},
+    journal   = {arXiv:1812.01097},
+    year      = {2018}
+}
+
+@inproceedings{Lai2022_FedScale,
+    author    = {Lai, Fan and Dai, Yinwei and Zhu, Xiangfeng and Madhyastha,
+                 Harsha V. and Chowdhury, Mosharaf},
+    title     = {{FedScale}: Benchmarking Model and System Performance of
+                 Federated Learning at Scale},
+    booktitle = {ICML},
+    year      = {2022}
+}
+
+@misc{Song2022_FLAIR,
+    author    = {Song, others},
+    title     = {{FLAIR}: Federated Learning Annotated Image Repository},
+    year      = {2022}
+}
+
+@inproceedings{Granqvist2024_pflresearch,
+    author    = {Granqvist, Filip and others},
+    title     = {{pfl-research}: Simulation Framework for Accelerating
+                 Federated Learning Research},
+    booktitle = {NeurIPS Datasets and Benchmarks},
+    note      = {arXiv:2404.06430},
+    year      = {2024}
+}
+
+% --- Spiking benchmarks (§2.3) ---
+
+@article{Shen2025_STEP,
+    author    = {Shen, others},
+    title     = {{STEP}: A Unified Spiking Transformer Evaluation Platform for
+                 Fair and Reproducible Benchmarking},
+    journal   = {arXiv:2505.11151},
+    year      = {2025}
+}
+
+% --- Cellular FL on real telemetry (§1 paragraph 4) ---
+
+@misc{FedLSTM2022,
+    author    = {{(authors)}},
+    title     = {{Fed-LSTM}: {LSTM} Forecaster for Slice-level Traffic in Cellular {FL}},
+    year      = {2022}
+}
+
+@misc{arXiv2508_08479,
+    author    = {{(authors)}},
+    title     = {{FedAvg/FedProx/FedBN} benchmark on five throughput-prediction datasets},
+    note      = {arXiv:2508.08479},
+    year      = {2025}
+}
+
+@misc{Mangi2026,
+    author    = {Mangi and others},
+    title     = {{When Clients Drift}: Regime-aware Aggregation in {6G} {RAN} Telemetry},
+    year      = {2026}
+}
+
+% --- Algorithms cited from §1 contribution 2 (mechanism dismissal) ---
+
+@inproceedings{Liu2025_FedSWA,
+    author    = {Liu, Junwei and others},
+    title     = {{FedSWA}: Federated Stochastic Weight Averaging},
+    booktitle = {ICML},
+    year      = {2025},
+    note      = {arXiv:2507.20016}
+}
+
+@inproceedings{Li2021_FedBN,
+    author    = {Li, Xiaoxiao and Jiang, Meirui and Zhang, Xiaofei
+                 and Kamp, Michael and Dou, Qi},
+    title     = {{FedBN}: Federated Learning on Non-{IID} Features
+                 via Local Batch Normalization},
+    booktitle = {ICLR},
+    year      = {2021},
+    note      = {arXiv:2102.07623}
+}
+
+% --- 9 previously-dangling arxiv refs from §9.1 future-work / App. D ---
+% Acceptance criteria for GH-related audit Finding B: every \cite{} in
+% main.tex or supplementary.tex must have a BibTeX entry. These will be
+% wired in once §9.1 / App. D are migrated (S11-G / S11-H).
+
+@misc{Borges2025,
+    author    = {Borges and others},
+    title     = {Per-axis Isolation Methodology for {FL} Heterogeneity Studies},
+    note      = {arXiv:2503.17070},
+    year      = {2025}
+}
+
+@misc{ProFed2025,
+    author    = {{(authors)}},
+    title     = {{ProFed}: Proximity-partition Framing for {FL}},
+    note      = {arXiv:2503.20618},
+    year      = {2025}
+}
+
+@misc{arXiv2504_16185,
+    author    = {{(authors)}},
+    title     = {Rare-event Metric Stability Under Threshold Perturbation},
+    note      = {arXiv:2504.16185},
+    year      = {2025}
+}
+
+@misc{Chiarani2025,
+    author    = {Chiarani and others},
+    title     = {{FL} at the 100-client Regime},
+    note      = {arXiv:2503.12435},
+    year      = {2025}
+}
+
+@misc{Sezgin2025,
+    author    = {Sezgin and others},
+    title     = {Cross-device {FL} Scaling Study},
+    note      = {arXiv:2509.11421},
+    year      = {2025}
+}
+
+@misc{FedSCAM2026,
+    title     = {{FedSCAM}: Sharpness-aware Clustering for Federated Learning},
+    note      = {arXiv:2601.00853 (Jan 2026)},
+    year      = {2026}
+}
+
+@misc{FedSynSAM2026,
+    author    = {{(authors)}},
+    title     = {{FedSynSAM}: Trajectory-matched Sharpness-aware Federated Learning},
+    note      = {arXiv:2602.11584},
+    year      = {2026}
+}
+
+@misc{arXiv2510_23463,
+    author    = {{(authors)}},
+    title     = {Differential Privacy via Over-the-air Channel Noise in Federated Learning},
+    note      = {arXiv:2510.23463},
+    year      = {2026}
+}
+
+@misc{arXiv2502_01330,
+    author    = {{(authors)}},
+    title     = {Neuromorphic {FL} Deployment on {Loihi 2} with Sparse {RNN} Kernels},
+    note      = {arXiv:2502.01330},
+    year      = {2025}
+}
+
+@misc{arXiv2604_27004,
+    author    = {{(authors)}},
+    title     = {Sparse {RNN} Kernels for Neuromorphic Inference},
+    note      = {arXiv:2604.27004},
+    year      = {2026}
+}
+
+% =====================================================================
+% S11-E §2 Related Work entries (added 2026-05-05).
+% Author/venue placeholders are tracked in paper/README.md "Bibliography
+% TODOs" and resolved at camera-ready.
+% =====================================================================
+
+% --- §2.1 FL benchmarks (additions) ---
+
+@misc{Beutel2020_Flower,
+    author    = {Beutel, Daniel J. and Topal, Taner and Mathur, Akhil
+                 and Qiu, Xinchi and Parcollet, Titouan and de Gusm{\~a}o,
+                 Pedro Porto Buarque and Lane, Nicholas D.},
+    title     = {{Flower}: A Friendly Federated Learning Research Framework},
+    note      = {arXiv:2007.14390},
+    year      = {2020}
+}
+
+@misc{Shchur2025_fevbench,
+    author    = {Shchur, Oleksandr and others},
+    title     = {{fev-bench}: A Realistic Benchmark for Time Series Forecasting},
+    note      = {arXiv:2509.26468},
+    year      = {2025}
+}
+
+% --- §2.2 FL on cellular and wireless ---
+
+@article{Statistical2021_B5G,
+    author    = {{(authors)}},
+    title     = {Statistical Federated Learning for Beyond-5G {SLA}-Constrained
+                 {RAN} Slicing},
+    journal   = {IEEE},
+    note      = {Source markdown lists no arXiv ID; specific paper requires
+                 external lookup at camera-ready},
+    year      = {2021}
+}
+
+@article{CDFaware2021,
+    author    = {{(authors)}},
+    title     = {{CDF}-Aware Federated Learning for {RAN} Slicing under
+                 Long-Term {SLA} Constraints},
+    journal   = {IEEE},
+    note      = {Source markdown lists no arXiv ID; specific paper requires
+                 external lookup at camera-ready},
+    year      = {2021}
+}
+
+@misc{Groen2023_TRACTOR,
+    author    = {Groen, Joshua and Yang, Zixian and Muruganandham,
+                 Divyadharshini and Belgiovine, Mauro and Ying, Lei
+                 and Chowdhury, Kaushik},
+    title     = {From Classification to Optimization: Slicing and Resource
+                 Management with {TRACTOR}},
+    note      = {arXiv:2312.07896},
+    year      = {2023}
+}
+
+@inproceedings{Barker2025_REAL,
+    author    = {Barker, R. and Ebrahimi Dorcheh, A. and Seyfi, T.
+                 and Afghah, F.},
+    title     = {{REAL}: Reinforcement Learning-Enabled {xApps} for
+                 Experimental Closed-Loop Optimization in {O-RAN}
+                 with {OSC RIC} and {srsRAN}},
+    booktitle = {IEEE ICC Workshops},
+    note      = {arXiv:2502.00715},
+    year      = {2025}
+}
+
+@misc{Hayek2025,
+    author    = {Hayek and others},
+    title     = {Empirical Evaluation of Federated Learning Convergence over
+                 Heterogeneous {COTS} Networks},
+    note      = {arXiv:2504.04678},
+    year      = {2025}
+}
+
+% --- §2.3 Spiking-SSM and FL × SNN ---
+
+@inproceedings{Chen2024_SpikMamba,
+    author    = {Chen, Jiaqi and Yang, Yan and Deng, Shizhuo and Teng, Da
+                 and Pan, Liyuan},
+    title     = {{SpikMamba}: When {SNN} Meets {Mamba} in Event-based
+                 Human Action Recognition},
+    booktitle = {6th ACM International Conference on Multimedia in Asia
+                 ({MMAsia})},
+    note      = {arXiv:2410.16746},
+    year      = {2024}
+}
+
+@inproceedings{arXiv2408_11823_MambaSpike,
+    author    = {Qin, Jiahao and Liu, Feng},
+    title     = {{Mamba-Spike}: Enhancing the {Mamba} Architecture with a
+                 Spiking Front-End for Efficient Temporal Data Processing},
+    booktitle = {Computer Graphics International (CGI)},
+    note      = {arXiv:2408.11823},
+    year      = {2024}
+}
+
+@inproceedings{SpikingPointMamba2025,
+    author    = {{(authors)}},
+    title     = {Spiking Point {Mamba} for {3D} Point Cloud Processing},
+    booktitle = {ICCV},
+    note      = {Author list TBD at camera-ready},
+    year      = {2025}
+}
+
+@inproceedings{SpikingSSMs2025,
+    author    = {{(authors)}},
+    title     = {{SpikingSSMs}: Sparse-Parallel Spiking State-Space Models},
+    booktitle = {AAAI},
+    note      = {Author list TBD at camera-ready},
+    year      = {2025}
+}
+
+@article{arXiv2510_04595_SpikingMamba,
+    author    = {Huang, Yulong and Tang, Jianxiong and Wang, Chao and
+                 Wang, Ziyi and Zhang, Jianguo and Lu, Zhichao and
+                 Cheng, Bojun and Leng, Luziwei},
+    title     = {{SpikingMamba}: Towards Energy-Efficient Large Language
+                 Models via Knowledge Distillation from {Mamba}},
+    journal   = {Transactions on Machine Learning Research (TMLR)},
+    note      = {arXiv:2510.04595},
+    year      = {2026}
+}
+
+@misc{arXiv2509_05276_SpikingBrain,
+    author    = {Pan, Yuqi and Feng, Yupeng and Zhuang, Jinghao and
+                 Ding, Siyu and Xu, Han and Liu, Zehao and Sun, Bohan
+                 and Chou, Yuhong and Qiu, Xuerui and Deng, Anlin
+                 and Hu, Anjie and Wang, Shurong and Zhou, Peng
+                 and Yao, Man and Wu, Jibin and Yang, Jian
+                 and Sun, Guoliang and Xu, Bo and Li, Guoqi},
+    title     = {{SpikingBrain}: Spiking Brain-inspired Large Models},
+    note      = {arXiv:2509.05276},
+    year      = {2025}
+}
+
+@article{arXiv2106_06579_FLSNN,
+    author    = {Venkatesha, Yeshwanth and Kim, Youngeun and
+                 Tassiulas, Leandros and Panda, Priyadarshini},
+    title     = {Federated Learning with Spiking Neural Networks},
+    journal   = {IEEE Transactions on Signal Processing},
+    note      = {arXiv:2106.06579},
+    year      = {2021}
+}
+
+@inproceedings{arXiv2412_17305_FedLEC,
+    author    = {{(authors)}},
+    title     = {{FedLEC}: Federated Learning with Spiking Neural Networks
+                 under Label-skew Non-IID},
+    booktitle = {IJCAI},
+    note      = {arXiv:2412.17305},
+    year      = {2025}
+}
+
+@misc{arXiv2407_17672_VFL_SNN,
+    author    = {Abbasihafshejani, Maryam and Maiti, Anindya
+                 and Jadliwala, Murtuza},
+    title     = {Spiking Neural Networks in Vertical Federated Learning:
+                 Performance Trade-offs},
+    note      = {arXiv:2407.17672},
+    year      = {2024}
+}
+
+@misc{arXiv2501_03306_RobustSNNFL,
+    author    = {Nguyen, Manh V. and Zhao, Liang and Deng, Bobin
+                 and Wu, Shaoen},
+    title     = {The Robustness of Spiking Neural Networks in Federated
+                 Learning with Compression Against Non-omniscient
+                 {Byzantine} Attacks},
+    note      = {arXiv:2501.03306},
+    year      = {2025}
+}
+
+@misc{arXiv2511_21181_PrivSNNFL,
+    author    = {Aksu, Dogukan and Martinez del Rincon, Jesus
+                 and Alouani, Ihsen},
+    title     = {Privacy in Federated Learning with Spiking Neural Networks},
+    note      = {arXiv:2511.21181},
+    year      = {2025}
+}
+
+@inproceedings{arXiv2602_12009_DPSNNFL,
+    author    = {{(authors)}},
+    title     = {Firing-rate Sensitivity to Differential Privacy in Federated
+                 Spiking Neural Networks},
+    booktitle = {ICASSP},
+    note      = {arXiv:2602.12009 (Feb 2026)},
+    year      = {2026}
+}
+
+@inproceedings{GuDao2023_Mamba,
+    author    = {Gu, Albert and Dao, Tri},
+    title     = {{Mamba}: Linear-Time Sequence Modeling with Selective
+                 State Spaces},
+    booktitle = {COLM},
+    note      = {arXiv:2312.00752},
+    year      = {2024}
+}
+
+% --- §2.4 GPU energy measurement methodology ---
+
+@inproceedings{Shen2023_BitBudget,
+    author    = {Shen and others},
+    title     = {Is Conventional {SNN} Really Efficient? A Perspective from
+                 Network Quantization},
+    booktitle = {CVPR},
+    note      = {arXiv:2311.10802; venue: CVPR 2024},
+    year      = {2024}
+}
+
+@inproceedings{Asperti2021_alphaFLOPs,
+    author    = {Asperti, Andrea and Evangelista, Davide and Marzolla, Moreno},
+    title     = {Dissecting {FLOPs} along Input Dimensions for {GreenAI}
+                 Cost Estimations},
+    booktitle = {LOD},
+    note      = {arXiv:2107.11949},
+    year      = {2021}
+}
+
+@article{Yik2025_NeuroBench,
+    author    = {Yik, Jason and others},
+    title     = {{NeuroBench}: A Framework for Benchmarking Neuromorphic
+                 Computing Algorithms and Systems},
+    journal   = {Nature Communications},
+    year      = {2025}
+}
+
+@misc{Chung2025_MLEnergy,
+    author    = {Chung, Jae-Won and others},
+    title     = {The {ML.ENERGY} Benchmark: Measuring Inference Energy of
+                 Generative {AI} Models},
+    note      = {arXiv:2505.06371},
+    year      = {2025}
+}
+
+@misc{Chung2026_Joules,
+    author    = {Chung, Jae-Won and others},
+    title     = {Where Do the Joules Go? Diagnosing Inference Energy
+                 Consumption},
+    note      = {arXiv:2601.22076},
+    year      = {2026}
+}
+
+@misc{Spyra2025_BeyondBackprop,
+    author    = {Spyra, P.},
+    title     = {Beyond Backpropagation: Exploring Innovative Algorithms for
+                 Energy-Efficient Deep Neural Network Training},
+    note      = {arXiv:2509.19063},
+    year      = {2025}
+}
+
+% --- §2.5 Heterogeneity in federated learning ---
+
+@inproceedings{Li2022_NIIDBench,
+    author    = {Li, Qinbin and Diao, Yiqun and Chen, Quan and He, Bingsheng},
+    title     = {{NIID-Bench}: Federated Learning on Non-{IID} Data Silos:
+                 An Experimental Study},
+    booktitle = {ICDE},
+    note      = {arXiv:2102.02079},
+    year      = {2022}
+}
+
+@inproceedings{pFedFDA2024,
+    author    = {Mclaughlin, Connor J. and Su, Lili},
+    title     = {Personalized Federated Learning via Feature Distribution
+                 Adaptation},
+    booktitle = {NeurIPS},
+    note      = {arXiv:2411.00329},
+    year      = {2024}
+}
+
+@misc{Borazjani2025,
+    author    = {Borazjani and others},
+    title     = {Embedding-based Heterogeneity Definitions for Federated
+                 Learning beyond Label-skew},
+    note      = {arXiv:2503.14553},
+    year      = {2025}
+}
+
+% --- §2.6 Sharpness-aware federated learning ---
+
+@inproceedings{Caldarola2022_FedSAM,
+    author    = {Caldarola, Debora and Caputo, Barbara and Ciccone, Marco},
+    title     = {Improving Generalization in Federated Learning by Seeking
+                 Flat Minima ({FedSAM})},
+    booktitle = {ECCV},
+    year      = {2022}
+}
+
+% =====================================================================
+% S11-E §4 Method entries: 5 FL algorithms + Dirichlet construction +
+% surrogate-gradient (added 2026-05-05). All except Wei2018_atan are
+% canonical references with well-known citation keys.
+% =====================================================================
+
+@inproceedings{McMahan2017_FedAvg,
+    author    = {McMahan, H. Brendan and Moore, Eider and Ramage, Daniel
+                 and Hampson, Seth and Ag{\"u}era y Arcas, Blaise},
+    title     = {Communication-Efficient Learning of Deep Networks from
+                 Decentralized Data},
+    booktitle = {AISTATS},
+    year      = {2017}
+}
+
+@inproceedings{Li2020_FedProx,
+    author    = {Li, Tian and Sahu, Anit Kumar and Zaheer, Manzil and
+                 Sanjabi, Maziar and Talwalkar, Ameet and Smith, Virginia},
+    title     = {Federated Optimization in Heterogeneous Networks
+                 ({FedProx})},
+    booktitle = {MLSys},
+    year      = {2020}
+}
+
+@inproceedings{Reddi2021_FedAdam,
+    author    = {Reddi, Sashank J. and Charles, Zachary and Zaheer, Manzil
+                 and Garrett, Zachary and Rush, Keith and Kone\v{c}n\'y,
+                 Jakub and Kumar, Sanjiv and McMahan, H. Brendan},
+    title     = {Adaptive Federated Optimization ({FedAdam})},
+    booktitle = {ICLR},
+    year      = {2021}
+}
+
+@inproceedings{Karimireddy2020_SCAFFOLD,
+    author    = {Karimireddy, Sai Praneeth and Kale, Satyen and
+                 Mohri, Mehryar and Reddi, Sashank J. and Stich, Sebastian U.
+                 and Suresh, Ananda Theertha},
+    title     = {{SCAFFOLD}: Stochastic Controlled Averaging for
+                 Federated Learning},
+    booktitle = {ICML},
+    year      = {2020}
+}
+
+@inproceedings{Acar2021_FedDyn,
+    author    = {Acar, Durmus Alp Emre and Zhao, Yue and Navarro,
+                 Ramon Matas and Mattina, Matthew and Whatmough, Paul N.
+                 and Saligrama, Venkatesh},
+    title     = {Federated Learning Based on Dynamic Regularization
+                 ({FedDyn})},
+    booktitle = {ICLR},
+    year      = {2021}
+}
+
+@inproceedings{Li2021_MOON,
+    author    = {Li, Qinbin and He, Bingsheng and Song, Dawn},
+    title     = {Model-Contrastive Federated Learning ({MOON})},
+    booktitle = {CVPR},
+    year      = {2021}
+}
+
+@inproceedings{Hsu2019_Dirichlet,
+    author    = {Hsu, Tzu-Ming Harry and Qi, Hang and Brown, Matthew},
+    title     = {Measuring the Effects of Non-Identical Data Distribution
+                 for Federated Visual Classification},
+    booktitle = {NeurIPS Workshop on Federated Learning},
+    note      = {arXiv:1909.06335},
+    year      = {2019}
+}
+
+@misc{Wei2018_atan,
+    author    = {Neftci, Emre O. and Mostafa, Hesham and Zenke, Friedemann},
+    title     = {Surrogate Gradient Learning in Spiking Neural Networks:
+                 Bringing the Power of Gradient-based Optimization to
+                 Spiking Neural Networks},
+    journal   = {IEEE Signal Processing Magazine},
+    note      = {arXiv:1901.09948; canonical surrogate-gradient reference
+                 underlying snntorch's \texttt{ATan} surrogate. The
+                 ``Wei et al.\ 2018'' attribution in source markdown
+                 corresponds to no verifiable paper; this Neftci 2019
+                 survey is the authoritative reference for the surrogate-
+                 gradient method snntorch implements. Cite key retained
+                 to avoid main.tex churn.},
+    year      = {2019}
+}
+
+% =====================================================================
+% S11-F §7 Discussion entries (added 2026-05-05).
+% =====================================================================
+
+@inproceedings{FedMoSWA2025,
+    author    = {Liu, Junwei and others},
+    title     = {Improving Generalization in Federated Learning with Highly
+                 Heterogeneous Data via Momentum-Based Stochastic Controlled
+                 Weight Averaging ({FedMoSWA})},
+    booktitle = {ICML},
+    note      = {arXiv:2507.20016 (companion algorithm to Liu2025\_FedSWA;
+                 same paper, separate cite key for the momentum variant)},
+    year      = {2025}
+}
+
+% Add further entries as later sections (S11-F onwards) are migrated.

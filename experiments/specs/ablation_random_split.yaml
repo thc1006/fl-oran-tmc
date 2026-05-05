@@ -1,0 +1,57 @@
+# Mechanism ablation: random_split vs natural-by-BS (PAPER §7)
+#
+# Question: does the natural-by-BS dominance over Dirichlet partitions in
+# Phase 5 come from the bs_id grouping structure, or from elsewhere?
+#
+# Test: add a partition mode (`random_split`) that breaks both bs_id and
+# slice_id grouping by uniformly random row-to-client assignment, while
+# preserving per-client sample-size balance. Compare to Phase 5's existing
+# natural-by-BS (mode="iid") and Dirichlet results.
+#
+# Cells: 3 archs × 1 algo (FedAvg) × 1 partition (random_split) × 5 seeds
+#        = 15 cells (the natural-by-BS baseline already exists in
+#        artifacts/v7_stage2_full/v7_*_fedavg_iid_n7_s* — 30 cells of those)
+#
+# Hardware target: 4× V100-SXM2-32GB (ablation runs on V100, NOT 4080).
+# Result interpretation: see ADR (to be written) once cells complete.
+
+description: §7 mechanism ablation — random_split partition (4× V100)
+adr_reference: PAPER §7 mechanism question
+
+algorithms:
+  - name: fedavg
+    kwargs: {}
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+partitions:
+  - mode: random_split
+    n_clients: 7
+
+seeds: [42, 0, 1, 2, 3]
+
+shared:
+  num_rounds: 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 5.0e-4
+    lr_warmup_rounds: 5

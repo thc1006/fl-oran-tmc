@@ -1,0 +1,148 @@
+% Supplementary Material for "Federated O-RAN Slice SLA Prediction"
+% Source of truth: docs/PAPER_SUPPLEMENTARY.md (Markdown, this LaTeX file mirrors).
+% Build: see paper/README.md (same toolchain as main.tex).
+\documentclass[journal]{IEEEtran}
+
+% Math + symbols
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    citecolor=blue!50!black,
+    urlcolor=blue!50!black,
+    pdftitle={Supplementary Material: Federated O-RAN Slice SLA Prediction},
+    pdfauthor={Hao-Chun Tsai}
+}
+
+% Tables + figures
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+
+% Code listings
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true}
+
+% Greek macros (mirror main.tex preamble)
+\newcommand{\alphadir}{\ensuremath{\alpha_{\mathrm{dir}}}}
+\newcommand{\alphadyn}{\ensuremath{\alpha_{\mathrm{dyn}}}}
+\newcommand{\alphala}{\ensuremath{\alpha_{\mathrm{LA}}}}
+
+\begin{document}
+
+\title{Supplementary Material for:\\
+Federated O-RAN Slice SLA Prediction:\\
+A Cross-Architecture Empirical Benchmark on Colosseum/ColO-RAN}
+
+\author{%
+    Hao-Chun~Tsai,~\IEEEmembership{Student Member,~IEEE}%
+    \thanks{H.-C. Tsai is with the Department of Computer Science,
+    National Yang Ming Chiao Tung University, Hsinchu, Taiwan.
+    E-mail: hctsai1006@cs.nctu.edu.tw.
+    ORCID: 0009-0009-7115-0149.}%
+}
+
+\markboth{IEEE Journal on Selected Areas in Communications --- Supplementary Material}%
+{Tsai: Federated O-RAN Slice SLA Prediction (Supplementary)}
+
+\maketitle
+
+Cross-architecture federated-learning benchmark on Colosseum/ColO-RAN: per-section appendix material moved out of the main paper for length compliance with IEEE journal main-body conventions. Each section heading carries the originating main-paper section in parentheses.
+
+
+\appendices
+
+\section{Mechanism analysis details (extends \S\,7.1)}\label{app:mechanism}
+
+\subsection{Applicability boundary (extends \S\,7.1.3)}\label{app:applicability}
+
+The empirical finding (natural-by-BS dominance and inverted $\alphadir$ monotonicity) is dataset-structural, not algorithm-mechanistic. We therefore expect it to replicate whenever a FL deployment satisfies (a)~clients are partitioned along an axis on which the dataset has measurable distributional heterogeneity (here: \lstinline|bs_id|), (b)~the alternative partition strategy redistributes rows along an orthogonal axis that \emph{does not} correspond to dataset structure (here: \lstinline|slice_id|, which is statistically uniform across \lstinline|bs_id|s in this corpus). Conversely, datasets where the natural client partition has uniform marginals on every axis would be expected to behave classically (lower $\alphadir \Rightarrow$ harder). We conjecture similar inversion will appear in other near-RT RIC forecasting workloads (uplink throughput-violation prediction, latency-budget breach prediction) where per-gNB telemetry distributions differ measurably; quantitative verification on additional corpora is open future work.
+
+\subsection{Hardware drift caveat for the \S\,7.1.1 ablation (extends \S\,7.1.4)}\label{app:hardware-drift}
+
+The \S\,7.1.1 \lstinline|random_split| ablation cells were run on $4 \times$ Tesla V100-SXM2-32GB (sm\_70, driver 535.161, CUDA 12.1) while the Phase~5 baseline (natural-by-BS and Dirichlet partitions) was run on RTX~4080 (sm\_89). The two GPU generations have different bf16 implementations (V100 emulates bf16 via fp16 tensor cores with possible fp32 fallback; Lovelace has native bf16 tensor cores), and \lstinline|cudnn_deterministic=True| pins kernel choice within a hardware target but does not impose bit-equivalence across hardware. We bound the resulting AUC drift by comparing V100 \lstinline|random_split| AUC to 4080 Dirichlet $\alphadir = 5.00$ AUC (both are partition strategies that destroy bs grouping, so they should yield equivalent AUC under hardware-independent training): the residual delta is at most $0.0072$ (LSTM), $0.0043$ (Mamba), $0.0021$ (Spiking-SSM), all within the corresponding seed $\sigma$. Hardware drift is therefore bounded above by $\sim 0.007$ AUC, more than an order of magnitude smaller than the $\sim 0.18$ mechanism signal (ratio $\approx 25\times$). Strict elimination of hardware confound would require re-running Phase~5's IID column on V100 ($\approx 10$~GPU-hours on the $4\times$ cluster); we did not undertake this because the bounded-drift argument is sufficient to interpret \S\,7.1.1's ablation conclusion.
+
+
+\section{Reproducibility infrastructure detail (extends \S\,5)}\label{app:repro}
+
+\subsection{Test infrastructure (extends \S\,5.2)}\label{app:tests}
+
+The release ships \textbf{277 passing tests} across four suites that protect numerical and pipeline-level invariants:
+
+\begin{itemize}
+  \item \lstinline|tests/test_v7_*.py| --- 202 unit + integration tests for \lstinline|fl_v7| trainer (model-build, partition correctness, scaler determinism, FedDyn canonical-vs-Option-II contract).
+  \item \lstinline|tests/test_aggregate_v7_results.py| --- 22 tests for the aggregator (paired-bootstrap, BLAKE2b decorrelation, JSON round-trip, schema-mismatch detection, 1260-cell scaling).
+  \item \lstinline|tests/test_paper_draft_invariants.py| --- 37 paper-text invariants (forbidden hallucinated facts; required corrected facts; license consistency; hardware specs).
+  \item \lstinline|tests/test_paper_claims_sources.py| --- 16 paper-vs-data claims tests that re-read \lstinline|artifacts/step1_factfinding.json|, \lstinline|step2_mechanism_search.json|, and \lstinline|aggregated_phase5.json| and assert paper-reported numbers match the underlying measurements within rounding tolerance.
+\end{itemize}
+
+The latter two suites (53 tests total) form a paper-correctness developer pre-commit gate: every \lstinline|PAPER_DRAFT.md| edit is verified by re-running them, preventing quick-claim regressions.
+
+\subsection{Statistical pipeline (extends \S\,5.3)}
+
+\lstinline|scripts/aggregate_v7_results.py| consumes the per-cell \lstinline|summary.json| files and produces \lstinline|aggregated_phase5.json| (90 group means $+$ 270 paired-bootstrap distributions: 180 algorithm-pairs $+$ 90 architecture-pairs) plus a paper-grade Markdown table. Each pairwise comparison's bootstrap RNG seed is derived from a BLAKE2b hash of the pair identifier added to a base seed (2026 for algorithm-pairs, 2027 for arch-pairs), guaranteeing independent bootstrap streams across all 270 distributions and supporting joint coverage claims (\S\,4.5).
+
+\subsection{Croissant dataset metadata (extends \S\,5.4)}
+
+The Colosseum/ColO-RAN public release is upstream-licensed; our preprocessed \lstinline|coloran_raw_unified.parquet| ($\approx 18$\,M rows) and the partition specifications are documented in a Croissant 1.0 metadata file shipped with the release archive. The metadata block describes the (\lstinline|bs_id|, \lstinline|slice_id|, \lstinline|sched|, \lstinline|tr|) keying, the 17 continuous features (\S\,3.1), the OOD train/val/test split (\S\,3.3), and the \lstinline|add_classification_target| derivation rule (\S\,3.2).
+
+\subsection{Reproducible execution environment (extends \S\,5.5)}
+
+The release archive bundles:
+
+\begin{itemize}
+  \item \lstinline|Dockerfile.repro| --- pinned to the exact CUDA / PyTorch / \lstinline|nvidia-ml-py| versions used in Phase~5 (CUDA 12.8, PyTorch 2.10, \lstinline|nvidia-ml-py| 12.x);
+  \item \lstinline|requirements.lock| --- SHA256-pinned Python dependencies (74 packages);
+  \item \lstinline|repro.sh| --- one-line entry point that loads the parquet, runs a 1-cell smoke (LSTM, FedAvg, IID, \lstinline|seed=42|, 5 rounds $\times$ 20 max-steps, $\sim 30$\,s on RTX~4080), and verifies bit-equivalent test AUC against a stored reference value within $10^{-6}$.
+\end{itemize}
+
+\subsection{Demo notebook (extends \S\,5.6)}
+
+A Jupyter notebook (\lstinline|notebooks/colosseum_oran_federated_slicing_demo.ipynb|) walks through (a)~loading aggregator JSON, (b)~reproducing Figures~1--3, (c)~running a downscaled smoke version of the \S\,7.1.1 \lstinline|random_split| ablation on a single GPU (the full ablation runs on the $4\times$ V100 setup documented in App.~\ref{app:hardware-drift}), and (d)~regenerating \S\,6 paired-bootstrap CI$_{95}$ from raw cells. The notebook is the recommended onboarding entry point for downstream researchers extending the benchmark.
+
+
+\section{Extended limitations and threats to validity (extends \S\,8)}\label{app:limits}
+
+Each subsection below holds the full prose of an \S\,8 limitation whose main-paper bullet was condensed to a 1--2 sentence headline. The \S\,1 contribution(s) each item threatens are stated in the main-paper \S\,8 bullet headers.
+
+\textbf{A note on internal references in C.1--C.6:} ``Stage 1'' refers to the predecessor centralized 3-architecture benchmark on ColO-RAN (LSTM, Mamba, Spiking-SSM) whose preregistered hardware budget, precision policy, and gradient-step count are inherited by Phase~5 (the federated extension reported in this paper). ``ADR-001 D-N'' denotes the $N$-th preregistered design decision in the project's Architecture Decision Record. Both artefacts are documented in the release archive for downstream reproduction.
+
+\subsection{L9 full discussion: \lstinline|pos_weight_split=train| choice (extends \S\,8 L9)}
+
+We compute the BCE positive-class weight from the train partition's positive rate (per ADR-001 D-12), in line with standard practice that prevents test-set positive-rate from leaking into the loss. Two alternative computations (val-derived \lstinline|pos_weight|; held-out-fold \lstinline|pos_weight|) would also be valid and might shift absolute AUC numbers slightly, but per \S\,7.1 our V100 \lstinline|random_split| ablation confirms the inverted-$\alphadir$ mechanism direction is robust to the partition-axis shuffle, and the BCE loss reweighting is identical (globally pooled) across all clients regardless of which split the rate is computed from --- so the \emph{direction} of all our findings is invariant to this choice.
+
+\subsection{L10 full discussion: bf16 mixed-precision training versus fp32 (extends \S\,8 L10)}
+
+All Phase~5 cells use bf16 mixed precision per the Stage~1 inheritance contract for memory and throughput on RTX~4080. The numerical-precision gap between bf16 and fp32 is bounded for our model architectures by the lack of overflow-prone operations (no exponential losses, no large-fan-in matmul without LayerNorm); we do not report a fp32 verification cell and treat bf16 vs fp32 cross-check as a reproducibility-supplementary item for the camera-ready archive. Readers reproducing on hardware without native bf16 (Pascal sm\_60 and earlier) should expect $O(0.001)$ AUC drift.
+
+\subsection{L11 full discussion: per-client compute budget split (extends \S\,8 L11)}
+
+Our (round, max\_steps) configuration matches Stage~1's audit-corrected 25\,000 total-gradient-steps budget. An alternative split (e.g., 50 rounds $\times$ 100 max-steps, 200 rounds $\times$ 25 max-steps) would shift the round-vs-step ratio and potentially affect server-side aggregation count by $2$--$4\times$; we did not sweep this dimension, treating round count as a fixed reproducibility anchor. Whether the FedAdam-saturates-headroom finding (\S\,6.3) survives at $4\times$ more rounds with proportionally fewer steps per round is open.
+
+\subsection{L12 full discussion: SLA-threshold sensitivity (extends \S\,8 L12)}
+
+The $10\%$ BLER threshold is the canonical ColO-RAN SLA gate~\cite{Polese2022}; the empirical positive rate at this threshold on the train partition is $30.9\%$ (\S\,7.1 setup-level facts). A threshold sweep over $5\%$ / $15\%$ / $20\%$ would test whether the inverted-$\alphadir$ monotonicity strengthens at sparser-positive regimes (where any structural specialisation has higher loss-leverage) and weakens at higher thresholds; we did not run this sweep but predict (a)~inversion strengthens as threshold tightens and (b)~inversion weakens or disappears as threshold approaches the symmetric $50\%$ regime. This is the highest-leverage open ablation for the camera-ready revision after \S\,7.1.1.
+
+\subsection{L13 full discussion: bootstrap CI percentile vs BCa (extends \S\,8 L13)}
+
+\S\,4.5 explains the choice: at our $n = 10$ paired seeds with approximately symmetric per-seed delta distributions, the bias-correction term in the BCa interval is bounded above by $O(1/\sqrt{n}) \approx 0.32$ standard errors; this magnitude is smaller than our seed $\sigma$ on every reported finding except \S\,6.4's Mamba$\times$SCAFFOLD interaction, where $\sigma$ inflation by $23\times$ makes the CI choice less consequential than the Wilcoxon $p$-value. Readers who prefer BCa should treat our CI$_{95}$ as a slightly tighter version of the BCa interval; the qualitative conclusions are unchanged.
+
+\subsection{L14 full discussion: FedAdam hyperparameter sensitivity (extends \S\,8 L14)}
+
+$\beta_1 = 0.9$, $\beta_2 = 0.99$, $\eta_{\mathrm{server}} = 0.01$ follow the FedAdam paper's preregistered values~\cite{Reddi2021_FedAdam}; $\beta_2 = 0.99$ differs from canonical Adam's $0.999$. We did not run a $(\beta_1, \beta_2, \eta_{\mathrm{server}})$ sensitivity sweep --- the FedAdam-vs-FedAvg deltas reported in \S\,6.3 are anchored to paper-canonical hyperparameter choices rather than to a per-task hyperparameter optimum. Whether the FedAdam-saturates-headroom finding survives at alternative $\beta_2$ (e.g., $0.999$) is open; we expect modest sensitivity ($\leq 0.005$ AUC drift) given Adam's relative robustness to $\beta_2$ variation in offline ML literature, but this is anticipated, not measured.
+
+
+\section{Future work directions (extends \S\,9.1)}\label{app:future}
+
+Several open questions remain. \textbf{First}, \S\,7.1.5 disambiguates the inverted-$\alphadir$ mechanism (the strong reading of \S\,7.1.1~(i) --- bs grouping alone suffices --- is refuted; (ii)~per-client structural coherence is the additional necessary ingredient), but two design constraints (\lstinline|sub_per_bs=2| halving per-client data, $5/14$ sampling fraction vs Phase~5's $5/7$) prevent a clean decomposition of the $1$--$4$ pp residual gap to natural-by-BS; an isolation re-run keeping \lstinline|sub_per_bs=2| while bumping \lstinline|clients-per-round| to 10 (matches Phase~5's $5/7$ sampling fraction at the doubled client count) would isolate the slice-mixing effect from per-round participation, following the per-axis isolation methodology of Borges et al.~\cite{Borges2025} and the proximity-partition framing of ProFed~\cite{ProFed2025}. \textbf{Second}, our $10\%$ BLER threshold should be perturbed to $\{5, 15, 20\}\%$ to confirm operational robustness, in line with recent rare-event metric-stability work~\cite{arXiv2504_16185}. \textbf{Third}, scaling beyond $N = 7$ base stations toward the 100-client regime studied by Chiarani et al.~\cite{Chiarani2025} and Sezgin et al.~\cite{Sezgin2025} would test whether inverted-$\alphadir$ is a small-$N$ artefact. \textbf{Fourth}, the FedAdam headroom-saturation finding may be soft: variance-aware sharpness methods such as FedSCAM~\cite{FedSCAM2026} and trajectory-matched FedSynSAM~\cite{FedSynSAM2026} introduce per-client perturbation modulation that could extract additional accuracy. \textbf{Fifth}, integrating differential privacy via over-the-air channel noise~\cite{arXiv2510_23463} and exploring neuromorphic deployment on Loihi~2 with sparse RNN kernels~\cite{arXiv2502_01330, arXiv2604_27004} would close the loop toward production-deployable privacy-preserving energy-efficient O-RAN slice prediction.
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{bibliography}
+
+\end{document}

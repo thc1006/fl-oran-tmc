@@ -21,11 +21,13 @@ log = get_logger(__name__)
 def partition_clients(
     df: pd.DataFrame,
     *,
-    mode: Literal["iid", "noniid_slice", "dirichlet"],
+    mode: Literal["iid", "noniid_slice", "dirichlet", "random_split",
+                  "per_bs_dirichlet"],
     client_slice_map: dict[int, list[int]] | None = None,
     alpha: float | None = None,
     n_clients: int | None = None,
     seed: int | None = None,
+    sub_per_bs: int | None = None,
 ) -> dict[int, pd.DataFrame]:
     """Return {client_id: DataFrame shard}.
 
@@ -36,6 +38,12 @@ def partition_clients(
     over ``n_clients`` clients and distribute that slice's rows accordingly.
     Small alpha → highly concentrated (few clients get most of a slice); large
     alpha → near-uniform across clients. Requires ``alpha`` and ``n_clients``.
+    ``random_split``: shuffle all rows and split into ``n_clients`` ~equal-size
+    shards, ignoring every column. Each client sees the global marginal
+    (true IID at first order). Used for the §7 mechanism ablation that asks
+    "does natural-by-BS dominance come from bs_id structure?" — by stripping
+    away both bs_id and slice_id grouping while keeping per-client sample-size
+    balanced, this isolates the structural contribution. Requires ``n_clients``.
 
     Assumes ``df`` has a unique index (the default integer RangeIndex or any
     ``reset_index(drop=True)`` output). Callers whose pipeline may produce
@@ -93,6 +101,68 @@ def partition_clients(
             "Dirichlet partition (alpha=%.3f, n_clients=%d, seed=%s): %d non-empty "
             "shards; rows=%s",
             alpha, n_clients, seed, len(shards),
+            {c: len(s) for c, s in shards.items()},
+        )
+        return shards
+
+    if mode == "random_split":
+        if n_clients is None:
+            raise ValueError("random_split mode requires n_clients")
+        rng = np.random.default_rng(seed)
+        # Shuffle row positions (not labels — works regardless of index).
+        n_rows = len(df)
+        positions = rng.permutation(n_rows)
+        # np.array_split balances within ±1 row when n_rows is not divisible.
+        chunks = np.array_split(positions, n_clients)
+        shards: dict[int, pd.DataFrame] = {}
+        for cid, chunk in enumerate(chunks):
+            if len(chunk) == 0:
+                continue
+            shards[cid] = df.iloc[chunk].reset_index(drop=True)
+        log.info(
+            "random_split partition (n_clients=%d, seed=%s): %d shards; rows=%s",
+            n_clients, seed, len(shards),
+            {c: len(s) for c, s in shards.items()},
+        )
+        return shards
+
+    if mode == "per_bs_dirichlet":
+        # Phase 6 Rank 3 mechanism-disambiguation control:
+        # for each bs_id, partition that BS's rows by Dirichlet([alpha])
+        # over slice_id into sub_per_bs sub-clients. Total clients =
+        # n_bs * sub_per_bs. bs grouping is preserved per client (unlike
+        # mode="dirichlet" which scatters bs's across clients).
+        if alpha is None:
+            raise ValueError("per_bs_dirichlet mode requires alpha")
+        if sub_per_bs is None:
+            raise ValueError("per_bs_dirichlet mode requires sub_per_bs")
+        rng = np.random.default_rng(seed)
+        shards: dict[int, pd.DataFrame] = {}
+        next_cid = 0
+        # Stable bs_id ordering — sorted ints — so cell IDs are deterministic.
+        bs_ids_sorted = sorted(int(b) for b in df["bs_id"].unique())
+        for bs in bs_ids_sorted:
+            bs_df = df[df["bs_id"] == bs]
+            sub_buckets: list[list[int]] = [[] for _ in range(sub_per_bs)]
+            for slice_id, sg in bs_df.groupby("slice_id", observed=True):
+                proportions = rng.dirichlet([alpha] * sub_per_bs)
+                slice_idx = sg.index.to_numpy(copy=True)
+                rng.shuffle(slice_idx)
+                splits = (np.cumsum(proportions) * len(slice_idx)).astype(int)
+                parts = np.split(slice_idx, splits[:-1])
+                for sub_i, part in enumerate(parts):
+                    if len(part) > 0:
+                        sub_buckets[sub_i].extend(part.tolist())
+            for sub_i, idx_list in enumerate(sub_buckets):
+                if not idx_list:
+                    continue
+                shards[next_cid] = df.loc[idx_list].reset_index(drop=True)
+                next_cid += 1
+        log.info(
+            "per_bs_dirichlet partition (alpha=%.3f, sub_per_bs=%d, seed=%s): "
+            "%d shards (= %d bs × %d sub); rows=%s",
+            alpha, sub_per_bs, seed, len(shards),
+            len(bs_ids_sorted), sub_per_bs,
             {c: len(s) for c, s in shards.items()},
         )
         return shards

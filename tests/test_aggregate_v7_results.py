@@ -55,11 +55,22 @@ def _write_cell(sweep_dir: Path, *, arch: str, algorithm: str,
                 partition_mode: str, alpha, seed: int,
                 test_auc: float, test_f1: float = 0.5,
                 test_accuracy: float = 0.6,
-                params_count: int = 44553,
+                energy_model_mJ: float | None = 3500_000.0,
                 cell_name: str | None = None,
                 history: list[dict] | None = None,
                 extra: dict | None = None) -> Path:
-    """Materialise a single fl_v7 cell directory with summary + history."""
+    """Materialise a single fl_v7 cell directory mirroring the real
+    summary.json schema written by ``src/fl_oran/training/fl_v7.py``:
+
+    * config sub-object: arch / algorithm / partition_mode / alpha / seed
+    * test sub-object  : auc / accuracy / f1
+    * energy_measured  : training_model_attributable_mJ (post-Phase-1.5i NVML)
+    * test_auc top-level (mirrors test.auc; fl_v7 emits both)
+
+    Earlier drafts of this fixture wrote a flat top-level schema that
+    never matched fl_v7 itself; the aggregator now reads the nested
+    layout so the fixture must follow.
+    """
     if cell_name is None:
         if partition_mode == "iid":
             cell_name = f"v7_{arch}_{algorithm}_iid_s{seed}"
@@ -68,17 +79,29 @@ def _write_cell(sweep_dir: Path, *, arch: str, algorithm: str,
             cell_name = f"v7_{arch}_{algorithm}_dir_a{tag}_s{seed}"
     cell = sweep_dir / cell_name
     cell.mkdir(parents=True, exist_ok=True)
-    summary = {
-        "arch": arch,
-        "algorithm": algorithm,
-        "partition_mode": partition_mode,
-        "alpha": alpha,
-        "seed": seed,
+    summary: dict = {
+        "config": {
+            "arch": arch,
+            "algorithm": algorithm,
+            "partition_mode": partition_mode,
+            # fl_v7 leaves the V7Config default 0.5 in IID cells; the
+            # aggregator overrides it to None — replicate that behavior
+            # so tests exercise the override path.
+            "alpha": 0.5 if (partition_mode == "iid" and alpha is None) else alpha,
+            "seed": seed,
+        },
+        "test": {
+            "auc": float(test_auc),
+            "f1": float(test_f1),
+            "accuracy": float(test_accuracy),
+        },
         "test_auc": float(test_auc),
-        "test_f1": float(test_f1),
-        "test_accuracy": float(test_accuracy),
-        "params_count": int(params_count),
     }
+    if energy_model_mJ is not None:
+        summary["energy_measured"] = {
+            "training_model_attributable_mJ": float(energy_model_mJ),
+            "method": "energy_api",
+        }
     if extra:
         summary.update(extra)
     (cell / "summary.json").write_text(json.dumps(summary))
@@ -174,49 +197,85 @@ def test_warn_writes_to_stderr_not_stdout(agg, tmp_path, capsys):
 
 @pytest.mark.parametrize("bad_auc", [float("nan"), float("inf"), float("-inf")])
 def test_load_cells_skips_non_finite_test_auc(agg, tmp_path, capsys, bad_auc):
-    """Cells with NaN / Inf test_auc would propagate to per-group mean
+    """Cells with NaN / Inf test.auc would propagate to per-group mean
     and emit non-strict JSON ('NaN'). Skip with warning at load."""
     sweep = tmp_path / "nan_auc"
     cell = sweep / "v7_lstm_fedavg_iid_s99"
     cell.mkdir(parents=True)
     (cell / "summary.json").write_text(json.dumps({
-        "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
-        "alpha": None, "seed": 99, "test_auc": bad_auc,
+        "config": {
+            "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
+            "alpha": 0.5, "seed": 99,
+        },
+        "test": {"auc": bad_auc, "f1": 0.5, "accuracy": 0.6},
+        "test_auc": bad_auc,
     }))
-    (cell / "history.csv").write_text("round\n0\n")
     cells = agg.load_cells(sweep)
     assert cells == {}
     captured = capsys.readouterr()
     assert "finite" in (captured.out + captured.err).lower()
 
 
-def test_per_group_stats_handles_missing_params_count(agg, tmp_path, capsys):
-    """Review I1: a cell missing ``params_count`` must not silently
-    contribute 0 to the mean (which would drag the table value down).
-    Mean is computed over present cells only; a warning surfaces the
-    skipped cell count."""
-    sweep = tmp_path / "missing_params"
-    # 3 cells, 1 of which lacks params_count.
-    _write_cell(sweep, arch="lstm", algorithm="fedavg", partition_mode="iid",
-                alpha=None, seed=42, test_auc=0.8, params_count=44553)
-    _write_cell(sweep, arch="lstm", algorithm="fedavg", partition_mode="iid",
-                alpha=None, seed=0, test_auc=0.8, params_count=44553)
-    # Third cell with explicit params_count=None to trigger the guard.
-    cell = sweep / "v7_lstm_fedavg_iid_s1"
+def test_per_group_stats_uses_arch_params_map(agg, tmp_path):
+    """``params_count`` is no longer carried in summary.json (fl_v7
+    does not emit it). The aggregator looks it up from a hardcoded
+    per-arch map seeded from the v6 build_model tests; an unknown
+    arch resolves to ``None`` rather than crashing."""
+    sweep = tmp_path / "params_map"
+    for seed in (42, 0, 1):
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=seed, test_auc=0.8)
+    # Inject one cell whose arch is not in the map.
+    cell = sweep / "v7_unknownarch_fedavg_iid_s99"
     cell.mkdir()
     (cell / "summary.json").write_text(json.dumps({
-        "arch": "lstm", "algorithm": "fedavg", "partition_mode": "iid",
-        "alpha": None, "seed": 1, "test_auc": 0.8, "params_count": None,
+        "config": {
+            "arch": "unknownarch", "algorithm": "fedavg",
+            "partition_mode": "iid", "alpha": 0.5, "seed": 99,
+        },
+        "test": {"auc": 0.8, "f1": 0.5, "accuracy": 0.6},
+        "test_auc": 0.8,
     }))
-    (cell / "history.csv").write_text("round\n0\n")
     cells = agg.load_cells(sweep)
     stats = agg.per_group_stats(cells)
-    s = stats[("lstm", "fedavg", "iid", None)]
-    # Mean over the 2 present params; the missing one is excluded
-    # rather than counted as 0.
-    assert s["params_count_mean"] == pytest.approx(44553.0)
-    captured = capsys.readouterr()
-    assert "params_count" in (captured.out + captured.err)
+    s_known = stats[("lstm", "fedavg", "iid", None)]
+    s_unknown = stats[("unknownarch", "fedavg", "iid", None)]
+    assert s_known["params_count"] == 44553
+    assert s_unknown["params_count"] is None
+
+
+def test_load_cells_random_split_alpha_coerced_to_none(agg, tmp_path):
+    """random_split, like IID, ignores alpha by definition. fl_v7's
+    V7Config still emits the default alpha=0.5 for these cells; the
+    aggregator MUST coerce that to None, otherwise random_split cells
+    aggregate into a spurious (arch, algo, "random_split", 0.5) group
+    instead of (arch, algo, "random_split", None).
+
+    Regression for Phase 6 cleanup 2026-05-03: the original IID-only
+    coerce would have routed T-ABLATION's random_split cells into the
+    wrong group key, splitting the bootstrap sample size in half.
+    """
+    sweep = tmp_path / "rs"
+    cell = sweep / "v7_lstm_fedavg_randsplit_n7_s0"
+    cell.mkdir(parents=True)
+    (cell / "summary.json").write_text(json.dumps({
+        "config": {
+            "arch": "lstm", "algorithm": "fedavg",
+            "partition_mode": "random_split",
+            "alpha": 0.5,  # the V7Config default that should NOT survive
+            "seed": 0,
+        },
+        "test": {"auc": 0.85, "f1": 0.5, "accuracy": 0.7},
+        "test_auc": 0.85,
+    }))
+    cells = agg.load_cells(sweep)
+    assert len(cells) == 1
+    key = list(cells.keys())[0]
+    arch, algo, pmode, alpha, seed = key
+    assert pmode == "random_split"
+    assert alpha is None, (
+        f"random_split cell aggregated with alpha={alpha}; expected None"
+    )
 
 
 def test_load_cells_warns_on_duplicate_metadata_key(agg, tmp_path, capsys):
@@ -369,6 +428,204 @@ def test_paired_bootstrap_delta_returns_none_ci_when_under_two_seeds(agg, tmp_pa
     assert d["n_paired_seeds"] == 1
     assert d["ci_lo"] is None
     assert d["ci_hi"] is None
+
+
+def test_paired_bootstrap_delta_snapshot_pins_vectorized_resample(agg, tmp_path):
+    """GH#4: snapshot-pin the exact CI output for a deterministic input
+    + seed against the current vectorized ``rng.integers((n_boot, n))``
+    resample. PR #1 vectorized this from a per-iteration ``rng.choice``
+    loop; the new code is statistically equivalent but consumes the
+    rng state differently, so the same seed produces a numerically
+    different bootstrap distribution. Without a snapshot test, a future
+    re-vectorisation (e.g. switching to ``scipy.stats.bootstrap`` for
+    BCa) would silently change paper numbers.
+
+    **If you change the resample implementation, regenerate this
+    snapshot AND verify statistical equivalence via a KS test on
+    n_boot=10000 samples drawn from old vs new resamplers.**
+    """
+    deltas = [0.01, 0.02, -0.01, 0.03, 0.005,
+              0.015, -0.005, 0.025, 0.0, 0.02]
+    sweep = tmp_path / "snapshot"
+    for seed_i, d in enumerate(deltas):
+        # arch=lstm carries the baseline 0.5; arch=mamba carries 0.5 + d
+        # so paired-bootstrap deltas reconstruct exactly the spec list.
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=seed_i,
+                    test_auc=0.5)
+        _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=seed_i,
+                    test_auc=0.5 + d)
+    cells = agg.load_cells(sweep)
+    out = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=10_000, seed=2026, ci_level=0.95,
+    )
+    # Snapshot pinned 2026-05-05 against the vectorized
+    # rng.integers((n_boot, n)) resample on numpy default_rng.
+    assert out["n_paired_seeds"] == 10
+    assert out["delta_mean"] == pytest.approx(0.0110, abs=1e-6)
+    assert out["delta_std"] == pytest.approx(0.0132916014, abs=1e-6)
+    assert out["ci_lo"] == pytest.approx(0.0030, abs=1e-6)
+    assert out["ci_hi"] == pytest.approx(0.0185, abs=1e-6)
+
+
+@pytest.mark.parametrize("n_seeds", [0, 1, 2])
+def test_paired_bootstrap_n_too_small_returns_none_ci(agg, tmp_path, n_seeds):
+    """GH#3: bootstrap on n<3 paired seeds is degenerate (n=1 gives a
+    zero-width CI; n=2 gives a 3-point CI brackets). The function must
+    explicitly refuse and return ``None`` for ``ci_lo`` / ``ci_hi`` for
+    n<3, plus a ``warning`` key explaining why, so JSON consumers /
+    paper readers do not mistake a degenerate CI for a tight estimate."""
+    sweep = tmp_path / f"thin_n{n_seeds}"
+    # Write n_seeds matched cells per arch; n_seeds=0 case writes none
+    # for mamba so no paired seeds exist.
+    if n_seeds >= 1:
+        for s in range(n_seeds):
+            _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                        partition_mode="iid", alpha=None, seed=s,
+                        test_auc=0.7 + 0.01 * s)
+            _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                        partition_mode="iid", alpha=None, seed=s,
+                        test_auc=0.8 + 0.01 * s)
+    else:
+        # n=0 case: write a non-paired cell so load_cells returns
+        # something but the (mamba, fedavg) filter has no overlap with
+        # (lstm, fedavg) — n_paired_seeds = 0.
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=0, test_auc=0.7)
+    cells = agg.load_cells(sweep)
+    d = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=500, seed=2026,
+    )
+    assert d["n_paired_seeds"] == n_seeds
+    assert d["ci_lo"] is None, f"n={n_seeds}: ci_lo must be None, got {d['ci_lo']}"
+    assert d["ci_hi"] is None, f"n={n_seeds}: ci_hi must be None, got {d['ci_hi']}"
+    assert "warning" in d, f"n<3 dict must carry 'warning' key; got {sorted(d)}"
+    assert d["warning"] is not None and "n>=3" in d["warning"], (
+        f"warning must explain n<3 refusal (n>=3 required); got {d['warning']!r}"
+    )
+
+
+def test_paired_bootstrap_delta_emits_bonferroni_ci_when_requested(agg, tmp_path):
+    """GH#2: when ``bonferroni_n`` is set, the dict must include both the
+    raw paired CI95 and a Bonferroni-adjusted CI computed at the
+    family-corrected level ``1 - (1 - ci_level) / bonferroni_n``. The
+    adjusted interval is strictly wider than the raw interval (lower
+    bound lower, upper bound higher) since alpha is divided by
+    ``bonferroni_n``.
+
+    Uses a local fixture with *seed-varying* per-pair deltas so that the
+    bootstrap distribution has non-zero variance and the two intervals
+    are strictly distinct (the existing ``synthetic_sweep`` produces
+    constant 0.04 deltas — bootstrap variance collapses to zero and all
+    percentiles coincide)."""
+    sweep = tmp_path / "bonf_var"
+    # 7 paired seeds with non-constant deltas so bootstrap percentiles
+    # differ between CI95 (2.5/97.5%) and CI99.5 (0.25/99.75%).
+    lstm_aucs = [0.78, 0.80, 0.79, 0.81, 0.77, 0.82, 0.79]
+    mamba_aucs = [0.83, 0.86, 0.84, 0.88, 0.81, 0.89, 0.85]
+    for s, (la, ma) in enumerate(zip(lstm_aucs, mamba_aucs)):
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s, test_auc=la)
+        _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s, test_auc=ma)
+    cells = agg.load_cells(sweep)
+    d = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=5000, ci_level=0.95, seed=2026, bonferroni_n=10,
+    )
+    assert "ci_lo_bonferroni" in d
+    assert "ci_hi_bonferroni" in d
+    assert d["ci_lo_bonferroni"] is not None
+    assert d["ci_hi_bonferroni"] is not None
+    assert d["ci_lo_bonferroni"] < d["ci_lo"], (
+        f"adjusted lower bound must be lower (wider interval): "
+        f"adj={d['ci_lo_bonferroni']} vs raw={d['ci_lo']}"
+    )
+    assert d["ci_hi_bonferroni"] > d["ci_hi"], (
+        f"adjusted upper bound must be higher (wider interval): "
+        f"adj={d['ci_hi_bonferroni']} vs raw={d['ci_hi']}"
+    )
+
+
+def test_paired_bootstrap_delta_bonferroni_keys_present_when_unset(agg, tmp_path):
+    """Shape consistency (mirrors ``test_..._dict_shape_consistent_across_branches``):
+    bonferroni keys must always be present in the output dict so JSON
+    consumers do not KeyError when the wrapper passes ``bonferroni_n=None``
+    (or omits the kwarg entirely). Keys are ``None`` in that case."""
+    sweep = tmp_path / "no_bonf"
+    for s in (0, 1, 42):
+        _write_cell(sweep, arch="lstm", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s,
+                    test_auc=0.7 + 0.01 * s)
+        _write_cell(sweep, arch="mamba", algorithm="fedavg",
+                    partition_mode="iid", alpha=None, seed=s,
+                    test_auc=0.72 + 0.01 * s)
+    cells = agg.load_cells(sweep)
+    d_unset = agg.paired_bootstrap_delta(
+        cells,
+        a={"arch": "mamba", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        b={"arch": "lstm", "algorithm": "fedavg",
+           "partition_mode": "iid", "alpha": None},
+        n_boot=500, seed=2026,
+    )
+    assert "ci_lo_bonferroni" in d_unset
+    assert "ci_hi_bonferroni" in d_unset
+    assert d_unset["ci_lo_bonferroni"] is None
+    assert d_unset["ci_hi_bonferroni"] is None
+
+
+def test_all_pairwise_algo_deltas_passes_bonferroni_n_to_each_pair(agg, tmp_path):
+    """GH#2 wrapper threading: ``all_pairwise_algo_deltas`` must compute
+    the family size (total number of pairs across all groups) and pass
+    it as ``bonferroni_n`` to every ``paired_bootstrap_delta`` call so
+    the emitted CIs are family-wise corrected by default."""
+    sweep = tmp_path / "fam"
+    # 3 algos × 2 seeds = C(3,2)=3 pairs in 1 (arch, partition, alpha) group
+    for algo in ("fedavg", "fedprox", "fedadam"):
+        for seed in (42, 0):
+            _write_cell(sweep, arch="lstm", algorithm=algo,
+                        partition_mode="iid", alpha=None, seed=seed,
+                        test_auc=0.7 + 0.01 * seed)
+    cells = agg.load_cells(sweep)
+
+    captured_bonf = []
+    real_paired = agg.paired_bootstrap_delta
+
+    def spy(cells, *, a, b, n_boot, seed, bonferroni_n=None, **kw):
+        captured_bonf.append(bonferroni_n)
+        return real_paired(cells, a=a, b=b, n_boot=n_boot, seed=seed,
+                           bonferroni_n=bonferroni_n, **kw)
+
+    agg.paired_bootstrap_delta = spy
+    try:
+        out = agg.all_pairwise_algo_deltas(cells, n_boot=200)
+    finally:
+        agg.paired_bootstrap_delta = real_paired
+
+    assert len(captured_bonf) == 3, captured_bonf
+    assert all(n == 3 for n in captured_bonf), (
+        f"every pair must receive bonferroni_n=3 (family size); got {captured_bonf}"
+    )
+    # Returned dicts also expose adjusted CIs (or None when n<2 paired)
+    for key, dct in out.items():
+        assert "ci_lo_bonferroni" in dct, (key, sorted(dct))
+        assert "ci_hi_bonferroni" in dct, (key, sorted(dct))
 
 
 # ---------------------------------------------------------------------------

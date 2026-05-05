@@ -1,0 +1,507 @@
+% Federated O-RAN Slice SLA Prediction — JSAC submission target
+% Source of truth: docs/PAPER_DRAFT.md (Markdown, this LaTeX file mirrors).
+% Build: see paper/README.md.
+\documentclass[journal]{IEEEtran}
+
+% Math + symbols
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{textcomp}                 % \textmu, \textohm, etc
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    citecolor=blue!50!black,
+    urlcolor=blue!50!black,
+    pdftitle={Federated O-RAN Slice SLA Prediction},
+    pdfauthor={Hao-Chun Tsai}
+}
+
+% Tables + figures
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+
+% Code listings (for inline ``backtick`` constants)
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true}
+
+% Greek inline-text (\(\alpha\) preferred, but for some inline numerics)
+\newcommand{\alphadir}{\ensuremath{\alpha_{\mathrm{dir}}}}
+\newcommand{\alphadyn}{\ensuremath{\alpha_{\mathrm{dyn}}}}
+\newcommand{\alphala}{\ensuremath{\alpha_{\mathrm{LA}}}}
+
+\begin{document}
+
+\title{Federated O-RAN Slice SLA Prediction:\\
+A Cross-Architecture Empirical Benchmark on Colosseum/ColO-RAN}
+
+\author{%
+    Hao-Chun~Tsai,~\IEEEmembership{Student Member,~IEEE}%
+    \thanks{H.-C. Tsai is with the Department of Computer Science,
+    National Yang Ming Chiao Tung University, Hsinchu, Taiwan.
+    E-mail: hctsai1006@cs.nctu.edu.tw.
+    ORCID: 0009-0009-7115-0149.}%
+}
+
+\markboth{IEEE Journal on Selected Areas in Communications}%
+{Tsai: Federated O-RAN Slice SLA Prediction}
+
+\maketitle
+
+\begin{abstract}
+Federated learning (FL) on O-RAN edge gNBs is the natural paradigm for slice-level SLA-violation forecasting because per-user telemetry cannot be centrally pooled. Despite a decade of FL benchmark research, the deployment design space --- sequence model architecture, federation algorithm, client-heterogeneity partition, commodity edge hardware --- has been studied one axis at a time, leaving the joint behaviour under realistic O-RAN traffic characterised only anecdotally. This paper presents the first cross-architecture empirical FL benchmark on the publicly-available Colosseum/ColO-RAN testbed: 3 sequence backbones (LSTM, Mamba, Spiking-SSM) $\times$ 5 algorithms (FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn) $\times$ 6 partitions (natural-by-BS $+$ Dirichlet $\alpha\in\{0.05, 0.10, 0.50, 1.00, 5.00\}$) $\times$ 10 seeds $=$ 900 cells, with NVML idle-baseline-subtracted training-energy measurement on RTX~4080 commodity hardware, augmented by a 15-cell controlled random-split ablation on $4\times$ Tesla V100-SXM2-32GB to probe the leading mechanism hypothesis. We report four empirical findings: (1) \textbf{client heterogeneity in O-RAN is structurally helpful, not harmful} --- the natural base-station partition uniformly outperforms every parametric Dirichlet $\alpha$ across all 3 architectures $\times$ 5 algorithms, inverting the standard FL-benchmark assumption; (2) the algorithm-design space is flat at FedAdam-saturated headroom ($\leq+0.016$~AUC over FedAvg), bounding the room available to recent sharpness-aware methods; (3) selective-state-space backbones interact catastrophically with control-variate algorithms at moderate partition skew (Mamba $\times$ SCAFFOLD $\times$ $\alpha\in\{0.10, 0.50\}$); (4) architecture choice traverses $10\times$ in commodity-GPU energy and an order-of-magnitude larger AUC range than algorithm choice, dwarfing the algorithmic-leverage scale. We provide a reference benchmark with paired-bootstrap CI$_{95}$ over 270 paired distributions, NVML-instrumented per-cell energy, and pre-registered statistical protocol; the artefact is released under Apache-2.0 with Croissant dataset metadata and a Zenodo DOI on paper acceptance.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Federated learning, O-RAN, slice management, SLA prediction, state-space models, spiking neural networks, NVML energy measurement, paired-bootstrap inference.
+\end{IEEEkeywords}
+
+
+\section{Introduction}\label{sec:intro}
+
+\IEEEPARstart{O}{pen} Radio Access Networks (O-RAN) decomposes the cellular base station into commodity hardware components controlled by ML-driven xApps and rApps running on disaggregated RAN Intelligent Controllers (RICs)~\cite{Polese2022}. Slice-level Service Level Agreement (SLA) violation forecasting is one near-RT RIC xApp pattern of practical interest: each gNB simultaneously serves heterogeneous traffic slices (the ColO-RAN release exercises eMBB constant-bitrate, MTC Poisson, and URLLC Poisson --- see Section~\ref{sec:dataset}), and proactive forecasting of next-second SLA risk informs near-RT RIC resource-allocation decisions within its 10\,ms\,--\,1\,s control loop. Because edge gNBs accumulate per-user telemetry that cannot be centrally pooled, federated learning (FL) is the natural training paradigm: each gNB trains a local sequence model on its own traces and shares only weight updates with the FL aggregator. We place the aggregator in the non-RT RIC / SMO orchestration layer ($\geq 1$\,s timescale fits our 100-round federated training cadence per Section~\ref{sec:method}); a near-RT-RIC-internal xApp aggregator would alternatively be possible if cross-cell xApp messaging supports the federation protocol --- we do not engage with that deployment alternative beyond noting it.
+
+Standard FL practice --- codified by a decade of toy-image benchmarks --- treats client heterogeneity as a \emph{wound} to be healed: lower Dirichlet $\alpha$ (more skew) drives lower accuracy, motivating sharpness-aware methods, control variates, and proximal regularizers. \textbf{In O-RAN slice SLA prediction, this premise inverts.} When clients are the \emph{natural} base stations of a Colosseum/ColO-RAN testbed (one client per gNB), the federated average across 7 base-station-natural clients consistently outperforms every uniform-Dirichlet partition of the same training data on the same model + algorithm. Empirically (Section~\ref{sec:results}, all values are out-of-sample test AUC averaged over 10 seeds), the natural-by-BS partition achieves AUC 0.913--0.918 on LSTM (5-algo range; $\Delta\approx0.005$), 0.8998--0.9186 on Mamba (with SCAFFOLD as the lower outlier and the other four algorithms in 0.911--0.919), and 0.840--0.856 on Spiking-SSM, \textbf{strictly above the AUC obtained at any parametric Dirichlet $\alpha$} for every (arch, algo) pair, and monotonically increasing as $\alpha \rightarrow 0$ within the Dirichlet sweep. The $\alpha=5.0 \rightarrow \alpha=0.05$ AUC gap is $\approx 0.10$--$0.12$ on the dense LSTM/Mamba backbones; on Spiking-SSM the gap is smaller ($\approx 0.022$) but still positive, and across all five algorithms heterogeneity is associated with higher AUC, not lower. The mechanism is open --- natural-by-BS is \emph{not} the low-$\alpha$ limit of the Dirichlet sweep (the two partition families redistribute rows along orthogonal axes, see Section~\ref{sec:partition}) --- and we present a controlled \texttt{random\_split} ablation in Section~\ref{sec:ablation} (15 cells $\times$ 3 architectures on $4\times$ Tesla V100-SXM2-32GB) showing that any partition that breaks bs grouping (whether by per-slice Dirichlet redistribution at $\alpha=5.00$ or by uniform random shuffling) collapses AUC to a tight band $\sim 0.18$ below natural-by-BS, and is statistically equivalent to Dirichlet $\alpha=5.00$ within seed $\sigma$. The mechanism direction (preservation of bs grouping) is therefore confirmed; the precise dataset axis the model exploits via bs grouping (channel-state features, see Section~\ref{sec:kl}) remains under further investigation.
+
+Despite the explosion of FL benchmarks since 2018, the deployment design space for FL-based slice SLA prediction remains under-characterized. The space spans four axes:
+\begin{enumerate}
+    \item \textbf{Sequence model architecture} --- recurrent (LSTM), structured state-space (Mamba), or bio-inspired sparse spiking variants (Spiking-SSM).
+    \item \textbf{Federation algorithm} --- FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn (and the more recent sharpness-aware family discussed in Section~\ref{sec:related}).
+    \item \textbf{Client heterogeneity} --- including the natural base-station partition (one gNB $\Rightarrow$ one client) and parametric Dirichlet stress $\alpha\in\{0.05, 0.10, 0.50, 1.00, 5.00\}$ over slice IDs.
+    \item \textbf{Commodity hardware} --- consumer-tier edge GPUs (RTX-class) at the gNB rather than data-center accelerators.
+\end{enumerate}
+
+Existing benchmarks address each axis in isolation. NeurIPS-class FL benchmarks evaluate algorithm $\times$ heterogeneity on toy image data~\cite{Caldas2018_LEAF, Lai2022_FedScale, Song2022_FLAIR, Granqvist2024_pflresearch}. Spiking-NN benchmarks compare architectures in centralized regimes on neuromorphic-friendly datasets~\cite{Shen2025_STEP}. FL $\times$ wireless papers focus on a single architecture~\cite{FedLSTM2022, arXiv2508_08479, Mangi2026}. The implicit assumption underlying single-axis recommendations: \textbf{best architecture $\times$ best algorithm $\times$ representative $\alpha$ $\times$ commodity hardware $=$ best deployment}.
+
+\textbf{This paper tests the assumption empirically.} We construct the first comprehensive 4-axis FL benchmark on the publicly-available Colosseum/ColO-RAN testbed dataset~\cite{Polese2022, Bonati2024}, sweeping \{LSTM, Mamba, Spiking-SSM\} $\times$ \{FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn\} $\times$ \{natural-by-BS, Dirichlet $\alpha\in\{0.05, 0.10, 0.50, 1.00, 5.00\}$\} $\times$ 10 seeds $=$ 900 cells (90 groups, all 10 seeds populated), with NVML-instrumented per-round GPU energy measurement on RTX~4080 (sm\_89) commodity hardware. Statistical inference uses paired-bootstrap CI$_{95}$ on per-seed AUC deltas; Wilcoxon $p$-values are reported uncorrected per finding (with family-wise Bonferroni discussed in Section~\ref{sec:stats} as a supplementary check).
+
+\textbf{Contributions}:
+\begin{enumerate}
+    \item \textbf{Inverted heterogeneity in O-RAN slice federation}: against the standard FL-benchmark assumption, the natural base-station partition uniformly outperforms every parametric Dirichlet $\alpha$ in our sweep across all 3 architectures and 5 algorithms. We do not claim a closed-form mechanism --- Section~\ref{sec:discussion} reports a controlled \texttt{random\_split} ablation that tests the leading ``bs-conditioned signal preservation'' hypothesis --- but the empirical pattern is the first published characterization on Colosseum/ColO-RAN and is deployment-relevant regardless of which mechanism candidate ultimately survives.
+
+    \item \textbf{Algorithm-design space is flat in this regime; FedAdam achieves the empirical maximum in our 5-algorithm baseline}: across Dirichlet $\alpha\in\{0.05..5.0\}$, the spread between the best and worst of \{FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn\} on a fixed (arch, partition) cell is 0.022--0.031 AUC on LSTM/Spiking and 0.078 on Mamba (driven by a single SCAFFOLD outlier). FedAdam consistently leads FedAvg via paired-bootstrap CI$_{95}$ (LSTM Dirichlet-averaged $\Delta=+0.0080$, range $+0.0048..+0.0128$, all 5 cells significant; Mamba Dirichlet-averaged $\Delta=+0.0062$, range $-0.0021..+0.0097$, 4 of 5 cells significant; Spiking Dirichlet-averaged $\Delta=+0.0164$, range $+0.0108..+0.0267$, 4 of 5 cells significant). The mechanism analysis in Sections~\ref{sec:related-sharp} + \ref{sec:fedadam-ceiling} + \ref{sec:why-fedadam-saturates} argues that LookAhead-style server-side aggregation (FedSWA / FedSCAM) is \emph{unlikely to systematically exceed} this empirical maximum because of the variance-estimation gap between Adam-style and LookAhead-style server steps (predictive claim, not theorem); we accordingly dismiss FedSWA~\cite{Liu2025_FedSWA} and FedSCAM~\cite{FedSCAM2026} via mechanism analysis rather than benchmark them. We do not benchmark FedBN~\cite{Li2021_FedBN} either; Section~\ref{sec:limits} L2 discusses why the algorithm-flatness ranking is unlikely to be overturned by FedBN given its reported gain envelope on related cellular feature-skew tasks.
+
+    \item \textbf{Architecture $\times$ algorithm catastrophic interaction (Mamba $\times$ SCAFFOLD $\times$ $\alpha\in\{0.10, 0.50\}$)}: SCAFFOLD on Mamba at $\alpha=0.10$ yields AUC $0.7609 \pm 0.0830$ --- std amplified $\sim 3\times$ over (Mamba, FedAvg) at the same $\alpha$ (0.0251) and $\sim 10\times$ over (Mamba, FedAvg) at $\alpha=5.0$ (0.0073). The deployment warning is concrete: control-variate methods interact pathologically with selective-scan SSMs under high heterogeneity, even as both components individually behave well on neighboring cells.
+
+    \item \textbf{Architecture leverage dominates algorithm leverage} (paired-bootstrap CI$_{95}$) \textbf{on RTX~4080}: on the energy-AUC Pareto front (Section~\ref{sec:results}), architecture choice spans $10\times$ in NVML-measured model-attributable energy on RTX~4080 (LSTM $\sim 3.5$\,kJ $\rightarrow$ Mamba $\sim 10.5$\,kJ $\rightarrow$ Spiking $\sim 41$\,kJ per cell). Holding (algorithm, IID partition) fixed, the paired Spiking $-$ LSTM AUC delta is concentrated at $-0.061$ to $-0.074$ across all 5 algorithms (all 5 cells significant at $p<0.005$), substantively dwarfing the FedAdam $-$ FedAvg algorithmic gap of $+0.006$ to $+0.016$ on the same architectures (contribution 2). The $10\times$ span is hardware-specific: the same architectures on a sparsity-aware accelerator (Loihi-2, IBM NorthPole) would yield a substantially smaller LSTM-vs-Spiking energy ratio (Section~\ref{sec:arch-leverage} + Section~\ref{sec:limits} L1, L6). Operator decisions on commodity edge GPU should center architecture-energy trade-off, not algorithm breadth.
+
+    \item \textbf{Open reproducible reference benchmark}: spec-driven YAML pipeline with pre-flight algorithm validation and \lstinline|--skip-completed| resumability; paired-bootstrap statistical pipeline; NVML idle-baseline-subtracted training energy; Croissant metadata; Zenodo DOI on acceptance; Apache-2.0 license (preregistered). The full 4-axis table maps deployment configurations $\rightarrow$ (AUC, F1, energy, paired CI$_{95}$) over 90 (arch $\times$ algorithm $\times$ partition) groups, enabling lookup-style operator decisions on Colosseum/ColO-RAN.
+\end{enumerate}
+
+The remainder of the paper is organized as follows. Section~\ref{sec:related} reviews related work across the four axes. Section~\ref{sec:dataset} describes the Colosseum/ColO-RAN dataset and our preprocessing pipeline. Section~\ref{sec:method} details the architecture, algorithm, and partition methodology. Section~\ref{sec:repro} enumerates the reproducibility infrastructure and our Croissant-aligned data release. Section~\ref{sec:results} reports results across the 90 (arch $\times$ algorithm $\times$ partition) groups with paired-bootstrap CI$_{95}$. Section~\ref{sec:discussion} discusses the mechanism finding and articulates the applicability boundary on commodity edge hardware. Section~\ref{sec:limits} enumerates limitations. Section~\ref{sec:conclusion} concludes.
+
+
+\section{Related Work}\label{sec:related}
+
+\subsection{Federated learning benchmarks}
+
+The canonical FL benchmark is \textbf{LEAF}~\cite{Caldas2018_LEAF}, which standardized federated MNIST/Shakespeare evaluation pipelines for early FedAvg variants. \textbf{Flower}~\cite{Beutel2020_Flower} later provided a framework rather than a benchmark, supporting heterogeneous device experiments. \textbf{FedScale}~\cite{Lai2022_FedScale} scaled to thousands of cross-device clients; \textbf{FLAIR}~\cite{Song2022_FLAIR} introduced a long-tail multi-label image dataset. \textbf{pfl-research}~\cite{Granqvist2024_pflresearch} integrates differential-privacy mechanisms into a simulation framework. Most recently, \textbf{fev-bench}~\cite{Shchur2025_fevbench} introduced rigorous bootstrap-CI$_{95}$ evaluation for time-series forecasting, though without the federated dimension. None of these benchmarks targets O-RAN slice SLA prediction specifically; their toy-data settings cannot capture the covariate-skew structure of real RAN telemetry.
+
+\subsection{FL on cellular and wireless networks}
+
+A first generation of FL $\times$ cellular work targeted SLA-constrained slicing under the Beyond-5G banner. \textbf{Statistical FL for B5G SLA-Constrained RAN Slicing}~\cite{Statistical2021_B5G} introduced a long-term CDF SLA constraint. \textbf{CDF-Aware FL}~\cite{CDFaware2021} formalized the constraint as a per-client penalty. \textbf{Fed-LSTM}~\cite{FedLSTM2022} deployed an LSTM forecaster for slice-level traffic. \textbf{TRACTOR}~\cite{Groen2023_TRACTOR} integrated reinforcement-learning xApps for resource-block assignment. \textbf{REAL}~\cite{Barker2025_REAL} integrated the OSC near-RT RIC with srsRAN for RL-based slice-resource-allocation xApps under urban-mobility channel modelling. Recently \textbf{Hayek et al.\ 2025}~\cite{Hayek2025} measured FL convergence on a 5G/WiFi/Ethernet COTS testbed with Raspberry-Pi clients, exposing uplink straggler effects. \textbf{arXiv:2508.08479}~\cite{arXiv2508_08479} benchmarked FedAvg/FedProx/FedBN on five throughput-prediction datasets with LSTM, CNN, CNN+LSTM, and Transformer architectures, finding FedBN superior under feature skew. \textbf{Mangi et al.\ 2026}~\cite{Mangi2026} (``\textsc{When Clients Drift}'') proposed regime-aware aggregation under leave-one-regime-out evaluation on synthetic 6G RAN telemetry.
+
+Each of these papers covers one or two of our four axes. None benchmarks LSTM, Mamba, and Spiking-SSM jointly under parametric Dirichlet heterogeneity, and none reports per-round NVML energy. Our work is differentiated by the combination of architecture breadth, algorithm breadth, parametric heterogeneity, and energy instrumentation on the \textbf{publicly-available} Colosseum/ColO-RAN dataset, in contrast to closed simulators or undisclosed datasets used by Mangi et al.
+
+\subsection{Spiking-SSM and FL $\times$ spiking neural networks}
+
+Hybrid spiking-state-space architectures emerged from late 2024. \textbf{SpikMamba}~\cite{Chen2024_SpikMamba} combined LIF spiking neurons with Mamba selective scan for event-camera action recognition. \textbf{Mamba-Spike}~\cite{arXiv2408_11823_MambaSpike} introduced a spiking front-end for general temporal data. \textbf{Spiking Point Mamba}~\cite{SpikingPointMamba2025} extended to 3D point clouds. \textbf{SpikingSSMs}~\cite{SpikingSSMs2025} formalized sparse-parallel spiking state-space layers. \textbf{SpikingMamba}~\cite{arXiv2510_04595_SpikingMamba} distilled large language models into spiking variants for energy efficiency. \textbf{SpikingBrain}~\cite{arXiv2509_05276_SpikingBrain} scaled spiking architectures to 76B parameters on data-center GPU clusters with explicit FLOP-utilization measurement.
+
+Federated-learning variants of spiking neural networks emerged earlier than spiking-SSM: \textbf{arXiv:2106.06579}~\cite{arXiv2106_06579_FLSNN} founded FL $\times$ SNN. \textbf{FedLEC}~\cite{arXiv2412_17305_FedLEC} extended to label-skew non-IID. \textbf{SNN in vertical FL}~\cite{arXiv2407_17672_VFL_SNN} examined VFL energy trade-offs. \textbf{Robustness of SNN in FL with compression}~\cite{arXiv2501_03306_RobustSNNFL} addressed Byzantine attacks. \textbf{Privacy in FL with SNN}~\cite{arXiv2511_21181_PrivSNNFL} characterized gradient leakage. Most recently, \textbf{arXiv:2602.12009}~\cite{arXiv2602_12009_DPSNNFL} examined firing-rate sensitivity to differential privacy in federated SNN --- preempting the DP-SNN-FL angle. We accordingly cite this work in Section~\ref{sec:discussion} as a deferral and do not duplicate the DP study; our contribution is orthogonal in its multi-architecture $\times$ parametric-Dirichlet $\times$ NVML scope.
+
+To our knowledge, no published work combines spiking-SSM with FL on cellular/RAN telemetry. Our \lstinline|spiking_expand2| variant adapts the wide-inner-state design pattern from Mamba~\cite{GuDao2023_Mamba} to spiking-SSM and demonstrates competitive AUC/energy trade-off on commodity edge GPU under FL.
+
+\subsection{GPU energy measurement methodology}\label{sec:related-energy}
+
+The argument that FLOP counts mis-estimate actual hardware energy predates our work. \textbf{Shen et al.\ 2023}~\cite{Shen2023_BitBudget} (``Is Conventional SNN Really Efficient?'') critiqued synaptic-operation accounting via a Bit Budget framework, finding that quantized ANNs dominate SNNs at equivalent bit budgets. \textbf{$\alpha$-FLOPs}~\cite{Asperti2021_alphaFLOPs} proposed a parallelism-aware alternative. \textbf{NeuroBench}~\cite{Yik2025_NeuroBench} standardized neuromorphic benchmarking on real hardware. The \textbf{ML.ENERGY Benchmark}~\cite{Chung2025_MLEnergy} measured inference energy on generative AI; \textbf{Where Do the Joules Go?}~\cite{Chung2026_Joules} diagnosed the breakdown across model families. \textbf{STEP}~\cite{Shen2025_STEP} specifically benchmarked spiking transformers including memory-access cost. \textbf{Beyond Backpropagation}~\cite{Spyra2025_BeyondBackprop} applied NVML and CodeCarbon to alternative training objectives.
+
+We follow the \textbf{Energy API} approach (\lstinline|nvmlDeviceGetTotalEnergyConsumption|, available on Volta+ with NVML $\geq 11.0$) preferred over polling-power Riemann-sum integration per the ML.ENERGY 2025 paper~\cite{Chung2025_MLEnergy} and accompanying leaderboard. Our novel angle is the \textbf{federated-training regime}: prior NVML benchmarks measure inference~\cite{Yik2025_NeuroBench, Chung2025_MLEnergy} or centralized training~\cite{arXiv2509_05276_SpikingBrain, Spyra2025_BeyondBackprop}; we measure per-round energy across an FL sweep, including idle-baseline subtraction.
+
+\subsection{Heterogeneity in federated learning}
+
+\textbf{NIID-Bench}~\cite{Li2022_NIIDBench} established Dirichlet partitioning as the standard non-IID benchmark. \textbf{FedBN}~\cite{Li2021_FedBN} keeps client-local BatchNorm statistics for feature-skew settings; \textbf{arXiv:2508.08479}~\cite{arXiv2508_08479} demonstrated FedBN's superiority on cellular feature-skew. \textbf{pFedFDA}~\cite{pFedFDA2024} specifically targets covariate shift. \textbf{Borazjani et al.\ 2025}~\cite{Borazjani2025} argued for embedding-based heterogeneity definitions beyond label-skew.
+
+We use Dirichlet partitioning over slice IDs as the canonical covariate-skew model for O-RAN: each gNB serves a different mix of slice traffic, with mixing entropy controlled by \alphadir. We adopt $\alphadir\in\{0.05, 0.10, 0.50, 1.00, 5.00\}$ to span extreme stress (each gNB dominated by a single slice) through near-IID. We additionally evaluate the natural base-station partition (one gNB $\Rightarrow$ one client, 7 ColO-RAN gNBs in the public release) as a non-parametric heterogeneity reference. We discuss the applicability of embedding-based alternatives in Section~\ref{sec:discussion}.
+
+\subsection{Sharpness-aware federated learning (2024--2026)}\label{sec:related-sharp}
+
+A separate strand of recent FL work targets \emph{heterogeneity-induced sharp minima} via per-step learning-rate cycling and server-side weight extrapolation. \textbf{FedSAM}~\cite{Caldarola2022_FedSAM} adapted Foret et al.'s SAM perturbation to the federated client step. \textbf{FedSWA}~\cite{Liu2025_FedSWA} introduced an intra-round cyclical local LR schedule (eq.~3) combined with a LookAhead-style server EMA $\theta_t = \theta_{t-1} + \alpha(v_t - \theta_{t-1})$ with $\alpha=1.5$ (eq.~17). \textbf{FedSCAM}~\cite{FedSCAM2026} composed SAM with clustering for further sharpness regularization. The reported gains (FedSWA: $+5.6\%$ over FedAvg on CIFAR-100 with $10\%$ client participation across 1000 rounds) assume large-$N$ low-participation FL with coherent client drift toward sharp minima.
+
+We do not empirically evaluate this family on Colosseum/ColO-RAN (see Section~\ref{sec:discussion}). Two structural mismatches make the absence of comparison defensible on mechanism alone. First, our regime --- 7 base-station-natural clients with $71\%$ per-round participation, 100 rounds, RAN slice SLA prediction --- is \emph{aggregation-noise-dominated} rather than coherent-drift-dominated. Second, FedAdam's adaptive variance damping $\mathrm{Adam}(m, v)$ over $(v_t - \theta_{t-1})$ systematically dominates FedSWA's variance-blind LookAhead overshoot \emph{in expectation} in this regime: FedAdam knows when to step small (high $v$) and when to step normally (low $v$), while FedSWA's LookAhead extrapolation rate $\alphala$ (the FedSWA paper's $\alpha$-symbol; we write it $\alphala$ throughout to disambiguate from the Dirichlet $\alphadir$ of Section~\ref{sec:partition} and the FedDyn $\alphadyn$ of Section~\ref{sec:method}; FedSWA's preregistered value is $\alphala=1.5$) amplifies \emph{both} signal and noise uniformly. Empirically (Section~\ref{sec:fedadam-ceiling}), FedAdam already saturates the headroom available to server-side aggregation modifications at $+0.006$--$+0.016$ Dirichlet-averaged AUC over FedAvg across the 3 architectures (paired-bootstrap CI$_{95}$ in Section~\ref{sec:intro} contribution 2); LookAhead overshoot is unlikely to \emph{systematically} exceed this ceiling without the variance-estimation machinery FedAdam has and FedSWA lacks. We additionally note that FedSWA targets \emph{heterogeneity-as-sharpness-wound}, which our inverted-$\alpha$ finding (Section~\ref{sec:intro}, Section~\ref{sec:results}) indicates does not characterize this dataset.
+
+
+\section{Dataset}\label{sec:dataset}
+
+\subsection{Colosseum / ColO-RAN testbed}
+
+ColO-RAN~\cite{Polese2022} is the publicly-released RAN telemetry corpus collected from the Colosseum digital-twin testbed~\cite{Bonati2024}, comprising the per-second downlink/uplink physical-layer measurements of 7 base stations (Colosseum Rome scenario, BS nodes $\{1, 8, 15, 22, 29, 36, 43\}$; we re-index these to \lstinline|bs_id| $\in\{1, \ldots, 7\}$ for ease of use) operating concurrently under 28 distinct traffic configurations (\lstinline|tr| $\in\{0, \ldots, 27\}$, each a different RBG-per-slice allocation pattern; the exact (slice~0 / slice~1 / slice~2) RBG triples per \lstinline|tr| are documented in the ColO-RAN release). Each base station serves 3 logical slices, and each slice can be served by one of 3 scheduling policies; both index mappings are listed in Table~\ref{tab:dataset-mapping}. The unified telemetry table contains $\approx 18$\,M rows of (timestamp, \lstinline|bs_id|, \lstinline|slice_id|, \lstinline|sched|, \lstinline|tr|) keyed observations with 17 continuous features (uplink/downlink throughput, MCS/CQI, BLER, RB utilisation, buffer occupancy; full list in Section~\ref{sec:method}). We use the public release without modification; no synthetic augmentation, no re-simulation.
+
+\begin{table}[t]
+\caption{ColO-RAN slice and scheduler index mapping.}
+\label{tab:dataset-mapping}
+\centering
+\begin{tabular}{@{}clll@{}}
+\toprule
+Index & Slice ID & Traffic class & Workload \\
+\midrule
+0 & eMBB  & broadband      & 4\,Mbps CBR/UE \\
+1 & MTC   & machine-type   & Poisson 30\,pkt/s, 125\,B/UE \\
+2 & URLLC & ultra-reliable & Poisson 10\,pkt/s, 125\,B/UE \\
+\midrule
+Index & \lstinline|sched| ID & Scheduler & \\
+\midrule
+0 & RR & Round-Robin          & \\
+1 & WF & Waterfilling         & \\
+2 & PF & Proportionally Fair  & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Task definition: per-slice SLA-violation forecasting}
+
+The forecasting target is the binary indicator $y_{t+1} = \mathbf{1}[\mathit{ul\_bler}_{t+1} > 0.10]$, predicting whether the next-second uplink BLER on a given (\lstinline|bs_id|, \lstinline|slice_id|) tuple will breach the $10\%$ SLA threshold. This threshold is the canonical SLA-violation gate used by the ColO-RAN authors~\cite{Polese2022}; the binary framing keeps the metric (AUC, F1) decision-relevant for the near-RT RIC's resource-allocation xApps. The empirical positive rate on the train partition is \textbf{$30.9\%$} (per-slice $34.9\%$ / $26.7\%$ / $31.0\%$, measured on \lstinline|tr| $\in\{0..21\}$; see Section~\ref{sec:discussion} for how this rate enters the per-client loss reweighting). Inputs to the model are the most recent five seconds of (\lstinline|slice_id|, \lstinline|sched|, \lstinline|tr|, 17 continuous features) on the same (\lstinline|bs_id|, \lstinline|slice_id|) tuple --- \lstinline|seq_len=5| is preregistered from v3/v4.
+
+\subsection{Out-of-distribution split by traffic config}
+
+To prevent label leakage between train / validation / test, we partition the 28 traffic configurations into three disjoint groups: train \lstinline|tr| $\in\{0..21\}$ (22 configs), validation \lstinline|tr| $\in\{22..24\}$ (3 configs), and test \lstinline|tr| $\in\{25..27\}$ (3 configs). All three sets are evaluated on the same 7 base stations and 3 slices; only the traffic-config index changes. This split is identical to v4 so accuracy numbers are cross-paper comparable. Crucially, \textbf{partition-into-clients (Section~\ref{sec:partition}) operates within the train \lstinline|tr| range only}: validation and test sets are pooled across all clients to guarantee identical evaluation surfaces across configurations.
+
+\subsection{Target-leakage audit (preserved from v4)}
+
+A v4-era audit established that the previously documented \lstinline|allocation_efficiency = 0.5 * throughput_eff + 0.3 * qos + 0.2 * prb_util| regression target is a deterministic linear combination of three concurrent inputs and is therefore unsuitable. We retain that exclusion and the v4-validated leak-free continuous feature set in v7.
+
+\subsection{Preprocessing pipeline}
+
+The 18\,M-row unified parquet (\lstinline|coloran_raw_unified.parquet|) is materialised once and streamed lazily through four pipeline stages: (i)~per-(\lstinline|bs_id|, \lstinline|slice_id|) sequence construction with \lstinline|build_run_sequences| (rolling \lstinline|seq_len=5| windows, positive-rate computed from train rows only via \lstinline|pos_weight_split=train| (preregistered) --- this avoids test-set leakage into the loss function); (ii)~leak-free \lstinline|ContinuousScaler| fit on the train partition only and applied to validation and test; (iii)~categorical encoding of \lstinline|slice_id| $\times$ \lstinline|sched| $\times$ \lstinline|tr| via \lstinline|nn.Embedding| lookups; (iv)~Dirichlet-or-natural-by-BS client partition (Section~\ref{sec:partition}). All four stages are implemented as pure functions in \lstinline|src/fl_oran/data_v2/| and tested in \lstinline|tests/test_v5_*| for determinism and seed-reproducibility (single-source-of-truth contract). The same sequence index is shared across all algorithms within an (arch, partition, seed) triple via a \lstinline|SharedSplits| cache; this is the perf inheritance from prior centralized work.
+
+
+\section{Method}\label{sec:method}
+
+\subsection{Three architectures with a shared encoder--classifier shell}
+
+All three architectures share an identical encoder and an identical classifier head; only the temporal backbone differs. The encoder concatenates \lstinline|nn.Embedding|-projected categorical features with the continuous features pre-standardised by the leak-free scaler (Section~\ref{sec:dataset}), producing a per-step input vector. The classifier head is a two-layer MLP \lstinline|Linear(b -> 64) -> ReLU -> Linear(64 -> 1)| consuming the backbone's last-step activation, where $b$ is the backbone's exposed dimension. Hyperparameter parity within $\pm 10\%$ of the LSTM baseline parameter count is preregistered and verified by \lstinline|tests/test_v6_param_count.py| (LSTM 44\,553, Mamba 40\,489, Spiking-expand2 43\,593). The negative direction of the Mamba parity gap ($-9\%$ relative to LSTM, vs Spiking-expand2's $-2\%$) reflects Mamba's structurally smaller state-space block at our preregistered configuration $(d_{\mathrm{model}}=64, d_{\mathrm{state}}=16, \mathit{expand}=1)$; we did not search over Mamba block dimensions to close this gap because (a)~the v6 architecture audit pinned these block dimensions and (b)~$\pm 10\%$ parity was the preregistered design constraint, not a hyperparameter optimisation outcome. The asymmetry should not be interpreted as compute-budget shortfall: at fixed \lstinline|seq_len=5| and \lstinline|max_steps=50|, gradient-step compute is dominated by the linear encoder/classifier shared across architectures, not by the backbone's parameter count.
+
+\textbf{LSTM baseline (\lstinline|ForecasterV2|).} Two-layer stacked \lstinline|nn.LSTM| (input $\rightarrow$ 64 $\rightarrow$ 32). Unchanged since v3. Backbone exposes $b=32$.
+
+\textbf{Mamba-S6 (\lstinline|MambaForecaster|).} \lstinline|Linear(input -> 64)| $\rightarrow$ $2 \times$ \lstinline|MambaS6Block| ($d_{\mathrm{model}}=64$, $d_{\mathrm{state}}=16$, $d_{\mathrm{conv}}=4$, $\mathit{expand}=1$) $\rightarrow$ \lstinline|Linear(64 -> 32)|. Each block performs (a)~input-dependent projection of $(\Delta t, B, C)$, (b)~depthwise causal 1-D convolution on the gating branch with SiLU non-linearity, (c)~sequential discretised SSM scan, and (d)~gated down-projection --- implementing the selective state-space block of Gu and Dao~\cite{GuDao2023_Mamba}. We use a pure-PyTorch sequential-scan implementation rather than the \lstinline|mamba-ssm| Triton kernel so the reproducibility artefact requires only a PyTorch + CUDA runtime, not a system CUDA-dev toolkit. Backbone exposes $b=32$.
+
+\textbf{Spiking-SSM (\lstinline|spiking_expand2|).} \lstinline|Linear(input -> 56)| $\rightarrow$ $2 \times$ \lstinline|SpikingSSMBlock| ($d_{\mathrm{model}}=56$, $d_{\mathrm{state}}=16$, $\mathit{expand}=2 \Rightarrow d_{\mathrm{inner}}=112$, \lstinline|lif_threshold=1.0|, \lstinline|lif_beta=0.9|, \lstinline|atan_alpha=2.0|) $\rightarrow$ \lstinline|Linear(56 -> 32)|. Each block performs (a)~input projection, (b)~diagonal SSM recurrence with learnable $B, C, D$ matrices and log-parameterised $A$ initialised at $-[1, 2, \ldots, d_{\mathrm{state}}]$ per channel, (c)~per-channel \lstinline|snntorch.Leaky| LIF neuron emitting binary spikes via the atan surrogate gradient~\cite{Wei2018_atan}, (d)~\lstinline|out_proj| linear consuming the binary spike train. The $\mathit{expand}=2$ widening (vs $\mathit{expand}=1$ for the v6 default) is the architectural variant identified during prior wide-state experiments --- it dominates the alternative wide-Mamba (\lstinline|mamba_expand2|) variant on energy-AUC trade-off ($-11\%$ energy at parity AUC vs $+12\%$ theoretical / $+4\%$ measured energy at no AUC gain). Backbone exposes $b=32$.
+
+\subsection{Five federated-learning algorithms}\label{sec:fl-algorithms}
+
+We benchmark five algorithms drawn from the canonical preregistered set. In what follows we use $\alphadir$ for the Dirichlet partition concentration parameter (Section~\ref{sec:partition}) and $\alphadyn$ for the FedDyn regularisation coefficient, to disambiguate two distinct $\alpha$'s that appear in the FL literature with the same Greek letter.
+
+\textbf{FedAvg}~\cite{McMahan2017_FedAvg} --- server-side aggregate is the per-client \lstinline|num_examples|-weighted average of client final states (\lstinline|scripts/aggregation.py:weighted_average_state_dicts|). In our spec each client trains for \lstinline|max_steps_per_round=50| $\times$ \lstinline|batch_size=64| $= 3200$ examples per round, so \lstinline|num_examples| is constant across clients and the weighted average reduces to a uniform mean --- but we mention the implementation detail explicitly because the released artefact aggregates by \lstinline|num_examples| and a different spec (varying \lstinline|max_steps| per client) would no longer give uniform weighting.
+
+\textbf{FedProx}~\cite{Li2020_FedProx} --- FedAvg client step augmented with the canonical proximal regulariser, eq.~\eqref{eq:fedprox}, with $\mu = 0.01$.
+
+\begin{equation}\label{eq:fedprox}
+  \mathcal{L}_{\mathrm{prox}}^{(i)} = \mathcal{L}^{(i)} + \frac{\mu}{2}\,\bigl\lVert w - w_g \bigr\rVert^2
+\end{equation}
+
+We inject the equivalent $\mu \cdot (w - w_g)$ correction directly into \lstinline|p.grad| after \lstinline|loss.backward()| (this is mathematically equivalent to adding the prox term to the loss but avoids building autograd nodes over every parameter).
+
+\textbf{FedAdam}~\cite{Reddi2021_FedAdam} --- server-side Adam over the FedAvg pseudogradient $(v_t - \theta_{t-1})$ with first/second-moment coefficients $\beta_1 = 0.9$, $\beta_2 = 0.99$ (note: $\beta_2 = 0.99$ follows the FedAdam paper's choice rather than the canonical Adam default $0.999$) and server learning rate $\eta_{\mathrm{server}} = 0.01$.
+
+\textbf{SCAFFOLD}~\cite{Karimireddy2020_SCAFFOLD} --- FedAvg client step augmented with a per-client control-variate correction $+(c_{\mathrm{global}} - c_{\mathrm{local},i})$ applied to gradients post-backward via the \lstinline|train_one_client_capped(grad_hook=...)| extension point introduced in our prior algorithm-interface design. For the per-client control-variate update we adopt the Adam-friendly Option-II variant as the default; eq.~\eqref{eq:scaffold} lists both options:
+
+\begin{equation}\label{eq:scaffold}
+  c_{\mathrm{local},i} \leftarrow
+  \begin{cases}
+    \nabla \mathcal{L}_i(w_g) & \text{(Option-II, default)} \\
+    \dfrac{w_g - w_l}{K \, \eta} & \text{(Option-I, canonical SGD)}
+  \end{cases}
+\end{equation}
+
+Option-I implicitly assumes SGD dynamics where weight drift scales with $\mathit{grad} \cdot \eta$; under our Adam local optimiser the drift is $\sim \eta$ regardless of gradient magnitude, making the Option-I $c_i$ estimate $\sim 100\times$ the true gradient magnitude and unstable across rounds.
+
+\textbf{FedDyn}~\cite{Acar2021_FedDyn} --- we use the Adam-friendly Option-II variant as the default (with $\alphadyn = 0.01$); the canonical SGD-friendly variant diverges to NaN under our Adam local optimiser at the 100-round budget (root-cause analysis: positive-feedback between Adam's adaptive scaling and the unbounded $h$-accumulator growth). Both options are listed in eq.~\eqref{eq:feddyn}; the canonical variant is preserved as an opt-in \lstinline|update_mode="canonical"| for downstream researchers running SGD-only client optimisers.
+
+\begin{equation}\label{eq:feddyn}
+  h_i \leftarrow
+  \begin{cases}
+    h_i - \alphadyn \cdot \nabla \mathcal{L}_i(w_t) & \text{(Option-II, default)} \\
+    h_i + (w_l - w_g) & \text{(canonical SGD)}
+  \end{cases}
+\end{equation}
+
+MOON~\cite{Li2021_MOON} is deferred (preregistered before evaluation): its \lstinline|forecaster_encode_fn| is hard-bound to the LSTM backbone in v5 and the contrastive-feature extraction does not generalise cleanly to selective-scan SSM or to spiking-SSM activations; we leave the cross-architecture extension to future work and exclude MOON from the headline comparison rather than benchmark it on LSTM-only.
+
+The five algorithms share a common \lstinline|FLAlgorithm| protocol with explicit \lstinline|init_state| / \lstinline|local_train| / \lstinline|server_aggregate| methods; each algorithm-specific contribution is injected as a closure over the shared \lstinline|train_one_client_capped| function, never as a duplicate training loop. The single deviation from the v5 $\rightarrow$ v7 design is one optional grad-hook parameter on \lstinline|train_one_client_capped| for the SCAFFOLD control-variate correction.
+
+\subsection{Partition schemes: natural-by-BS and parametric Dirichlet}\label{sec:partition}
+
+We evaluate two partition families holding 7 clients fixed.
+
+\textbf{Natural-by-BS.} One client per ColO-RAN base station (\lstinline|bs_id| $\in\{1, \ldots, 7\}$). Each client receives its own gNB's full slice mix, scheduler distribution, and traffic-config samples (within the train \lstinline|tr| range). This is the partition that arises naturally in deployment, and is the central object of contribution~1 (Section~\ref{sec:intro}). \emph{Code-name caveat:} in our codebase this partition is implemented as \lstinline|partition_clients(mode="iid")|. The string \lstinline|"iid"| is a misnomer inherited from earlier development before we measured the per-bs distributions; the partition is \emph{not} statistically IID across clients on this dataset (per-bs continuous-feature distributions differ measurably --- see Section~\ref{sec:kl}). We keep the legacy \lstinline|mode="iid"| API name for backwards compatibility with the v5 / v6 codebase but refer to the partition as ``natural-by-BS'' throughout the paper. Researchers reproducing our pipeline should expect the file structure \lstinline|artifacts/v7_stage2_full/v7_<arch>_<algo>_iid_n7_s<seed>/| to correspond to natural-by-BS cells.
+
+\textbf{Parametric Dirichlet.} For each value of $\alphadir \in \{0.05, 0.10, 0.50, 1.00, 5.00\}$, we draw per-client slice-id mixing proportions from $\mathrm{Dirichlet}([\alphadir, \alphadir, \alphadir])$ (3-dim, one component per \lstinline|slice_id| $\in\{0, 1, 2\}$) and assign train rows to clients according to those proportions. $\alphadir \rightarrow 0$ concentrates each client on a single dominant slice (extreme covariate skew); $\alphadir \rightarrow \infty$ approaches stratified uniform. This follows the canonical Hsu et al.\ construction~\cite{Hsu2019_Dirichlet} and is cross-comparable with NIID-Bench~\cite{Li2022_NIIDBench}. Implementation: \lstinline|src/fl_oran/data_v2/partition.py partition_clients(mode="dirichlet")|.
+
+For every partition we use 7 clients, 100 rounds, 50 max steps per round, batch size 64, bf16 mixed precision, and \lstinline|cudnn_deterministic=True|. The per-round client sample is 5 of 7 ($71\%$ participation). Architecture-specific hyperparameter overrides (\lstinline|lr=5e-4| across all three; \lstinline|lr_warmup_rounds=5| for Spiking-SSM, 3 for the others) are preregistered in \lstinline|experiments/specs/stage2_full.yaml|.
+
+\subsection{NVML training-energy measurement}
+
+Per-round training energy is measured via \lstinline|nvmlDeviceGetTotalEnergyConsumption| (NVIDIA Energy API, available on Volta+ architectures) bracketed by \lstinline|torch.cuda.synchronize()| at round boundaries. We record both the raw cumulative energy and an \textbf{idle-baseline subtraction}: a 2-second NVML sample is taken before training to estimate the GPU's idle power draw $P_{\mathrm{idle}}$ (mW), and per-round training energy is reported per eq.~\eqref{eq:nvml}, yielding \lstinline|training_model_attributable_mJ| --- the model-attributable component used in Section~\ref{sec:results} and Figure~3 (Pareto).
+
+\begin{equation}\label{eq:nvml}
+  E_{\mathrm{round}} = E_{\mathrm{total}} - P_{\mathrm{idle}} \cdot \Delta t_{\mathrm{round}}
+\end{equation}
+
+This protocol follows the ML.ENERGY 2025 best-practices recommendation~\cite{Chung2025_MLEnergy} of preferring the cumulative Energy API over polling-power Riemann integration. Single-GPU only (multi-GPU not handled by design); \lstinline|nvidia-ml-py| is the canonical Python binding (the deprecated \lstinline|pynvml| package is used only as a fallback, with a deprecation warning logged at startup).
+
+\subsection{Statistical inference}\label{sec:stats}
+
+Statistical inference protocol (preregistered):
+
+\begin{enumerate}
+  \item \textbf{Per-cell summary statistic.} Mean $\pm$ standard deviation of test AUC across the 10 seeds.
+  \item \textbf{Pairwise comparison statistic.} Paired-bootstrap CI$_{95}$ on the per-seed AUC delta via \lstinline|scripts/aggregate_v7_results.py:paired_bootstrap_delta| ($n_{\mathrm{boot}} = 10\,000$, percentile interval). We choose percentile over BCa because $n = 10$ with approximately symmetric per-seed delta distributions makes the BCa bias-correction term smaller than the seed $\sigma$ on every reported finding (Section~\ref{sec:limits}).
+  \item \textbf{Pairwise axis fix.} Each pairwise comparison holds all axes other than the contrasted one fixed (e.g., FedAdam-vs-FedAvg holds (arch, partition) constant; Spiking-vs-LSTM holds (algorithm, partition) constant).
+  \item \textbf{Bootstrap RNG decorrelation.} Each pairwise comparison draws an independent BLAKE2b-derived seed offset added to the base bootstrap seed. Without this, every pair would resample at exactly the same indices, producing artificially correlated CIs and breaking any joint coverage claim across the 270 paired-bootstrap distributions.
+  \item \textbf{Pair-set base seeds.} 2026 for the 180 algorithm-pair sweep; 2027 for the 90 architecture-pair sweep. The two sweeps' bootstrap streams are independent.
+  \item \textbf{Secondary check.} Wilcoxon signed-rank $p$-value, as a directional sanity check; the paired-bootstrap CI is the primary statistic (preregistered).
+  \item \textbf{Multi-comparison correction.} $p$-values reported uncorrected per finding. Family-wise Bonferroni at $\alpha = 0.05$ corresponds to threshold $0.05 / 180 \approx 2.78 \times 10^{-4}$ over the algorithm-pair family and $0.05 / 90 \approx 5.56 \times 10^{-4}$ over the arch-pair family. For the strictest joint coverage claim across the entire 270-pair set, the Mamba $\times$ SCAFFOLD finding (uncorrected Wilcoxon $p = 0.002$, see Section~\ref{sec:results}) sits above the corrected threshold, but its paired-bootstrap CI$_{95}$ excludes 0 with margin ($\Delta = -0.0915$, CI $[-0.1288, -0.0544]$). Readers seeking strict family-wise control should treat this Wilcoxon as supportive but not primary evidence.
+\end{enumerate}
+
+
+\section{Reproducibility infrastructure}\label{sec:repro}
+
+We outline the artefact components shipped with the paper. Camera-ready release includes a Zenodo-archived snapshot under Apache-2.0 with Croissant metadata; this section documents the structure so reviewers can audit the shape of the release before acceptance.
+
+\subsection{Spec-driven YAML pipeline}
+
+Every experiment cell is fully specified by a single YAML file under \lstinline|experiments/specs/| (e.g., \lstinline|stage2_full.yaml| for Phase~5; \lstinline|ablation_random_split.yaml| for Section~\ref{sec:ablation}). The launcher (\lstinline|experiments/run_v7_phase_sweep.py|) reads the spec, expands the Cartesian product (archs $\times$ algorithms $\times$ partitions $\times$ seeds), and dispatches per-cell runs with a \lstinline|--skip-completed| resume mechanism that recovers from cluster pre-emption without recomputing finished cells. This eliminates the most common reproducibility friction in multi-day FL sweeps (silent re-execution of completed cells).
+
+\subsection{Test infrastructure}
+
+The release ships 277 passing tests across four suites (202 trainer + 22 aggregator + 37 paper invariants + 16 paper claims-vs-data); the latter two (53 tests) form a developer pre-commit gate that verifies every \lstinline|PAPER_DRAFT.md| edit. Full breakdown in App.~B.1.
+
+\subsection{Statistical pipeline}
+
+\lstinline|scripts/aggregate_v7_results.py| produces \lstinline|aggregated_phase5.json| (90 group means + 270 paired-bootstrap distributions); BLAKE2b-hashed independent bootstrap streams support joint coverage claims (Section~\ref{sec:stats}). Full pipeline detail in App.~B.2.
+
+\subsection{Croissant dataset metadata}
+
+The preprocessed \lstinline|coloran_raw_unified.parquet| is documented in a Croissant 1.0 metadata file shipped with the release archive (App.~B.3).
+
+\subsection{Reproducible execution environment}
+
+Release archive bundles \lstinline|Dockerfile.repro| (CUDA 12.8 / PyTorch 2.10 pinned), \lstinline|requirements.lock| (SHA256-pinned 74 packages), and \lstinline|repro.sh| (1-cell smoke + bit-equivalence check). Full detail in App.~B.4.
+
+\subsection{Demo notebook}
+
+\lstinline|notebooks/colosseum_oran_federated_slicing_demo.ipynb| is the recommended onboarding entry point. See App.~B.5.
+
+
+\section{Results}\label{sec:results}
+
+We report results from Phase~5, the full Stage-2 sweep --- 3 architectures $\times$ 5 algorithms $\times$ 6 partitions (1 IID natural-by-BS + 5 Dirichlet $\alphadir \in \{0.05, 0.10, 0.50, 1.00, 5.00\}$) $\times$ 10 seeds $= 900$ cells, all 90 (arch, algo, partition) groups populated with the full 10 seeds. All AUC numbers below are out-of-sample test AUC; the per-group means and stds are tabulated in App.~A.1 (also exported as \lstinline|aggregated_phase5.json| for downstream tooling). Pairwise comparisons use paired-bootstrap CI$_{95}$ with $n_{\mathrm{boot}} = 10\,000$ over per-seed AUC deltas, with each $(a, b)$ pair drawing an independent BLAKE2b-derived seed offset to keep the 270 paired-bootstrap distributions (180 algorithm-pairs + 90 architecture-pairs) jointly decorrelated. Figures~\ref{fig:algo-ranking}--\ref{fig:pareto} are reproducible from \lstinline|scripts/phase5_paper_figures.py|.
+
+\subsection{Overview: a flat algorithm landscape with strong architecture $\times$ partition signal}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../artifacts/figures/algo_ranking.pdf}
+\caption{Per-architecture algorithm ranking (mean best-validation AUC, averaged over Dirichlet partitions $\alphadir \in \{0.05, 0.10, 0.50, 1.00, 5.00\}$ and 10 seeds; $n = 50$ per bar). Three panels: LSTM / Mamba / Spiking-SSM.}
+\label{fig:algo-ranking}
+\end{figure}
+
+Figure~\ref{fig:algo-ranking} summarises the Dirichlet-averaged best-validation AUC (the seed-by-seed peak validation AUC observed during training, averaged across $\alphadir \in \{0.05, \ldots, 5.0\}$ and 10 seeds; we use best-val rather than test for Figure~\ref{fig:algo-ranking} only because it makes the algorithm contrast visually crisper, and we cross-check all paired-delta claims on test AUC in Sections~\ref{sec:inverted-alpha}--\ref{sec:arch-leverage}) of each algorithm within each architecture. The five algorithms cluster within a $0.022$--$0.043$ best-val-AUC band on LSTM and Spiking-SSM (LSTM: FedAdam $0.813$ best, FedDyn $0.789$ worst; Spiking: FedAdam $0.696$ best, SCAFFOLD $0.653$ worst) and within a $0.078$ band on Mamba (FedAdam $0.816$ best, SCAFFOLD $0.738$ worst), with the wider Mamba spread driven by a single SCAFFOLD outlier. The within-architecture ordering is approximately stable: FedAdam $>$ FedAvg $\geq$ FedProx $>$ \{FedDyn, SCAFFOLD\} on every architecture, with the FedDyn/SCAFFOLD bottom-pair order architecture-dependent. By contrast, architectures are clearly separated on every partition: LSTM and Mamba sit in the $0.90$--$0.92$ IID band (with SCAFFOLD-on-Mamba as the $0.8998$ lower outlier and the four other algorithms in $0.911$--$0.919$) and $0.74$--$0.87$ Dirichlet stress band, while Spiking-SSM sits in $0.84$--$0.86$ IID and $0.65$--$0.71$ Dirichlet stress. The flat algorithm dimension is the design-space observation that motivates the Section~\ref{sec:fedadam-ceiling} algorithm-flatness analysis and the Section~\ref{sec:related-sharp} dismissal of the LookAhead-style sharpness-aware family.
+
+\subsection{Inverted-$\alpha$: heterogeneity helps in O-RAN slice federation}\label{sec:inverted-alpha}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{../artifacts/figures/interaction_heatmap.pdf}
+\caption{Architecture $\times$ algorithm $\times$ partition interaction heatmap. Three rows (LSTM / Mamba / Spiking-SSM) $\times$ six partition columns (natural-by-BS $+$ Dirichlet $\alphadir \in \{0.05, 0.10, 0.50, 1.00, 5.00\}$). Each cell colour-codes mean test AUC over 10 seeds, with mean $\pm$ std overlaid. The Mamba $\times$ SCAFFOLD $\times$ $\alphadir \in \{0.10, 0.50\}$ red region is the catastrophic interaction (Section~\ref{sec:mamba-scaffold}).}
+\label{fig:interaction-heatmap}
+\end{figure*}
+
+Figure~\ref{fig:interaction-heatmap} reveals the paper's headline finding. For every (arch, algo) pair, AUC is monotonically increasing as Dirichlet $\alphadir$ decreases from $5.00$ toward $0.05$, and the natural-by-BS partition (one client per ColO-RAN gNB) sits \emph{strictly above} the most-skewed Dirichlet $\alphadir = 0.05$ cell on every (arch, algo). On LSTM $\times$ FedAvg, AUC traces $0.7475 \pm 0.0044$ ($\alphadir = 5.00$) $\rightarrow 0.7571$ ($\alphadir = 1.00$) $\rightarrow 0.7794$ ($\alphadir = 0.50$) $\rightarrow 0.8361$ ($\alphadir = 0.10$) $\rightarrow 0.8605 \pm 0.0161$ ($\alphadir = 0.05$) $\rightarrow 0.9159 \pm 0.0004$ (IID natural-by-BS), a $0.168$-AUC gap from the most-uniform Dirichlet to the natural partition. On Mamba $\times$ FedAvg the same trace is $0.749 \rightarrow 0.756 \rightarrow 0.782 \rightarrow 0.852 \rightarrow 0.869 \rightarrow 0.917$, and on Spiking $\times$ FedAvg $0.669 \rightarrow 0.669 \rightarrow 0.674 \rightarrow 0.679 \rightarrow 0.691 \rightarrow 0.853$. Paired LSTM$-$Mamba arch-deltas at IID are tight at $\Delta = -0.0006$ $[-0.0010, -0.0003]$ (FedAvg, $p = 0.002$), while at $\alphadir = 0.05$ they widen to $\Delta = -0.0081$ $[-0.0112, -0.0049]$, reflecting the same monotonicity at finer granularity. The pattern holds across every algorithm tested. We discuss the structural-specialization mechanism in Section~\ref{sec:discussion}; here we note only that the standard FL-benchmark assumption ``lower $\alphadir \Rightarrow$ harder'' is empirically false on this dataset.
+
+\subsection{Algorithmic flatness: FedAdam saturates the server-side adaptive headroom}\label{sec:fedadam-ceiling}
+
+The 180 paired-bootstrap algorithm-pair deltas confirm the visual flatness of Figure~\ref{fig:algo-ranking}. FedAdam consistently leads FedAvg in expectation. Per-architecture Dirichlet-averaged $\Delta_{\mathrm{FedAdam} - \mathrm{FedAvg}}$: LSTM $+0.0080$ (range $+0.0048$--$+0.0128$, all 5 cells significant at $p \leq 0.04$), Mamba $+0.0062$ (range $-0.0021$--$+0.0097$, 4 of 5 cells significant; $\alphadir = 0.05$ is the single non-significant cell at $p = 0.85$), Spiking $+0.0164$ (range $+0.0108$--$+0.0267$, 4 of 5 cells significant; $\alphadir = 0.05$ marginal at $p = 0.11$). At IID, $\Delta_{\mathrm{FedAdam} - \mathrm{FedAvg}}$ shrinks to $\approx +0.002$ across architectures (LSTM $+0.0019$ $[+0.0017, +0.0021]$, etc.) --- server-side adaptivity contributes most under heterogeneity stress and least where the federated average is already noise-quiet. The remaining four pairwise contrasts (FedProx, FedDyn, SCAFFOLD vs FedAvg) are bounded above by $\Delta_{\mathrm{FedAdam} - \mathrm{FedAvg}}$ in absolute magnitude on every (arch, partition) cell except for the catastrophic interactions discussed in Section~\ref{sec:mamba-scaffold}. This empirical ceiling --- $\approx +0.016$ AUC headroom for any server-side aggregation modification --- is the pivotal evidence supporting the Section~\ref{sec:related-sharp} mechanism-based dismissal of FedSWA / FedSCAM, since LookAhead-style overshoot lacks the variance-estimation needed to systematically exceed FedAdam's adaptive damping.
+
+\subsection{Architecture $\times$ algorithm catastrophic interaction: Mamba $\times$ SCAFFOLD}\label{sec:mamba-scaffold}
+
+The flat-algorithm observation does not generalise across all (arch, algo) combinations. SCAFFOLD on Mamba at $\alphadir \in \{0.10, 0.50\}$ produces a destructive interaction not observed on LSTM, on Spiking-SSM, or on Mamba with any other algorithm at the same $\alphadir$. The headline cell --- Mamba $\times$ SCAFFOLD $\times$ $\alphadir = 0.10$ --- yields test AUC $0.7609 \pm 0.0830$ (mean $\pm$ std across 10 seeds), versus Mamba $\times$ FedAvg $\times$ $\alphadir = 0.10$ at $0.8524 \pm 0.0251$ on the same seeds. The paired delta is $\Delta_{\mathrm{SCAFFOLD} - \mathrm{FedAvg}} = -0.0915$ $[-0.1288, -0.0544]$ ($p = 0.002$, $n = 10$). The neighbouring cell at $\alphadir = 0.50$ reproduces the failure: $0.6955 \pm 0.0450$ vs $0.7816 \pm 0.0225$ for FedAvg, paired $\Delta = -0.0861$ $[-0.1026, -0.0689]$ ($p = 0.002$). Per-seed std is amplified $\approx 3\times$ over Mamba $\times$ FedAvg at the same $\alphadir$ ($0.083$ vs $0.025$) and $\approx 10\times$ over the most-uniform Dirichlet sweep (Mamba $\times$ FedAvg $\times$ $\alphadir = 5.00$, std $0.007$). Direction-consistency is total: \textbf{10 of 10 seeds have $\Delta < 0$ at $\alphadir = 0.10$} (per-seed deltas range $-0.0133$ to $-0.1689$) \textbf{and 10 of 10 seeds have $\Delta < 0$ at $\alphadir = 0.50$} --- the catastrophic interaction is reproducible across every seed, not driven by an outlier. Both components individually behave well: SCAFFOLD on LSTM $\alphadir = 0.10$ yields $0.8220 \pm 0.0362$ (no destruction), and Mamba on every other algorithm at $\alphadir = 0.10$ stays in $0.83$--$0.86$. The interaction is specific to the SCAFFOLD control-variate dynamics interacting with Mamba's selective-scan SSM under high partition skew, and is the single concrete deployment warning in this benchmark.
+
+\subsection{Architecture leverage dominates algorithm leverage on the energy--AUC Pareto}\label{sec:arch-leverage}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{../artifacts/figures/pareto.pdf}
+\caption{Energy--AUC Pareto front on RTX~4080. Per-cell mean best-validation AUC vs per-cell NVML idle-baseline-subtracted training energy (kJ). Points coloured by architecture (LSTM blue, Mamba orange, Spiking-SSM red); marker shape encodes algorithm. Three vertical bands at $3.51$--$4.31$ / $10.27$--$11.06$ / $40.39$--$41.51$ kJ/cell.}
+\label{fig:pareto}
+\end{figure}
+
+Figure~\ref{fig:pareto} plots per-cell mean best-val-AUC against per-cell mean model-attributable training energy (NVML idle-baseline-subtracted) on RTX~4080. The three architectures form three vertical bands at distinct energy scales: LSTM at $3.51$--$4.31$ kJ/cell, Mamba at $10.27$--$11.06$ kJ/cell, and Spiking-SSM at $40.39$--$41.51$ kJ/cell (per-cell ranges across all 30 (algorithm, partition) groups within each architecture; full per-cell table in App.~A.1) --- a $10\times$ span. Within each architecture, algorithms cluster vertically with negligible energy spread (the FedDyn / SCAFFOLD overhead from carrying control variates contributes $<10\%$ energy on top of FedAvg). Architecture choice therefore traverses $10\times$ in energy and $0.05$--$0.10$ in AUC; algorithm choice within an architecture traverses $0.02$--$0.03$ AUC at flat energy. The paired-bootstrap arch-deltas substantiate this: at IID, $\Delta_{\mathrm{Spiking} - \mathrm{LSTM}}$ AUC ranges from $-0.0615$ to $-0.0739$ across the five algorithms (all five cells significant at $p = 0.002$), an order-of-magnitude larger than the algorithm-leverage scale shown in Section~\ref{sec:fedadam-ceiling}. At Dirichlet $\alphadir = 0.05$, Spiking$-$LSTM widens further to $\Delta = -0.169$ $[-0.186, -0.146]$ for FedAvg. Operator deployment decisions on commodity edge GPU should therefore centre architecture-energy trade-off, with algorithm choice as a secondary tuning lever.
+
+\subsection{Mechanism preview: open question, dataset-structural rather than algorithm-mechanistic}
+
+The four findings above raise one mechanistic question: \emph{why does heterogeneity help here when standard FL benchmarks find the opposite?} Section~\ref{sec:discussion} develops this in detail. We summarise here so reviewers can navigate the discussion: (a)~one candidate that mixed per-client class-imbalance variance with structural specialisation was eliminated after we verified that \lstinline|fl_v7.py| uses a globally pooled positive-class weight in the BCE loss (the implementation is not client-local), and the global positive rate ($30.9\%$) is balanced rather than sparse; (b)~the second candidate ``natural-by-BS preserves bs$\leftrightarrow$slice mixture correlation'' was eliminated after measuring per-bs slice mixtures and finding them statistically uniform across all 7 base stations (KL $\approx 0$); (c)~the leading candidate ``Dirichlet's per-slice row redistribution destroys structurally-coherent client datasets that natural-by-BS preserves'' is supported by two controlled ablations --- Section~\ref{sec:ablation}'s \lstinline|random_split| (breaks both bs and slice grouping; AUC drops $\sim 0.18$ below natural-by-BS) and Section~\ref{sec:per-bs-ablation}'s per-BS Dirichlet (preserves bs grouping while varying within-bs slice grouping; refutes the strong reading that bs grouping alone suffices). We do not claim a closed-form mechanism in Section~\ref{sec:intro}; the empirical finding stands as a deployment-relevant observation.
+
+
+\section{Discussion}\label{sec:discussion}
+
+\subsection{Why heterogeneity helps: empirical observation + tested-hypothesis structure}\label{sec:why-heterogeneity-helps}
+
+The Section~\ref{sec:inverted-alpha} inversion of the Dirichlet-$\alphadir$ / AUC monotonicity is the central empirical finding of this paper. We do \emph{not} present a closed-form mechanism explanation --- instead we report the empirical pattern, document a controlled ablation (Section~\ref{sec:ablation}) that tests the leading hypothesis, and bound the explanatory candidates with what we measured directly from the dataset.
+
+\textbf{Setup-level facts (measured, not derived).} The training pipeline uses a \emph{globally pooled} positive-class weight in the BCE loss (\lstinline|fl_v7.py| line 636--637 sums positive counts across all client shards before computing the reweighting), so the BCE loss is identical across clients and any mechanism story relying on per-client class-imbalance variance is incompatible with the code. The empirical positive rate on the train partition is $30.9\%$ (per-slice $35\%$ / $27\%$ / $31\%$), so this is a balanced-ish binary task, not a sparse-positive-class regime. The dataset's per-bs slice mixture is statistically uniform (KL $\approx 0$; fitted Dirichlet $\hat{\alphadir} \approx 234\,000$), so natural-by-BS is \emph{not} a low-$\alphadir$ Dirichlet limit case --- the two partitions are orthogonal in their structural axis (\lstinline|bs_id| grouping vs \lstinline|slice_id| redistribution).
+
+\textbf{Candidate explanations for the empirical pattern.} Three candidates remain after the above eliminations: (i)~per-bs \emph{continuous}-feature distributions differ across base stations even though slice mixtures are uniform --- measured per-feature pairwise KL up to $0.08$ on \lstinline|tx_brate_dl_Mbps| and \lstinline|sum_granted_prbs| (Section~\ref{sec:kl}); (ii)~the Dirichlet partition's per-slice row redistribution destroys bs-level grouping that natural-by-BS preserves, depriving each client of a coherent bs-conditioned dataset; (iii)~any FedAvg of independently-trained client models on heterogeneous shards may behave better than a FedAvg of clients trained on shards that mix structurally similar rows --- a generic heterogeneity-as-implicit-regularisation effect. None of these candidates are unique to FL with imbalanced classification; they are dataset-structure properties that we observed.
+
+\subsubsection{Controlled ablation: random-split partition}\label{sec:ablation}
+
+To isolate hypothesis~(ii) (bs-grouping preservation), we add a \textbf{\lstinline|random_split|} partition mode that uniformly shuffles all training rows and assigns equal-size shards to 7 clients, breaking \emph{both} \lstinline|bs_id| and \lstinline|slice_id| grouping. Per-client sample sizes are within $\pm 1$ row of \lstinline|len(train) / 7|, removing per-client sample-size confounds. Implementation: \lstinline|partition_clients(mode="random_split", n_clients=7, seed=...)| in \lstinline|data_v2/partition.py|.
+
+Cells: 3 architectures $\times$ FedAvg $\times$ \lstinline|random_split| $\times$ 5 seeds $= 15$, run on $4 \times$ Tesla V100-SXM2-32GB matching the Phase~5 training spec. Comparison baseline: the corresponding 30 cells of (3 archs $\times$ FedAvg $\times$ natural-by-BS $\times$ 10 seeds) from Phase~5. Results are summarised in Table~\ref{tab:random-split-ablation}.
+
+\begin{table}[t]
+\caption{V100 \lstinline|random_split| ablation vs Phase~5 natural-by-BS baseline. Test AUC mean $\pm$ std on 10 seeds (4080, natural-by-BS) and 5 seeds (V100, \lstinline|random_split|); $\Delta$ is mean$-$mean (unpaired across hardware).}
+\label{tab:random-split-ablation}
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+arch & \lstinline|random_split| (V100, $n=5$) & natural-by-BS (4080, $n=10$) & $\Delta$ \\
+\midrule
+LSTM        & $0.7403 \pm 0.0027$ & $0.9159 \pm 0.0004$ & $\boldsymbol{-0.1756}$ \\
+Mamba       & $0.7447 \pm 0.0077$ & $0.9165 \pm 0.0006$ & $\boldsymbol{-0.1718}$ \\
+Spiking-SSM & $0.6668 \pm 0.0030$ & $0.8529 \pm 0.0051$ & $\boldsymbol{-0.1861}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\lstinline|random_split| AUC also collapses to within $\pm 0.007$ of the most-uniform Dirichlet partition ($\alphadir = 5.00$) on every architecture --- the two partition strategies (Dirichlet $\alphadir = 5.00$ over slice; uniformly random over rows) both ignore bs grouping and produce statistically equivalent results. The $\sim 0.18$ AUC drop relative to natural-by-BS is an order of magnitude larger than the V100-vs-4080 hardware drift bound ($\sim 0.007$, see Section~\ref{sec:hardware-drift} below; ratio $\approx 25\times$). The mechanism direction is therefore consistent with: \textbf{partitions that preserve the natural bs grouping outperform partitions that break it (whether by per-slice Dirichlet redistribution or uniform shuffling), and the magnitude of the AUC penalty is consistent across the three sequence backbones.} Two interpretive caveats:
+
+\begin{itemize}
+  \item \textbf{$\Delta$ in Table~\ref{tab:random-split-ablation} is mean$-$mean (unpaired across hardware), not a paired-bootstrap CI$_{95}$.} V100 \lstinline|random_split| was run with 5 seeds; Phase~5 natural-by-BS used 10 seeds; the seed sets do not coincide. A strict paired comparison would require running \lstinline|random_split| with the same 10 seeds as Phase~5 --- we used 5 seeds for V100-time efficiency, and the $25\times$ SNR margin against the Section~\ref{sec:hardware-drift} hardware drift bound makes this protocol gap non-blocking but should be noted.
+  \item \textbf{The std comparison in Table~\ref{tab:random-split-ablation} is not strictly fair.} \lstinline|random_split|'s per-seed std combines two independent variance sources (model-init RNG + partition-shuffle RNG), while natural-by-BS's std reflects only init RNG (the partition is deterministic). Comparing means is valid; comparing stds favours natural-by-BS by construction.
+\end{itemize}
+
+On the Section~\ref{sec:results} mechanism question: \lstinline|random_split| breaks both \lstinline|bs_id| and \lstinline|slice_id| grouping in one step, so the observed AUC drop is consistent with either candidate~(i) ``natural-by-BS preserves bs-conditioned signal'' or candidate~(ii) ``Dirichlet's per-slice row redistribution destroys structurally-coherent client datasets'' --- both are violated by \lstinline|random_split|. Section~\ref{sec:per-bs-ablation} below reports a per-BS Dirichlet ablation that preserves bs grouping while varying within-bs slice grouping, disambiguating the two candidates and supporting~(ii); Section~\ref{sec:kl} measures per-bs continuous-feature distributions to bound~(i) further. A fully-causal mechanism (e.g., synthetic data with controlled per-bs covariance) is left as open future work.
+
+\subsubsection{Per-bs continuous-feature distribution differences (Step 2 measurement)}\label{sec:kl}
+
+We measured pairwise per-bs Kullback--Leibler divergence on every continuous feature (\lstinline|scripts/step2_mechanism_search.py|, output \lstinline|artifacts/step2_mechanism_search.json|). The top-5 most-discriminating features by mean pairwise bs-KL are \lstinline|dl_cqi| (KL $= 0.475$), \lstinline|dl_mcs| ($0.267$), \lstinline|num_ues| ($0.092$), \lstinline|tx_brate_dl_Mbps| ($0.081$), and \lstinline|sum_granted_prbs| ($0.059$). The top two --- channel-quality indicator (CQI) and modulation-and-coding scheme (MCS) --- are physical-layer features that depend on each gNB's specific RF environment and user-cell distance distribution, and their per-bs distributions differ by an order of magnitude more than the next-most-discriminating features. The remaining continuous features (BLER, RSSI, SINR, buffer occupancy) all have mean pairwise bs-KL below $0.02$, confirming that the bs-discriminative signal is concentrated in channel-state and load features rather than in BLER itself. These KL magnitudes are non-zero (vs the per-bs slice-mixture KL $\approx 0$ in Step~1) and are consistent with the Section~\ref{sec:ablation} ablation finding: bs grouping carries continuous-feature distributional signal that natural-by-BS preserves but Dirichlet / \lstinline|random_split| partition spreads across clients. Whether this specific channel-state signal is the \emph{causal} mechanism behind the $\sim 0.18$ AUC drop, vs an alternative (e.g., bs-conditioned sequence-dynamics learnability), remains an open question the present ablation cannot resolve.
+
+\subsubsection{Applicability boundary}
+
+The inverted-$\alphadir$ finding is dataset-structural, not algorithm-mechanistic; the conditions under which it should replicate to other near-RT RIC forecasting workloads are detailed in App.~A.1.
+
+\subsubsection{Hardware drift caveat for the random-split ablation}\label{sec:hardware-drift}
+
+Section~\ref{sec:ablation} cells ran on $4 \times$ Tesla V100-SXM2-32GB while Phase~5 ran on RTX~4080. We bound the cross-hardware AUC drift by comparing V100 \lstinline|random_split| AUC to 4080 Dirichlet $\alphadir = 5.00$ AUC (both partition strategies destroy bs grouping): the residual delta is at most $0.0072$ (LSTM), $0.0043$ (Mamba), $0.0021$ (Spiking-SSM), all within seed $\sigma$. Hardware drift is therefore bounded above by $\sim 0.007$ AUC, more than an order of magnitude smaller than the $\sim 0.18$ mechanism signal (ratio $\approx 25\times$). Full bf16-tensor-core argument and protocol detail in App.~A.2.
+
+\subsubsection{Per-BS Dirichlet ablation: bs grouping is necessary but not sufficient}\label{sec:per-bs-ablation}
+
+Section~\ref{sec:ablation}'s \lstinline|random_split| ablation could not separate candidate~(i) (``natural-by-BS preserves bs-conditioned signal'') from~(ii) (``Dirichlet's per-slice row redistribution destroys structurally-coherent client datasets'') because \lstinline|random_split| violates both. We test the \textbf{strong reading of (i)} --- that bs grouping \emph{alone} suffices, regardless of within-bs slice handling --- via a per-BS Dirichlet ablation (\lstinline|per_bs_dirichlet|, \lstinline|sub_per_bs=2|, $\alphadir \in \{0.05, 0.5, 5, 10\}$, 5 seeds $\times$ 3 archs $= 60$ cells, $4 \times$ V100): each BS is split into two sub-clients via $\mathrm{Dirichlet}([\alphadir])$ over \lstinline|slice_id|; no client sees rows from multiple BSs. At $\alphadir = 0.05$ sub-clients are slice-specialists; at $\alphadir = 10$ each has near-uniform slice mixture. Headline numbers in Table~\ref{tab:per-bs-dirichlet}.
+
+\begin{table}[t]
+\caption{Per-BS Dirichlet ablation (Phase~6, \lstinline|sub_per_bs=2|, 5 seeds $\times$ 3 archs). Within-Phase-6 $\Delta$ and CI$_{95}$ paired by seed via 10\,000-sample bootstrap; natural-by-BS column is unpaired across $n$ and hardware.}
+\label{tab:per-bs-dirichlet}
+\centering
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+arch    & $\alphadir = 0.05$ & $\alphadir = 10$ & $\Delta$ (pp) & 95\% CI (pp) & natural-by-BS \\
+\midrule
+LSTM    & $0.906$ & $0.831$ & $7.5$  & $[6.6, 8.5]$    & $0.916$ \\
+Mamba   & $0.909$ & $0.836$ & $7.2$  & $[6.8, 7.7]$    & $0.917$ \\
+Spiking & $0.816$ & $0.684$ & $13.2$ & $[11.7, 15.1]$  & $0.853$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Phase~6} (this paper's per-BS Dirichlet ablation, parallel naming to \textbf{Phase~5}'s Stage-2 sweep) means over 5 seeds; $\Delta$ and CI$_{95}$ are \emph{paired by seed within Phase~6} via a 10\,000-sample bootstrap ($n = 5$ caveat: bootstrap percentile CIs at this $n$ are mildly optimistic, but the effect-size-to-bias ratio is $\sim 10\times$ across all three archs). All three within-Phase-6 deltas exclude zero, \emph{and remain non-zero under Bonferroni-corrected CI$_{98.33}$ for the 3-arch family} (LSTM $[6.5, 8.6]$, Mamba $[6.7, 7.8]$, Spiking $[11.5, 15.3]$ pp), so multiplicity correction does not change the verdict. Since bs grouping is invariant across these cells (each shard from exactly 1 BS), AUC degradation can only originate from per-client structural changes. \textbf{The strong reading of~(i) is therefore inconsistent with these data; (ii)~is supported}, consistent with Section~\ref{sec:inverted-alpha}'s cross-bs inverted-$\alphadir$ effect (per-client slice concentration helps in both cross-bs and within-bs Dirichlet partitions).
+
+The residual gap between Phase~6 $\alphadir = 0.05$ and the Phase~5 natural-by-BS baseline (LSTM $1.0$, Mamba $0.8$, Spiking $3.7$ pp) is \emph{unpaired across $n$ and hardware} (Phase~5 $n = 10$ on RTX~4080; Phase~6 $n = 5$ on V100; cf.\ Section~\ref{sec:hardware-drift} hardware-drift bound $\leq 0.007$ AUC). It is consistent with two design constraints (\lstinline|sub_per_bs=2| halves per-client data; per-round sampling fraction drops $5/7 \rightarrow 5/14$) but cannot be cleanly decomposed; the within-Phase-6 effect ($7$--$13$ pp) dominates this residual.
+
+\subsection{Algorithmic flatness implies FedAdam is the ceiling, not the start}\label{sec:why-fedadam-saturates}
+
+Section~\ref{sec:fedadam-ceiling} establishes that on this dataset the FedAdam-vs-FedAvg gap (Dirichlet-averaged $\approx +0.006$ to $+0.016$ AUC depending on architecture) is the empirical maximum gap any server-side aggregation modification can extract under our (7-client, $71\%$ participation, 100-round) regime. The flatness is \emph{not} a property of FL in general --- large-$N$ low-participation FL on image classification regularly shows $\geq 0.05$ AUC gaps between FedAvg and FedSAM/FedSWA-class methods. The flatness is a property of \emph{aggregation-noise-dominated} small-$N$ high-participation regimes where the per-round update $(v_t - \theta_{t-1})$ reflects SGD noise across nearly-overlapping client averages rather than coherent drift toward sharp minima.
+
+This explains the negative result on FedDyn-canonical: the canonical Acar 2021 SGD-friendly variant $h_i \leftarrow h_i + (w_l - w_g)$ diverges to NaN under our Adam local optimiser at the 100-round budget, due to a positive-feedback loop between Adam's adaptive scaling and the unbounded $h$-accumulation. Our Adam-friendly Option-II variant ($h_i \leftarrow h_i - \alphadyn \cdot \nabla \mathcal{L}_i(w_t)$ with $\alphadyn = 0.01$) reaches centralised parity (test AUC $0.9147$ on LSTM IID at 100 rounds, matching the centralised reference). The lesson generalises: server-side aggregation algorithms that perform well in their original SGD regime can require non-trivial recalibration under Adam local optimisers, and the absence of such recalibration is a frequent silent failure mode in the FL benchmark literature.
+
+\subsection{The Mamba $\times$ SCAFFOLD $\times$ $\alphadir = 0.10$ catastrophic interaction}
+
+The Section~\ref{sec:mamba-scaffold} finding warrants an explicit mechanism account. SCAFFOLD's per-client control variate $c_{\mathrm{local},i}$ is a running estimate of the client's average gradient direction relative to the global average, and the gradient correction $+(c_{\mathrm{global}} - c_{\mathrm{local},i})$ rotates each local update toward an ``unbiased'' trajectory in expectation. Under high partition skew ($\alphadir = 0.10$) the per-client gradient direction is itself highly variable across rounds (each client trains on a small, sparse-positive subset of the train rows), so $c_{\mathrm{local},i}$ is a noisy estimate. The selective-scan SSM in Mamba additionally has an input-dependent dynamics matrix ($\Delta t, B, C$ are all functions of the input --- Gu and Dao~\cite{GuDao2023_Mamba}), making the per-client gradient direction \emph{also} depend on the local partition's input distribution in a way the LSTM's input-independent recurrence does not. The combination --- noisy $c_{\mathrm{local},i}$ $\times$ input-dependent backbone dynamics --- produces a feedback loop where the SCAFFOLD correction overshoots in the direction of the prior-round's noise, and the next round's local training amplifies the overshoot rather than correcting it.
+
+Mamba $\times$ FedAvg at the same $\alphadir$ does not exhibit this failure (std $0.025$ at $\alphadir = 0.10$ vs $0.083$ under SCAFFOLD), nor does LSTM $\times$ SCAFFOLD (std $0.036$ at $\alphadir = 0.10$) where the input-independent recurrence breaks the feedback. The pattern is therefore specific to the \emph{intersection} of input-dependent recurrence and noisy control-variate estimation; it does not generalise to all (state-space-model, control-variate) pairs but should be re-checked whenever SCAFFOLD or its variants are deployed alongside selective state-space architectures (S4, S5, S6, Mamba-2 --- the input-dependent SSM family generally) under partition skew. The SCAFFOLD hyperparameter envelope (client-LR, control-variate decay) was not exhaustively swept; see Section~\ref{sec:limits} for the limitation.
+
+\subsection{Architecture leverage dominates algorithm leverage on commodity edge GPU}\label{sec:arch-leverage-discussion}
+
+The Section~\ref{sec:arch-leverage} Pareto observation has direct deployment implications. On RTX~4080 (sm\_89, TSMC 4N (5\,nm class) Lovelace process, 320\,W TGP), the $10\times$ energy band between LSTM ($\sim 3.5$\,kJ/cell) and Spiking-SSM ($\sim 41$\,kJ/cell) is dominated by the spiking arm's $T = 5$ simulation timesteps multiplied through the dense post-spike linear layers --- the so-called spike-count amplification documented in our prior centralized findings. On a sparsity-aware accelerator (Loihi-2, IBM NorthPole) where post-spike multiplications by zero are skipped, the same architecture would sit closer to the LSTM band; the energy-Pareto disposition between LSTM and Spiking is therefore a property of the deployment hardware, not of the algorithm choice. We discuss the cross-hardware extrapolation in Section~\ref{sec:limits}.
+
+The within-architecture algorithm spread ($\leq 0.03$ AUC at flat energy) is small enough that a deployed system should select algorithm based on operational considerations (state size --- FedDyn and SCAFFOLD carry per-client $h$ or $c$ variates; communication round count; client straggler tolerance) rather than chase the $+0.01$ AUC gain that FedAdam offers over FedAvg. The Section~\ref{sec:mamba-scaffold} catastrophic-interaction caveat is the principal exception: deployments combining selective-SSM backbones with control-variate algorithms should validate on representative high-skew partitions before committing to the combination.
+
+\subsection{Why we do not benchmark FedSWA / FedSCAM}
+
+The 2024--2026 sharpness-aware FL family (FedSWA~\cite{Liu2025_FedSWA}, FedSCAM~\cite{FedSCAM2026}, FedMoSWA~\cite{FedMoSWA2025}) is structurally adjacent to FedAdam in that all four algorithms modify the server-side aggregation step. Section~\ref{sec:related-sharp} develops the mechanism-based argument for why LookAhead-style overshoot is \emph{systematically} dominated by Adam-style adaptive variance damping in our aggregation-noise-dominated regime, and Section~\ref{sec:fedadam-ceiling} provides the empirical FedAdam ceiling that the LookAhead family cannot exceed without variance-estimation machinery it does not have. The argument is mechanism-level and predictive: in a regime that satisfies our four conditions (small-$N$, high-participation, short rounds, inverted-$\alphadir$), we predict $|\Delta_{\mathrm{FedSWA} - \mathrm{FedAvg}}| < |\Delta_{\mathrm{FedAdam} - \mathrm{FedAvg}}|$. The decision to not benchmark is \emph{not} ``we ran out of GPU''; the decision is ``the predicted result does not advance the Section~\ref{sec:intro} contributions.'' We document this explicitly here so a reviewer arguing ``you should still benchmark for empirical confirmation'' can engage with the predictive claim rather than the decision.
+
+
+\section{Limitations and Threats to Validity}\label{sec:limits}
+
+We enumerate the limitations and threats to the validity of the Section~\ref{sec:intro} contributions. Each item is paired with the contribution(s) it most threatens.
+
+\begin{itemize}
+  \item \textbf{L1 (threats contributions 1, 4): Single-hardware energy reporting.} All energy numbers are NVML measurements on a single RTX~4080 (sm\_89). Energy on consumer-tier mobile GPUs (RTX 30-series at lower TGP), data-centre accelerators (A100, H100), and sparsity-aware accelerators (Loihi-2) will differ in absolute magnitude and possibly in the architectural ranking. The headline $10\times$ LSTM-vs-Spiking energy ratio is a property of the dense GPU $+$ $T = 5$ spiking-simulation regime; on sparsity-aware hardware the ratio would shrink (prior centralized estimate $\approx 0.49$). A cross-GPU robustness sweep (T4, A100) is open future work.
+
+  \item \textbf{L2 (threats contributions 2, 3): 5-algorithm baseline excludes 2024--2026 sharpness-aware FL and FedBN.} We do not empirically evaluate FedSWA~\cite{Liu2025_FedSWA}, FedSCAM~\cite{FedSCAM2026}, or FedMoSWA~\cite{FedMoSWA2025} on Colosseum/ColO-RAN. The mechanism-based argument in Sections~\ref{sec:related-sharp} + \ref{sec:fedadam-ceiling} + \ref{sec:why-fedadam-saturates} predicts these methods would perform at or below FedAdam in our regime; empirical confirmation in regimes where the heterogeneity-as-sharpness-wound assumption holds (large-$N$, low-participation, image classification with $\alphadir < 0.1$) is left to future work. We similarly do not benchmark FedBN~\cite{Li2021_FedBN}, although the closely related arXiv:2508.08479~\cite{arXiv2508_08479} reports FedBN superiority on cellular feature-skew tasks; a follow-up evaluation on ColO-RAN with FedBN would directly probe contribution~2's flatness claim. We expect the result of such a follow-up to \emph{extend} rather than \emph{overturn} contribution~2 because (a)~Phase~5's IID column already shows the 5 algorithms cluster within $0.005$ AUC, so a 6th method's $\Delta$-from-FedAdam would need to exceed $\sim 0.01$ AUC to change the ranking, and (b)~arXiv:2508.08479 reports FedBN's gain over FedAvg in the $0.01$--$0.03$ AUC range on similar cellular feature-skew tasks --- large enough to enter our flatness band but not larger than the FedAdam $-$ FedAvg gap we already report. The argument is anticipated-result framing, not empirical proof; the FedBN benchmark cell is the highest-priority algorithm-coverage gap. MOON~\cite{Li2021_MOON} is structurally deferred (preregistered) because its \lstinline|forecaster_encode_fn| does not generalise cleanly to selective-SSM or spiking-SSM activations.
+
+  \item \textbf{L3 (threats contribution 1): Round count is short by image-classification standards.} We use 100 communication rounds $\times$ 50 max-steps per round $\times$ 5 clients sampled per round $=$ \textbf{25\,000 total gradient-steps per cell} (the figure that matches the audit-corrected centralised budget from our prior centralized work). Per individual client, each client is sampled with probability $5/7$ per round and executes 50 steps when sampled, so the \emph{expected} per-client gradient-step count is $100 \times (5/7) \times 50 \approx 3\,571$ steps per client per cell. Both numbers are short relative to the 1\,000-round runs typical of FedSWA / FedSCAM evaluations. The predicted-flatness argument holds at this round count; whether it relaxes at longer round counts is open. A 1\,000-round LSTM $\times$ FedAvg $\times$ IID extrapolation experiment is cheap ($\sim 3$~hr GPU on RTX~4080) and is a candidate future ablation.
+
+  \item \textbf{L4 (threats contribution 1): 7-client natural-deployment scale.} All experiments use 7 clients --- the natural base-station count of the public ColO-RAN release, not a researcher choice --- at $5/7 = 71\%$ participation per round. Statements about FL behaviour at the cross-device 1\,000-client / $10\%$ participation regime~\cite{Hsu2019_Dirichlet} do not generalise from this study. The Section~\ref{sec:why-fedadam-saturates} argument explicitly acknowledges this: contribution~2's flatness is a property of high-participation FL at small-$N$ (here, the dataset-imposed $N = 7$), not of FL in general. Larger-scale ColO-RAN releases or alternative O-RAN testbeds (e.g., OpenAirInterface 5G, srsRAN) could let future work probe the cross-device limit, subject to non-trivial engineering effort to align telemetry format with our preprocessing pipeline (OAI 5G's logging differs substantially; srsRAN lacks integrated FL training infrastructure).
+
+  \item \textbf{L5 (threats contribution 5): Reproducibility infrastructure not yet released.} The full 4-axis table maps deployment configurations to AUC / F1 / energy across 90 groups; the contribution~5 reproducibility claim depends on the Section~\ref{sec:repro} release of the spec-driven YAML pipeline $+$ paired-bootstrap statistics $+$ Croissant metadata $+$ Zenodo DOI under Apache-2.0. At submission time the artefact is mature in \lstinline|src/fl_oran/|, \lstinline|experiments/specs/|, and \lstinline|tests/| but the Section~\ref{sec:repro} reproducibility section is staged for the camera-ready release; we will provide a Dockerfile $+$ \lstinline|requirements.lock| $+$ demo notebook in the supplementary archive.
+
+  \item \textbf{L6 (threats contribution 4): Pareto Spiking arm assumes hardware sparsity unavailable on RTX~4080.} The Section~\ref{sec:arch-leverage} architecture-leverage claim treats Spiking as a distinct vertical band at $\sim 41$\,kJ/cell. On the deployed sparsity-aware target the Spiking arm's energy would compress (per Section~\ref{sec:arch-leverage-discussion} and prior centralized analysis), and the Pareto envelope between LSTM and Spiking would tighten substantively. Operators targeting commodity GPU should read the Section~\ref{sec:arch-leverage} ranking as-is; operators targeting Loihi-2 / NorthPole should read the ranking with a $2$--$3\times$ downward correction on Spiking energy.
+
+  \item \textbf{L7 (threats contribution 1, Section~\ref{sec:why-heterogeneity-helps}): Mechanism for the inverted-$\alphadir$ finding is partially open.} Section~\ref{sec:why-heterogeneity-helps} reports a \lstinline|random_split| controlled ablation (15 cells $\times$ 3 archs $\times$ 5 seeds, run on $4 \times$ V100-SXM2-32GB) that tests the leading hypothesis (natural-by-BS preserves bs-conditioned continuous-feature signal). Two prior candidates (per-client class-imbalance specialisation; bs$\leftrightarrow$slice mixture correlation) were eliminated by direct measurement before the ablation (Sections~\ref{sec:why-heterogeneity-helps} + \ref{sec:kl}). If the \lstinline|random_split| ablation also fails to recover the Section~\ref{sec:inverted-alpha} monotonicity, the Section~\ref{sec:results} mechanism question is left open and is the highest-priority follow-up for the camera-ready revision.
+
+  \item \textbf{L8 (threats contribution 2): SCAFFOLD interaction not exhaustively swept.} The Section~\ref{sec:mamba-scaffold} catastrophic-interaction finding uses canonical SCAFFOLD hyperparameters. A SCAFFOLD client-LR / control-variate-EMA grid sweep on Mamba $\times$ $\alphadir = 0.10$ would establish whether the failure is recoverable in some hyperparameter region; we report the interaction with canonical hyperparameters to establish the existence of the failure mode rather than its precise envelope.
+
+  \item \textbf{L9 (threats Sections~\ref{sec:dataset}, \ref{sec:results}, \ref{sec:why-heterogeneity-helps}): \lstinline|pos_weight_split=train| is one of three valid choices.} The BCE loss reweighting is globally pooled across all clients (Section~\ref{sec:why-heterogeneity-helps}), so the \emph{direction} of all findings is invariant to this choice; full alternative-computation discussion in App.~C.1.
+
+  \item \textbf{L10 (threats contribution 5 reproducibility): bf16 mixed-precision training versus fp32.} All Phase~5 cells use bf16; we do not report an fp32 verification cell. Full numerical-precision argument in App.~C.2.
+
+  \item \textbf{L11 (threats contribution 1, Section~\ref{sec:why-heterogeneity-helps}): Per-client compute budget split as 100 rounds $\times$ 50 max-steps versus alternative splits.} We treat round count as a fixed reproducibility anchor; whether the Section~\ref{sec:fedadam-ceiling} FedAdam-saturates-headroom finding survives at alternative splits is open. Full discussion in App.~C.3.
+
+  \item \textbf{L12 (threats contribution 1): SLA-threshold sensitivity not exhaustively swept.} The $10\%$ BLER threshold is the canonical ColO-RAN SLA gate~\cite{Polese2022}; a $\{5\%, 15\%, 20\%\}$ sweep is the highest-leverage open ablation after Section~\ref{sec:ablation}. Full discussion in App.~C.4.
+
+  \item \textbf{L13 (threats contribution 5 reproducibility): Bootstrap CI uses percentile interval, not BCa.} At our $n = 10$ paired seeds with approximately symmetric per-seed delta distributions, the BCa bias-correction term is bounded by $O(1/\sqrt{n}) \approx 0.32$ standard errors --- smaller than seed $\sigma$ on every reported finding except Section~\ref{sec:mamba-scaffold}'s Mamba$\times$SCAFFOLD. Full justification in App.~C.5.
+
+  \item \textbf{L14 (threats contribution 2): FedAdam hyperparameter sensitivity untested.} $\beta_1 = 0.9$, $\beta_2 = 0.99$, $\eta_{\mathrm{server}} = 0.01$ follow Reddi et al.~2021~\cite{Reddi2021_FedAdam} preregistered values; $(\beta_1, \beta_2, \eta_{\mathrm{server}})$ sensitivity sweep deferred. Full discussion in App.~C.6.
+\end{itemize}
+
+
+\section{Conclusion}\label{sec:conclusion}
+
+We have presented the first comprehensive 4-axis federated-learning benchmark on the publicly-available Colosseum/ColO-RAN testbed for slice-level SLA-violation prediction, sweeping \{LSTM, Mamba, Spiking-SSM\} $\times$ \{FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn\} $\times$ \{natural-by-BS, Dirichlet $\alphadir \in [0.05, 5.0]$\} $\times$ 10 seeds $= 900$ cells with NVML idle-baseline-subtracted training-energy measurement on commodity-tier RTX~4080, augmented by a 15-cell V100 ablation that tests the leading mechanism hypothesis for the headline inverted-$\alphadir$ finding.
+
+The principal finding is that \textbf{client heterogeneity in O-RAN slice SLA federation is structurally helpful, not harmful}: the natural base-station partition uniformly outperforms every parametric Dirichlet $\alphadir$ across all 3 architectures $\times$ 5 algorithms, and AUC monotonically increases as $\alphadir \rightarrow 0$ within the Dirichlet sweep. We do not claim a closed-form mechanism for this inversion in the conclusion; Section~\ref{sec:why-heterogeneity-helps} reports a controlled \lstinline|random_split| ablation that tests the leading ``natural-by-BS preserves bs-conditioned signal'' hypothesis, and two prior mechanism candidates (per-client class-imbalance specialisation; bs$\leftrightarrow$slice mixture correlation) were eliminated by direct measurement. The empirical inversion is the deployment-relevant claim; the mechanism is partially open. The three secondary findings (FedAdam saturating algorithmic headroom; Mamba $\times$ SCAFFOLD catastrophic interaction; architecture leverage dominating algorithm leverage on energy) are detailed in Section~\ref{sec:intro} contributions 2--4 and Sections~\ref{sec:fedadam-ceiling}--\ref{sec:arch-leverage}; we do not restate the numbers here.
+
+The community-level implication is the one operationalisable insight beyond the per-cell numbers: standard FL practice --- \emph{partition clients by inducing artificial uniformity, then deploy sharpness-aware aggregation to suppress the heterogeneity-induced noise} --- is the wrong protocol for O-RAN edge-FL when natural client structure (one gNB, one client) is already heterogeneous in the prediction-relevant axis. The recommendation reverses: \textbf{preserve the natural client partition, and treat any synthetic re-partitioning of the client population as a deployment anti-pattern} to be justified by a specific operational constraint (e.g., privacy-aware aggregation), not adopted as a default benchmarking convention. For O-RAN edge-FL practitioners, the operational recommendation is concrete: deploy on the natural base-station partition rather than re-shuffle clients to enforce IID-like uniformity; select architecture for the energy-AUC trade-off (LSTM at the low-energy frontier on commodity GPU; Spiking-SSM remains a research direction pending sparsity-aware accelerator availability --- its $10\times$ higher energy on dense GPU is hardware-specific, not a fundamental architectural property, and a deployment recommendation must wait until target neuromorphic / sparsity-aware hardware is empirically characterised, see Section~\ref{sec:arch-leverage-discussion} + Section~\ref{sec:limits} L1, L6); choose algorithm based on operational constraints (state size, communication overhead, straggler tolerance) rather than chase $\leq 0.02$ AUC gains, with the explicit caveat that selective-SSM $\times$ control-variate combinations need partition-aware validation before deployment.
+
+Upon paper acceptance, we will release the full benchmark artefact --- spec-driven YAML pipeline, pre-flight algorithm validation, paired-bootstrap statistical inference, NVML training-energy instrumentation, Croissant dataset metadata, and a Zenodo-archived release tag --- as a reference baseline for further FL-on-O-RAN research.
+
+\subsection{Future work}
+
+Five open directions, each detailed in App.~D:
+
+\begin{itemize}
+  \item \textbf{Mechanism isolation re-run} --- \lstinline|sub_per_bs=2| with \lstinline|clients-per-round=10| to disentangle slice-mixing from per-round participation in the Section~\ref{sec:per-bs-ablation} residual gap~\cite{Borges2025, ProFed2025}.
+  \item \textbf{BLER-threshold sensitivity} --- perturb the $10\%$ gate to $\{5, 15, 20\}\%$ to confirm operational robustness~\cite{arXiv2504_16185}.
+  \item \textbf{Scaling beyond $N = 7$} --- test whether inverted-$\alphadir$ holds at the 100-client regime~\cite{Chiarani2025, Sezgin2025}.
+  \item \textbf{Variance-aware sharpness} --- FedSCAM~\cite{FedSCAM2026} and FedSynSAM~\cite{FedSynSAM2026} as candidates beyond the FedAdam ceiling (Section~\ref{sec:why-fedadam-saturates}).
+  \item \textbf{Privacy + neuromorphic} --- over-the-air DP~\cite{arXiv2510_23463} and Loihi~2 sparse-RNN deployment~\cite{arXiv2502_01330, arXiv2604_27004}.
+\end{itemize}
+
+
+\bibliographystyle{IEEEtran}
+\bibliography{bibliography}
+
+\end{document}

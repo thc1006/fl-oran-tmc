@@ -171,11 +171,17 @@ class V7Config:
             # sweeps it would also collide on n=5 vs n=7 in dirichlet.
             #
             # Format per partition_mode:
-            #   iid:        v7_<arch>_<algo>_iid_n<N>_s<seed>
-            #   dirichlet:  v7_<arch>_<algo>_dirichlet_a<alpha>_n<N>_s<seed>
-            #   other:      v7_<arch>_<algo>_<mode>_a<alpha>_n<N>_s<seed>
+            #   iid:           v7_<arch>_<algo>_iid_n<N>_s<seed>
+            #   random_split:  v7_<arch>_<algo>_randsplit_n<N>_s<seed>
+            #   dirichlet:     v7_<arch>_<algo>_dirichlet_a<alpha>_n<N>_s<seed>
+            #   other:         v7_<arch>_<algo>_<mode>_a<alpha>_n<N>_s<seed>
             if self.partition_mode == "iid":
                 part_tag = f"iid_n{self.n_clients}"
+            elif self.partition_mode == "random_split":
+                part_tag = f"randsplit_n{self.n_clients}"
+            elif self.partition_mode == "per_bs_dirichlet":
+                alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
+                part_tag = f"perbsdir_a{alpha_tag}"
             elif self.partition_mode == "dirichlet":
                 alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
                 part_tag = f"dirichlet_a{alpha_tag}_n{self.n_clients}"
@@ -251,6 +257,17 @@ _ALGO_REQUIRED_KWARGS: dict[str, set[str]] = {
     "scaffold": set(),
     "feddyn":   {"alpha"},  # FedDyn regularization; NOT V7Config.alpha (Dirichlet)
 }
+
+# Partition-axis kwargs that ride on cfg.algo_kwargs for spec-yaml/CLI
+# ergonomics (no separate top-level partition_kwargs field on V7Config).
+# These MUST be stripped before the FL algorithm class is instantiated:
+# FedAvg/FedProx/FedAdam/SCAFFOLD/FedDyn all use keyword-only signatures
+# without **kwargs, so any unknown key raises TypeError at construction.
+# Bug fixed by this constant: Phase 6 Rank 3 launcher passes
+# ``--algo-kwargs '{"sub_per_bs": 2}'`` to drive per_bs_dirichlet shard
+# count, but sub_per_bs is partition-only — without filtering it would
+# crash all 60 cells at FedAvg(**algo_kwargs).
+_PARTITION_ONLY_ALGO_KWARGS: frozenset[str] = frozenset({"sub_per_bs"})
 
 
 def _select_algorithm(cfg: V7Config):
@@ -464,9 +481,40 @@ def _partition(df: pd.DataFrame, cfg: V7Config) -> dict[int, pd.DataFrame]:
         )
     if cfg.partition_mode == "iid":
         return partition_clients(df, mode="iid")
+    if cfg.partition_mode == "random_split":
+        # Mechanism ablation control (paper §7.1.1): break both bs_id and
+        # slice_id grouping by uniformly random row-to-client assignment.
+        return partition_clients(
+            df, mode="random_split", n_clients=cfg.n_clients, seed=cfg.seed,
+        )
+    if cfg.partition_mode == "per_bs_dirichlet":
+        # Phase 6 Rank 3 mechanism disambiguation (paper §9.1 future work):
+        # preserve bs grouping (one BS → contiguous client block) but
+        # subdivide each BS's rows by Dirichlet([alpha]) over slice_id
+        # into sub_per_bs sub-clients. n_bs * sub_per_bs total clients.
+        # Reuses cfg.alpha for the inner Dirichlet; sub_per_bs comes from
+        # cfg.algo_kwargs (caller passes via spec yaml/CLI). Required
+        # explicitly (no magic default) so a forgotten kwarg surfaces as
+        # a fail-fast ValueError, not as a silently-different shard count.
+        if not isinstance(cfg.algo_kwargs, dict) or "sub_per_bs" not in cfg.algo_kwargs:
+            raise ValueError(
+                "partition_mode='per_bs_dirichlet' requires "
+                "cfg.algo_kwargs['sub_per_bs'] (e.g. pass "
+                "--algo-kwargs '{\"sub_per_bs\": 2}' to the CLI). The "
+                "shard count = n_bs * sub_per_bs and is partition-axis, "
+                "not algorithm-axis — fl_v7 strips it from the algo "
+                "kwargs via _PARTITION_ONLY_ALGO_KWARGS before the FL "
+                "algorithm class is constructed."
+            )
+        return partition_clients(
+            df, mode="per_bs_dirichlet",
+            alpha=cfg.alpha,
+            sub_per_bs=int(cfg.algo_kwargs["sub_per_bs"]),
+            seed=cfg.seed,
+        )
     raise ValueError(
         f"unsupported partition_mode for v7: {cfg.partition_mode!r} "
-        "(use 'dirichlet' or 'iid')"
+        "(use 'dirichlet', 'iid', 'random_split', or 'per_bs_dirichlet')"
     )
 
 
@@ -668,7 +716,13 @@ def run_v7_sweep(cfg: V7Config) -> dict:
         "amp_enabled": amp_enabled,
         "amp_dtype": amp_dtype,
     }
-    algo_kwargs.update(cfg.algo_kwargs)
+    # Strip partition-axis kwargs (e.g. sub_per_bs) that ride on
+    # cfg.algo_kwargs for CLI/spec ergonomics — they must not reach the
+    # FL algorithm class (keyword-only signature, no **kwargs).
+    algo_kwargs.update({
+        k: v for k, v in cfg.algo_kwargs.items()
+        if k not in _PARTITION_ONLY_ALGO_KWARGS
+    })
     # Phase 1.5j Stage B (2026-04-28): FedDyn canonical server step
     # requires n_total_clients for `w_new = avg + h_accum / N`. Auto-
     # inject from cfg.n_clients when user spec didn't specify (most
