@@ -266,7 +266,35 @@ Statistical inference protocol (preregistered):
 \end{enumerate}
 
 
-% TODO(S11-E): \section{Reproducibility}\label{sec:repro}
+\section{Reproducibility infrastructure}\label{sec:repro}
+
+We outline the artefact components shipped with the paper. Camera-ready release includes a Zenodo-archived snapshot under Apache-2.0 with Croissant metadata; this section documents the structure so reviewers can audit the shape of the release before acceptance.
+
+\subsection{Spec-driven YAML pipeline}
+
+Every experiment cell is fully specified by a single YAML file under \lstinline|experiments/specs/| (e.g., \lstinline|stage2_full.yaml| for Phase~5; \lstinline|ablation_random_split.yaml| for Section~\ref{sec:ablation}). The launcher (\lstinline|experiments/run_v7_phase_sweep.py|) reads the spec, expands the Cartesian product (archs $\times$ algorithms $\times$ partitions $\times$ seeds), and dispatches per-cell runs with a \lstinline|--skip-completed| resume mechanism that recovers from cluster pre-emption without recomputing finished cells. This eliminates the most common reproducibility friction in multi-day FL sweeps (silent re-execution of completed cells).
+
+\subsection{Test infrastructure}
+
+The release ships 277 passing tests across four suites (202 trainer + 22 aggregator + 37 paper invariants + 16 paper claims-vs-data); the latter two (53 tests) form a developer pre-commit gate that verifies every \lstinline|PAPER_DRAFT.md| edit. Full breakdown in App.~B.1.
+
+\subsection{Statistical pipeline}
+
+\lstinline|scripts/aggregate_v7_results.py| produces \lstinline|aggregated_phase5.json| (90 group means + 270 paired-bootstrap distributions); BLAKE2b-hashed independent bootstrap streams support joint coverage claims (Section~\ref{sec:stats}). Full pipeline detail in App.~B.2.
+
+\subsection{Croissant dataset metadata}
+
+The preprocessed \lstinline|coloran_raw_unified.parquet| is documented in a Croissant 1.0 metadata file shipped with the release archive (App.~B.3).
+
+\subsection{Reproducible execution environment}
+
+Release archive bundles \lstinline|Dockerfile.repro| (CUDA 12.8 / PyTorch 2.10 pinned), \lstinline|requirements.lock| (SHA256-pinned 74 packages), and \lstinline|repro.sh| (1-cell smoke + bit-equivalence check). Full detail in App.~B.4.
+
+\subsection{Demo notebook}
+
+\lstinline|notebooks/colosseum_oran_federated_slicing_demo.ipynb| is the recommended onboarding entry point. See App.~B.5.
+
+
 % TODO(S11-F): \section{Results}\label{sec:results}
 % TODO(S11-F): \section{Discussion}\label{sec:discussion}
 % TODO(S11-G): \section{Limitations}\label{sec:limits}
