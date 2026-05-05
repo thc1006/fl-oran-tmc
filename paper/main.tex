@@ -133,7 +133,50 @@ A separate strand of recent FL work targets \emph{heterogeneity-induced sharp mi
 We do not empirically evaluate this family on Colosseum/ColO-RAN (see Section~\ref{sec:discussion}). Two structural mismatches make the absence of comparison defensible on mechanism alone. First, our regime --- 7 base-station-natural clients with $71\%$ per-round participation, 100 rounds, RAN slice SLA prediction --- is \emph{aggregation-noise-dominated} rather than coherent-drift-dominated. Second, FedAdam's adaptive variance damping $\mathrm{Adam}(m, v)$ over $(v_t - \theta_{t-1})$ systematically dominates FedSWA's variance-blind LookAhead overshoot \emph{in expectation} in this regime: FedAdam knows when to step small (high $v$) and when to step normally (low $v$), while FedSWA's LookAhead extrapolation rate $\alphala$ (the FedSWA paper's $\alpha$-symbol; we write it $\alphala$ throughout to disambiguate from the Dirichlet $\alphadir$ of Section~\ref{sec:partition} and the FedDyn $\alphadyn$ of Section~\ref{sec:method}; FedSWA's preregistered value is $\alphala=1.5$) amplifies \emph{both} signal and noise uniformly. Empirically (Section~\ref{sec:fedadam-ceiling}), FedAdam already saturates the headroom available to server-side aggregation modifications at $+0.006$--$+0.016$ Dirichlet-averaged AUC over FedAvg across the 3 architectures (paired-bootstrap CI$_{95}$ in Section~\ref{sec:intro} contribution 2); LookAhead overshoot is unlikely to \emph{systematically} exceed this ceiling without the variance-estimation machinery FedAdam has and FedSWA lacks. We additionally note that FedSWA targets \emph{heterogeneity-as-sharpness-wound}, which our inverted-$\alpha$ finding (Section~\ref{sec:intro}, Section~\ref{sec:results}) indicates does not characterize this dataset.
 
 
-% TODO(S11-E): \section{Dataset}\label{sec:dataset}
+\section{Dataset}\label{sec:dataset}
+
+\subsection{Colosseum / ColO-RAN testbed}
+
+ColO-RAN~\cite{Polese2022} is the publicly-released RAN telemetry corpus collected from the Colosseum digital-twin testbed~\cite{Bonati2024}, comprising the per-second downlink/uplink physical-layer measurements of 7 base stations (Colosseum Rome scenario, BS nodes $\{1, 8, 15, 22, 29, 36, 43\}$; we re-index these to \lstinline|bs_id| $\in\{1, \ldots, 7\}$ for ease of use) operating concurrently under 28 distinct traffic configurations (\lstinline|tr| $\in\{0, \ldots, 27\}$, each a different RBG-per-slice allocation pattern; the exact (slice~0 / slice~1 / slice~2) RBG triples per \lstinline|tr| are documented in the ColO-RAN release). Each base station serves 3 logical slices, and each slice can be served by one of 3 scheduling policies; both index mappings are listed in Table~\ref{tab:dataset-mapping}. The unified telemetry table contains $\approx 18$\,M rows of (timestamp, \lstinline|bs_id|, \lstinline|slice_id|, \lstinline|sched|, \lstinline|tr|) keyed observations with 17 continuous features (uplink/downlink throughput, MCS/CQI, BLER, RB utilisation, buffer occupancy; full list in Section~\ref{sec:method}). We use the public release without modification; no synthetic augmentation, no re-simulation.
+
+\begin{table}[t]
+\caption{ColO-RAN slice and scheduler index mapping.}
+\label{tab:dataset-mapping}
+\centering
+\begin{tabular}{@{}clll@{}}
+\toprule
+Index & Slice ID & Traffic class & Workload \\
+\midrule
+0 & eMBB  & broadband      & 4\,Mbps CBR/UE \\
+1 & MTC   & machine-type   & Poisson 30\,pkt/s, 125\,B/UE \\
+2 & URLLC & ultra-reliable & Poisson 10\,pkt/s, 125\,B/UE \\
+\midrule
+Index & \lstinline|sched| ID & Scheduler & \\
+\midrule
+0 & RR & Round-Robin          & \\
+1 & WF & Waterfilling         & \\
+2 & PF & Proportionally Fair  & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Task definition: per-slice SLA-violation forecasting}
+
+The forecasting target is the binary indicator $y_{t+1} = \mathbf{1}[\mathit{ul\_bler}_{t+1} > 0.10]$, predicting whether the next-second uplink BLER on a given (\lstinline|bs_id|, \lstinline|slice_id|) tuple will breach the $10\%$ SLA threshold. This threshold is the canonical SLA-violation gate used by the ColO-RAN authors~\cite{Polese2022}; the binary framing keeps the metric (AUC, F1) decision-relevant for the near-RT RIC's resource-allocation xApps. The empirical positive rate on the train partition is \textbf{$30.9\%$} (per-slice $34.9\%$ / $26.7\%$ / $31.0\%$, measured on \lstinline|tr| $\in\{0..21\}$; see Section~\ref{sec:discussion} for how this rate enters the per-client loss reweighting). Inputs to the model are the most recent five seconds of (\lstinline|slice_id|, \lstinline|sched|, \lstinline|tr|, 17 continuous features) on the same (\lstinline|bs_id|, \lstinline|slice_id|) tuple --- \lstinline|seq_len=5| is preregistered from v3/v4.
+
+\subsection{Out-of-distribution split by traffic config}
+
+To prevent label leakage between train / validation / test, we partition the 28 traffic configurations into three disjoint groups: train \lstinline|tr| $\in\{0..21\}$ (22 configs), validation \lstinline|tr| $\in\{22..24\}$ (3 configs), and test \lstinline|tr| $\in\{25..27\}$ (3 configs). All three sets are evaluated on the same 7 base stations and 3 slices; only the traffic-config index changes. This split is identical to v4 so accuracy numbers are cross-paper comparable. Crucially, \textbf{partition-into-clients (Section~\ref{sec:partition}) operates within the train \lstinline|tr| range only}: validation and test sets are pooled across all clients to guarantee identical evaluation surfaces across configurations.
+
+\subsection{Target-leakage audit (preserved from v4)}
+
+A v4-era audit established that the previously documented \lstinline|allocation_efficiency = 0.5 * throughput_eff + 0.3 * qos + 0.2 * prb_util| regression target is a deterministic linear combination of three concurrent inputs and is therefore unsuitable. We retain that exclusion and the v4-validated leak-free continuous feature set in v7.
+
+\subsection{Preprocessing pipeline}
+
+The 18\,M-row unified parquet (\lstinline|coloran_raw_unified.parquet|) is materialised once and streamed lazily through four pipeline stages: (i)~per-(\lstinline|bs_id|, \lstinline|slice_id|) sequence construction with \lstinline|build_run_sequences| (rolling \lstinline|seq_len=5| windows, positive-rate computed from train rows only via \lstinline|pos_weight_split=train| (preregistered) --- this avoids test-set leakage into the loss function); (ii)~leak-free \lstinline|ContinuousScaler| fit on the train partition only and applied to validation and test; (iii)~categorical encoding of \lstinline|slice_id| $\times$ \lstinline|sched| $\times$ \lstinline|tr| via \lstinline|nn.Embedding| lookups; (iv)~Dirichlet-or-natural-by-BS client partition (Section~\ref{sec:partition}). All four stages are implemented as pure functions in \lstinline|src/fl_oran/data_v2/| and tested in \lstinline|tests/test_v5_*| for determinism and seed-reproducibility (single-source-of-truth contract). The same sequence index is shared across all algorithms within an (arch, partition, seed) triple via a \lstinline|SharedSplits| cache; this is the perf inheritance from prior centralized work.
+
+
 % TODO(S11-E): \section{Method}\label{sec:method}
 % TODO(S11-E): \section{Reproducibility}\label{sec:repro}
 % TODO(S11-F): \section{Results}\label{sec:results}
