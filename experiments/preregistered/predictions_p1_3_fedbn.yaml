@@ -1,0 +1,51 @@
+# Pre-registered predictions for P1.3 (FedBN × natural-by-BS)
+
+experiment: p1_3_fedbn_natural
+hypothesis_set:
+  - id: H1.3.A
+    claim: "FedBN × LSTM × natural-by-BS test AUC within FedAdam ceiling (|Δ FedBN−FedAdam| < 0.01)"
+    rationale: |
+      Paper §6.3 / §1 contribution 2 claim FedAdam saturates the
+      server-side adaptive headroom at +0.006-0.016 AUC over FedAvg.
+      FedBN modifies aggregation in a different axis (skip BN params)
+      so it is plausible BUT NOT GUARANTEED to fall within this band.
+      Reviewer MC3 challenges this prediction.
+    measurement: artifacts/p1_fedbn/aggregated.json :: lstm_natural_fedbn_minus_fedadam_auc
+    fail_state_threshold: 0.01
+    fail_state_name: FAIL_STATE_3_LSTM
+    on_fail: trigger P1-GATE; C2 (FedAdam ceiling) refuted on LSTM
+
+  - id: H1.3.B
+    claim: "FedBN × Mamba × natural-by-BS test AUC within FedAdam ceiling"
+    measurement: artifacts/p1_fedbn/aggregated.json :: mamba_natural_fedbn_minus_fedadam_auc
+    fail_state_threshold: 0.01
+    fail_state_name: FAIL_STATE_3_MAMBA
+    on_fail: trigger P1-GATE
+
+  - id: H1.3.C
+    claim: "FedBN × Spiking × natural-by-BS test AUC within FedAdam ceiling"
+    measurement: artifacts/p1_fedbn/aggregated.json :: spiking_natural_fedbn_minus_fedadam_auc
+    fail_state_threshold: 0.01
+    fail_state_name: FAIL_STATE_3_SPIKING
+    on_fail: trigger P1-GATE
+
+  - id: H1.3.D
+    claim: "FedBN does not invert α monotonicity (natural > Dirichlet α=5.0 still holds)"
+    rationale: |
+      C1 (inverted-α) is dataset-structural per paper §7.1. It should be
+      independent of which aggregation algorithm is used. If FedBN changes
+      the partition ordering, the structural-mechanism story is undermined.
+    measurement: artifacts/p1_fedbn/aggregated.json :: fedbn_natural_minus_dirichlet5_auc_per_arch
+    fail_state_threshold: 0.0  # all 3 archs must remain positive
+    fail_state_name: C1_REORDERED_BY_FEDBN
+    on_fail: investigate; C1 mechanism may be algorithm-coupled not structural
+
+# NB: Phase 1 P1.3 only runs FedBN × natural-by-BS (30 cells = 3 archs ×
+# 10 seeds). The full Dirichlet sweep with FedBN (additional 150 cells)
+# is P3 if H1.3.D needs further investigation.
+
+preregistered_by: thc1006
+preregistered_at: 2026-05-06
+related_audit:
+  - artifacts/audit/AUDIT_PLAYBOOK.md
+  - reviewer MC3 (FedBN absence)

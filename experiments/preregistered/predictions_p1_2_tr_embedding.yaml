@@ -1,0 +1,44 @@
+# Pre-registered predictions for P1.2 (tr embedding bug quantification)
+
+experiment: p1_2_tr_embedding_check
+hypothesis_set:
+  - id: H1.2.A
+    claim: "tr embedding rows 22-29 are bit-identical to fresh seed-0 init across ALL 3 archs"
+    rationale: |
+      A0.2 audit + code-review re-audit demonstrated this for LSTM (mean Δ
+      5e-08 vs 3e-01 for trained rows, 6+ orders of magnitude). Mechanism
+      is arch-independent (PyTorch nn.Embedding only updates indexed rows).
+    measurement: tests/test_audit_invariants.py::test_tr_embedding_rows_22_to_29_byte_identical_to_fresh_init
+    fail_state_name: AUDIT_FALSIFIED
+    on_fail: STOP — re-derive entire audit chain; mechanism understanding is wrong
+    status: ALREADY_CONFIRMED  # via 9/9 pytest GREEN as of 2026-05-06
+
+  - id: H1.2.B
+    claim: "Fixing the tr embedding bug shrinks natural-by-BS minus Dirichlet α=0.05 AUC gap by less than 50 percent"
+    rationale: |
+      The bug exists, but the natural-by-BS vs Dirichlet gap is ~0.10 AUC.
+      Tr embedding random vectors at test time can degrade accuracy by
+      ~0.02-0.05 typically (test-time random feature). We hypothesize the
+      bug contributes <50% of the observed gap; the rest is real structural
+      partition difference (bs grouping preservation).
+    measurement: artifacts/p1_tr_embedding/results.json :: gap_shrinkage_fraction
+    fail_state_threshold: 0.50  # gap shrinkage > 50% triggers FAIL_STATE_2
+    fail_state_name: FAIL_STATE_2
+    on_fail: trigger P1-GATE; C1 mechanism story has substantial tr-bug confound
+
+  - id: H1.2.C
+    claim: "With bug fixed, natural-by-BS AUC remains > Dirichlet α=0.05 AUC by at least 0.05"
+    rationale: |
+      Even if the bug contributes some of the gap, the bs-grouping
+      preservation effect should dominate. If the gap goes to zero with
+      the fix, C1 is fully bug-driven and headline finding dies.
+    measurement: artifacts/p1_tr_embedding/results.json :: residual_natural_minus_dirichlet_auc
+    fail_state_threshold: 0.05
+    fail_state_name: C1_DIES
+    on_fail: paper restructure required; natural-by-BS dominance was tr-bug artefact
+
+preregistered_by: thc1006
+preregistered_at: 2026-05-06
+related_audit:
+  - artifacts/audit/tr_embedding_audit.md
+  - artifacts/audit/code_review_phase0.md
