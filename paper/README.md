@@ -13,7 +13,7 @@ In-progress migration; see PR #1 task tracker `S11-A` through `S11-I`.
 | S11-C | §1 Introduction | done (commit `a3c5eac`) |
 | S11-D | `bibliography.bib` from inline citations | partial — §1–§5 cited entries seeded; §6–§9 + supp pending S11-F/G/H |
 | S11-E | §2–§5 (Related, Dataset, Method, Repro) | done (commits `a69a3a1` §2, `30a9840` §3, `087242b` §4, `7e15d3c` §5) |
-| S11-F | §6–§7 (Results, Discussion) + figures | not started |
+| S11-F | §6–§7 (Results, Discussion) + figures | done (commits `c02843f` §6+3 figures, `6777b68` §7+2 tables) |
 | S11-G | §8–§9 (Limitations, Conclusion) | not started |
 | S11-H | Supplementary App. A–D | not started |
 | S11-I | Content-equivalence audit | not started |
