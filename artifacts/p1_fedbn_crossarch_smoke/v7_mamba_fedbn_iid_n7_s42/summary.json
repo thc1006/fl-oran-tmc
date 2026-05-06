@@ -1,0 +1,157 @@
+{
+  "config": {
+    "name": "v7_mamba_fedbn_iid_n7_s42",
+    "arch": "mamba",
+    "arch_kwargs": {},
+    "algorithm": "fedbn",
+    "algo_kwargs": {},
+    "partition_mode": "iid",
+    "alpha": 0.5,
+    "n_clients": 7,
+    "num_rounds": 5,
+    "clients_per_round": 5,
+    "max_steps_per_round": 50,
+    "batch_size": 64,
+    "lr": 0.0005,
+    "lr_warmup_rounds": 1,
+    "grad_clip": 1.0,
+    "unified_parquet": "/home/thc1006/dev/colosseum-oran-federated-slicing/data/coloran_raw_unified.parquet",
+    "sample_ratio": 1.0,
+    "threshold": 0.1,
+    "seq_len": 5,
+    "train_tr": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ],
+    "val_tr": [
+      22,
+      23,
+      24
+    ],
+    "test_tr": [
+      25,
+      26,
+      27
+    ],
+    "seed": 42,
+    "device": "cuda",
+    "mixed_precision": "bf16",
+    "compile_model": null,
+    "pos_weight_split": "train",
+    "cudnn_deterministic": true,
+    "output_dir": "artifacts/p1_fedbn_crossarch_smoke"
+  },
+  "env": {
+    "torch": "2.10.0+cu128",
+    "cuda": "12.8",
+    "cudnn": 91002,
+    "python": "3.12.3",
+    "platform": "Linux-6.17.0-20-generic-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 4080"
+  },
+  "history": [
+    {
+      "round": 1,
+      "train_loss": 0.9532279455661774,
+      "val_auc": 0.7391540857092703,
+      "val_acc": 0.706246330723417,
+      "val_f1": 0.44537079435906024,
+      "lr": 0.0005,
+      "duration_s": 2.0360589027404785
+    },
+    {
+      "round": 2,
+      "train_loss": 0.7805449721813202,
+      "val_auc": 0.8693970460737757,
+      "val_acc": 0.8213436910879115,
+      "val_f1": 0.7096922601500679,
+      "lr": 0.0005,
+      "duration_s": 1.557081699371338
+    },
+    {
+      "round": 3,
+      "train_loss": 0.6291719250679015,
+      "val_auc": 0.8864775689498419,
+      "val_acc": 0.8231519533238638,
+      "val_f1": 0.7258239906182218,
+      "lr": 0.0005,
+      "duration_s": 1.528390884399414
+    },
+    {
+      "round": 4,
+      "train_loss": 0.5755198312997818,
+      "val_auc": 0.8905734461340227,
+      "val_acc": 0.8320896299766609,
+      "val_f1": 0.7356145878719264,
+      "lr": 0.0005,
+      "duration_s": 1.5232081413269043
+    },
+    {
+      "round": 5,
+      "train_loss": 0.5915970797538758,
+      "val_auc": 0.8953200307172923,
+      "val_acc": 0.8384433880370499,
+      "val_f1": 0.7440174702058505,
+      "lr": 0.0005,
+      "duration_s": 1.519263744354248
+    }
+  ],
+  "best_val_auc": 0.8953200307172923,
+  "test": {
+    "accuracy": 0.8278395197548957,
+    "f1": 0.7371971583743671,
+    "positive_rate_pred": 0.3488777467338102,
+    "positive_rate_true": 0.30621593178261103,
+    "auc": 0.8908170261902634
+  },
+  "test_auc": 0.8908170261902634,
+  "phase_timings_s": {
+    "1_parquet_target_split": 11.458033800125122,
+    "2_partition": 1.3307349681854248,
+    "3_per_client_sequences": 8.680415153503418,
+    "4_val_test_sequences": 1.980295181274414,
+    "5_federated_scaler_fit": 1.1812703609466553,
+    "6_scale_AND_pin_tensors": 7.518473386764526,
+    "7_training_total": 8.178499221801758,
+    "7a_first_round": 2.0360589027404785,
+    "7b_steady_round_mean": 1.531986117362976,
+    "8_test_eval": 1.016305923461914,
+    "TOTAL": 41.36852788925171
+  },
+  "energy_measured": {
+    "available": true,
+    "method": "energy_api",
+    "idle_baseline_mW": 56718.0,
+    "training_duration_s": 8.178499221801758,
+    "training_total_mJ": 991675.0,
+    "training_idle_attributed_mJ": 463868.1188621521,
+    "training_model_attributable_mJ": 527806.8811378479,
+    "per_round_mJ": [
+      218554.0,
+      196243.0,
+      189548.0,
+      190487.0,
+      196843.0
+    ]
+  }
+}

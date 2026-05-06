@@ -1,0 +1,39 @@
+# Pre-launch sanity check: FedAvg smoke with IDENTICAL params to
+# p1_fedbn_smoke.yaml. If FedBN truly reduces to FedAvg on our no-norm
+# backbones, the test_auc from these two smoke runs must match within
+# float32 round-off (~1e-5 absolute).
+#
+# Critical pre-launch verification per user mandate 2026-05-06:
+# "before training, deep review the script — don't want garbage output".
+
+description: P1.3-AUDIT FedAvg paired smoke (1 cell, 5 rounds; for FedBN equivalence)
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedavg
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 5
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 1
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4

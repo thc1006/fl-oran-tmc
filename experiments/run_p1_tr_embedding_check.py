@@ -101,19 +101,39 @@ def _build_test_tensors(parquet_path: Path):
     return cat, cont, Yte.squeeze(-1).astype(np.float32), schema
 
 
-def _load_lstm(ckpt_path: Path, schema):
-    """Build ForecasterV2 (LSTM) and load checkpoint state_dict."""
+_ARCH_REGISTRY = {
+    "lstm": ("fl_oran.models.forecaster_v2", "ForecasterV2", {}),
+    "mamba": ("fl_oran.models.mamba_forecaster", "MambaForecaster", {}),
+    "spiking_expand2": (
+        "fl_oran.models.spiking_forecaster", "SpikingForecaster",
+        {"backbone_d_model": 56, "backbone_expand": 2},
+    ),
+}
+
+
+def _load_arch_model(arch: str, ckpt_path: Path, schema):
+    """Build the model class for `arch` and load checkpoint state_dict.
+    Strips the `_orig_mod.` prefix added by torch.compile."""
+    import importlib
     from fl_oran.utils.seed import seed_everything
-    from fl_oran.models.forecaster_v2 import ForecasterV2
+
+    if arch not in _ARCH_REGISTRY:
+        raise ValueError(f"unknown arch={arch!r}; expected {sorted(_ARCH_REGISTRY)}")
+    module_path, cls_name, extra_kwargs = _ARCH_REGISTRY[arch]
+    cls = getattr(importlib.import_module(module_path), cls_name)
 
     seed_everything(0, deterministic=True)
-    model = ForecasterV2(schema=schema, task="classification", seq_len=5)
+    model = cls(schema=schema, task="classification", seq_len=5, **extra_kwargs)
     sd = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    # Strip _orig_mod. prefix if present (torch.compile wrapper)
     cleaned = {k.replace("_orig_mod.", ""): v for k, v in sd.items()}
     model.load_state_dict(cleaned, strict=True)
     model.eval()
     return model
+
+
+def _load_lstm(ckpt_path: Path, schema):
+    """Backward-compat alias for the LSTM-only call signature."""
+    return _load_arch_model("lstm", ckpt_path, schema)
 
 
 @torch.no_grad()
@@ -148,6 +168,9 @@ def main() -> int:
     )
     ap.add_argument("--quick", action="store_true",
                     help="Only 2 checkpoints (1 natural + 1 dirichlet, seed 0)")
+    ap.add_argument("--archs", type=str, nargs="*", default=["lstm"],
+                    help="Architectures to evaluate (default: lstm). "
+                         "Supports lstm, mamba, spiking_expand2.")
     ap.add_argument("--seeds", type=int, nargs="*", default=list(range(10)))
     ap.add_argument(
         "--out",
@@ -161,87 +184,95 @@ def main() -> int:
     seeds = [0] if args.quick else args.seeds
     train_tr = list(range(22))
 
-    # Scope note: this script currently only loads ForecasterV2 (LSTM).
-    # Extending to MambaForecaster + SpikingForecaster would require a
-    # model-class-by-arch dispatch and is left as P1.2 follow-up.
-    print("NB: scope is LSTM-only; Mamba/Spiking would need model-class dispatch.")
-
+    print(f"Architectures: {args.archs}")
     print(f"Loading test data from {args.parquet} …")
     cat, cont, y, schema = _build_test_tensors(args.parquet)
     print(f"Test: {len(y):,} sequences, n_cat={cat.shape[-1]}, n_cont={cont.shape[-1]}")
 
     rows = []
-    cells = [("iid", s) for s in seeds] + [("dirichlet_a0p05", s) for s in seeds]
-    for partition, seed in cells:
-        ckpt_dir = args.ckpt_root / f"v7_lstm_fedavg_{partition}_n7_s{seed}"
-        ckpt_path = ckpt_dir / "best.pt"
-        if not ckpt_path.exists():
-            print(f"  SKIP missing checkpoint: {ckpt_path}")
-            continue
+    for arch in args.archs:
+        cells = [("iid", s) for s in seeds] + [("dirichlet_a0p05", s) for s in seeds]
+        for partition, seed in cells:
+            ckpt_dir = args.ckpt_root / f"v7_{arch}_fedavg_{partition}_n7_s{seed}"
+            ckpt_path = ckpt_dir / "best.pt"
+            if not ckpt_path.exists():
+                print(f"  SKIP missing checkpoint: {ckpt_path}")
+                continue
 
-        model = _load_lstm(ckpt_path, schema)
-        # Normal: as-is (test_tr rows are random init = the bug)
-        auc_normal = _eval_auc(model, cat, cont, y, device)
+            model = _load_arch_model(arch, ckpt_path, schema)
+            auc_normal = _eval_auc(model, cat, cont, y, device)
+            with torch.no_grad():
+                orig_w = model.embeddings["tr"].weight.data.clone()
+                fixed = freeze_test_tr_rows(orig_w, train_tr, mode="mean")
+                model.embeddings["tr"].weight.data.copy_(fixed)
+            auc_meanfix = _eval_auc(model, cat, cont, y, device)
 
-        # Mean-fix: replace test_tr rows (22-29) with mean of trained rows (0-21)
-        with torch.no_grad():
-            orig_w = model.embeddings["tr"].weight.data.clone()
-            fixed = freeze_test_tr_rows(orig_w, train_tr, mode="mean")
-            model.embeddings["tr"].weight.data.copy_(fixed)
-        auc_meanfix = _eval_auc(model, cat, cont, y, device)
-
-        delta = auc_meanfix - auc_normal
-        print(f"  {partition:18s} s{seed:<3}  normal={auc_normal:.4f}  meanfix={auc_meanfix:.4f}  Δ={delta:+.4f}")
-        rows.append({
-            "partition": partition, "seed": seed,
-            "auc_normal": auc_normal, "auc_meanfix": auc_meanfix,
-            "delta_meanfix_minus_normal": delta,
-        })
+            delta = auc_meanfix - auc_normal
+            print(f"  {arch:18s} {partition:18s} s{seed:<3}  normal={auc_normal:.4f}  meanfix={auc_meanfix:.4f}  Δ={delta:+.4f}")
+            rows.append({
+                "arch": arch, "partition": partition, "seed": seed,
+                "auc_normal": auc_normal, "auc_meanfix": auc_meanfix,
+                "delta_meanfix_minus_normal": delta,
+            })
 
     if not rows:
         print("ERROR: no checkpoints loaded", file=sys.stderr)
         return 1
 
-    # Per-partition aggregates
-    iid = [r for r in rows if r["partition"] == "iid"]
-    dir_ = [r for r in rows if r["partition"] == "dirichlet_a0p05"]
-
     def _mean(rs, key): return float(np.mean([r[key] for r in rs])) if rs else float("nan")
-    natural_normal = _mean(iid, "auc_normal")
-    natural_meanfix = _mean(iid, "auc_meanfix")
-    dirichlet_normal = _mean(dir_, "auc_normal")
-    dirichlet_meanfix = _mean(dir_, "auc_meanfix")
 
-    gap_normal = natural_normal - dirichlet_normal
-    gap_meanfix = natural_meanfix - dirichlet_meanfix
-    shrinkage = (gap_normal - gap_meanfix) / gap_normal if abs(gap_normal) > 1e-6 else float("nan")
+    # Per-arch aggregates
+    per_arch = {}
+    for arch in args.archs:
+        iid = [r for r in rows if r["arch"] == arch and r["partition"] == "iid"]
+        dir_ = [r for r in rows if r["arch"] == arch and r["partition"] == "dirichlet_a0p05"]
+        if not iid or not dir_:
+            continue
+        nn_ = _mean(iid, "auc_normal")
+        nm = _mean(iid, "auc_meanfix")
+        dn = _mean(dir_, "auc_normal")
+        dm = _mean(dir_, "auc_meanfix")
+        gap_n = nn_ - dn
+        gap_m = nm - dm
+        shrink = (gap_n - gap_m) / gap_n if abs(gap_n) > 1e-6 else float("nan")
+        per_arch[arch] = {
+            "natural_normal": nn_, "natural_meanfix": nm,
+            "dirichlet_normal": dn, "dirichlet_meanfix": dm,
+            "gap_normal": gap_n, "gap_meanfix": gap_m,
+            "gap_shrinkage_fraction": shrink, "n_seeds": len(iid),
+        }
 
+    # Backward-compat top-level aggregate (LSTM if present, else first arch)
+    primary = "lstm" if "lstm" in per_arch else (next(iter(per_arch)) if per_arch else None)
     payload = {
-        "natural_by_bs_normal_auc_mean": natural_normal,
-        "natural_by_bs_frozen_auc_mean": natural_meanfix,  # YAML alias
-        "natural_by_bs_meanfix_auc_mean": natural_meanfix,
-        "dirichlet_a005_normal_auc_mean": dirichlet_normal,
-        "dirichlet_a005_frozen_auc_mean": dirichlet_meanfix,
-        "dirichlet_a005_meanfix_auc_mean": dirichlet_meanfix,
-        "gap_normal": gap_normal,
-        "gap_meanfix": gap_meanfix,
-        "gap_shrinkage_fraction": shrinkage,
-        "residual_natural_minus_dirichlet_auc": gap_meanfix,
-        "n_seeds": len(iid),
+        "per_arch": per_arch,
         "per_cell": rows,
         "computed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     }
+    if primary is not None:
+        a = per_arch[primary]
+        payload.update({
+            "primary_arch": primary,
+            "natural_by_bs_normal_auc_mean": a["natural_normal"],
+            "natural_by_bs_meanfix_auc_mean": a["natural_meanfix"],
+            "natural_by_bs_frozen_auc_mean": a["natural_meanfix"],
+            "dirichlet_a005_normal_auc_mean": a["dirichlet_normal"],
+            "dirichlet_a005_meanfix_auc_mean": a["dirichlet_meanfix"],
+            "dirichlet_a005_frozen_auc_mean": a["dirichlet_meanfix"],
+            "gap_normal": a["gap_normal"],
+            "gap_meanfix": a["gap_meanfix"],
+            "gap_shrinkage_fraction": a["gap_shrinkage_fraction"],
+            "residual_natural_minus_dirichlet_auc": a["gap_meanfix"],
+            "n_seeds": a["n_seeds"],
+        })
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
     print()
-    print("=== Aggregate (LSTM × FedAvg) ===")
-    print(f"  natural-by-BS  normal: {natural_normal:.4f}   meanfix: {natural_meanfix:.4f}")
-    print(f"  Dirichlet α=0.05 normal: {dirichlet_normal:.4f}   meanfix: {dirichlet_meanfix:.4f}")
-    print(f"  gap_normal:               {gap_normal:+.4f}")
-    print(f"  gap_meanfix:              {gap_meanfix:+.4f}")
-    print(f"  gap_shrinkage_fraction:   {shrinkage:+.4f}  (H1.2.B threshold: <0.50)")
-    print(f"  residual (gap_meanfix):   {gap_meanfix:+.4f}  (H1.2.C threshold: >=0.05)")
+    print("=== Per-arch summary ===")
+    for arch, a in per_arch.items():
+        print(f"  [{arch:18s}] gap_normal={a['gap_normal']:+.4f}  gap_meanfix={a['gap_meanfix']:+.4f}  "
+              f"shrinkage={a['gap_shrinkage_fraction']:+.4f}  residual={a['gap_meanfix']:+.4f}")
     print(f"\nWrote {args.out}")
     return 0
 

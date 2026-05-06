@@ -1,0 +1,52 @@
+# R3.2 / P1.3-GREEN: FedBN × natural-by-BS × 3 archs × 10 seeds = 30 cells.
+#
+# Empirical confirmation of MC3 (FedBN absence). FedBN structurally reduces
+# to FedAvg on our 3 backbones (proof in artifacts/audit/fedbn_reduces_to_fedavg.md);
+# this sweep produces empirical evidence for the reviewer that the predicted
+# bit-equivalence holds in practice.
+#
+# Hardware: RTX 4080 (sm_89), matching Phase 5 baseline so paired-bootstrap
+# CI95 vs FedAvg/FedAdam is valid. ~5-6 hr GPU budget.
+
+description: P1.3-GREEN FedBN × natural-by-BS sweep (30 cells)
+adr_reference: AUDIT_PLAYBOOK + p1_gate_decision.md
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - name: fedbn
+
+partitions:
+  # natural-by-BS only — that's the mechanistically interesting cell
+  # (Phase 5 baseline column). Dirichlet sweep deferred unless this
+  # column shows non-trivial divergence from FedAvg.
+  - mode: iid
+    n_clients: 7
+
+# Same 10 seeds as Phase 5 stage2_full to enable paired-bootstrap CI95.
+seeds: [42, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+
+shared:
+  num_rounds: 100               # same as Phase 5
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train       # ADR D-12
+  cudnn_deterministic: true     # ADR D-15
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 5.0e-4
