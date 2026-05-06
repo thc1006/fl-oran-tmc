@@ -234,7 +234,9 @@ Three naive baselines computed on the same test split (1,930,796 sequences, tr �
 | Last-BLER persistence (raw `score = ul_bler[t]`) | 0.5133 | +0.4026 |
 | Smoothed-5s persistence (per-group rolling mean) | 0.6258 | +0.2901 |
 | Logistic regression on V3_CONTINUOUS (17 features) | 0.6523 | +0.2636 |
-| LSTM × FedAvg × natural-by-BS (Phase 5) | 0.9159 | — |
+| **Centralized LSTM, 1 epoch (226k steps)** | **0.9314** | **−0.0155** |
+| Centralized LSTM, 3 epochs (680k steps; overfits slightly) | 0.9264 | −0.0105 |
+| LSTM × FedAvg × natural-by-BS (Phase 5, federated) | 0.9159 | — |
 
 The raw persistence baseline measures the trivial "next second mirrors current second" predictor; per-group lag-1 Pearson correlation on `ul_bler` is **−0.0509**, confirming BLER is essentially white noise at 1-second granularity. Smoothing over the prior 5 seconds (matching the LSTM input window) raises persistence AUC to 0.6258 but still leaves a +0.29 AUC gap to FL. Logistic regression on the same 17 continuous features the FL models consume reaches 0.6523, indicating that linear classification captures partial signal but ~26pp remain for sequence modelling and federation. The smallest gap (FL minus the strongest naive) is +0.26 AUC — substantial enough to justify the FL machinery on this task.
 
