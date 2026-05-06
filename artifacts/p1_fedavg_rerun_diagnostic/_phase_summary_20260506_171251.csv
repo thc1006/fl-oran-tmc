@@ -1,0 +1,4 @@
+name,arch,algorithm,partition_mode,alpha,n_clients,seed,lr,lr_warmup_rounds,test_auc,test_acc,test_f1,best_val_auc,duration_s,status
+v7_lstm_fedavg_iid_n7_s42,lstm,fedavg,iid,,7,42,0.0005,3,0.9161524843636635,0.8456255682360707,0.7655532332756441,0.9225037763550811,206.07,ok
+v7_mamba_fedavg_iid_n7_s42,mamba,fedavg,iid,,7,42,0.0005,3,0.9162245991975885,0.8499031663463096,0.7663581750284137,0.9222099808254935,196.66,ok
+v7_spiking_expand2_fedavg_iid_n7_s42,spiking_expand2,fedavg,iid,,7,42,0.0005,3,0.8502373427331207,0.745137559833442,0.6654217959111377,0.8569339116804263,463.93,ok
