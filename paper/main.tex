@@ -355,22 +355,22 @@ Baseline & Test AUC & $\Delta$ vs FL natural-by-BS \\
 Last-BLER persistence (\lstinline|score=ul_bler[t]|) & $0.5133$ & $+0.4026$ \\
 Smoothed-5s persistence (per-group rolling mean)    & $0.6258$ & $+0.2901$ \\
 Logistic regression on V3\_CONTINUOUS (17 features) & $0.6523$ & $+0.2636$ \\
-\textbf{Centralized LSTM, 1 epoch (226k steps)}     & $\mathbf{0.9314}$ & $\mathbf{-0.0155}$ \\
-Centralized LSTM, 3 epochs (overfits slightly)      & $0.9264$ & $-0.0105$ \\
-LSTM $\times$ FedAvg $\times$ natural-by-BS (Phase~5, federated) & $0.9159$ & --- \\
+\textbf{Centralized LSTM, 1 epoch ($n=5$ seeds)}    & $\mathbf{0.9311}$ \tiny{$[0.9305, 0.9318]$} & $\mathbf{-0.0152}$ \\
+Centralized LSTM, 3 epochs (single-seed; overfits)  & $0.9264$ & $-0.0105$ \\
+LSTM $\times$ FedAvg $\times$ natural-by-BS (Phase~5, $n=10$) & $0.9159$ \tiny{$[0.9156, 0.9162]$} & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 The raw persistence baseline measures the trivial ``next second mirrors current second'' predictor; per-group lag-1 Pearson correlation on \lstinline|ul_bler| is $-0.0509$, confirming BLER is essentially white noise at 1-second granularity. Smoothing over the prior 5 seconds (matching the LSTM input window) raises persistence AUC to $0.6258$ but still leaves a $+0.29$ AUC gap to FL. Logistic regression on the same 17 continuous features the FL models consume reaches $0.6523$, indicating linear classification captures partial signal but $\sim 26$\,pp remain for sequence modelling and federation. The smallest gap (FL minus the strongest naive) is $+0.26$ AUC --- substantial enough to justify the FL machinery on this task.
 
-\textbf{Decomposition} (added 2026-05-06): the centralized LSTM run cleanly separates the two factors that the naive-vs-FL gap previously conflated:
+\textbf{Decomposition} (added 2026-05-06): the centralized LSTM run (5 seeds $\times$ 1 epoch) cleanly separates the two factors that the naive-vs-FL gap previously conflated:
 \begin{itemize}
-  \item \textbf{ML lift} (sequence modelling over linear): centralized LSTM $0.9314$ $-$ logistic regression $0.6523$ $= \mathbf{+0.28}$ AUC.
-  \item \textbf{Federation cost} (federated vs centralized at equivalent training budget): centralized LSTM $0.9314$ $-$ FL natural-by-BS $0.9159$ $= \mathbf{+0.015}$ AUC.
+  \item \textbf{ML lift} (sequence modelling over linear): centralized LSTM $0.9311$ $-$ logistic regression $0.6523$ $= \mathbf{+0.28}$ AUC.
+  \item \textbf{Federation cost} (federated vs centralized at equivalent training budget): centralized $0.9311$ $[0.9305, 0.9318]$ $-$ FL $0.9159$ $[0.9156, 0.9162]$ $= \mathbf{+0.0152}$ AUC, Welch combined CI$_{95}$ $\mathbf{[+0.0145, +0.0160]}$ (excludes zero).
 \end{itemize}
 
-FL ``costs'' $\sim 1.5$\,pp AUC compared to centralized training on this task --- a small price for the privacy / locality / no-pooling benefits FL provides on the O-RAN edge. The FL benefit over LR is not ``FL machinery is required to do well'', but rather ``sequence modelling is required to do well, AND federation is nearly free on top of sequence modelling''. The 3-epoch centralized result ($0.9264 <$ 1-epoch $0.9314$) suggests centralized training reaches its OOD-test ceiling within 1 epoch on this dataset; further training overfits slightly. FL's 100-round budget ($25$k gradient steps total $\approx 0.1$ epochs) is therefore well-matched to the task.
+FL ``costs'' $\sim 1.5$\,pp AUC compared to centralized training on this task --- a small price for the privacy / locality / no-pooling benefits FL provides on the O-RAN edge. The FL benefit over LR is not ``FL machinery is required to do well'', but rather ``sequence modelling is required to do well, AND federation costs only $\sim 1.5$\,pp on top of sequence modelling''. The single-seed 3-epoch centralized result ($0.9264$) trends below 1-epoch ($0.9311$), tentatively suggesting overfitting on the OOD test; this comparison is $N=1$ and would need multi-seed re-run to confirm. FL's 100-round budget ($25$k gradient steps total $\approx 0.1$ epochs) is therefore well within the centralized convergence regime for this task.
 
 Reproduction: \lstinline|scripts/baseline_last_bler.py| $+$ \lstinline|scripts/baseline_logreg.py| $+$ \lstinline|experiments/run_p1_centralized_lstm.py|; persisted to \lstinline|artifacts/baselines/{naive,centralized_lstm}_results.json|.
 

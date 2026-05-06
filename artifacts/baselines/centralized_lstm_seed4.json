@@ -1,0 +1,22 @@
+{
+  "centralized_lstm_results": {
+    "1_epoch": {
+      "n_test_seqs": 1927016,
+      "n_total_steps": 226683,
+      "n_train_seqs": 14507705,
+      "test_auc": 0.9319630004093835,
+      "test_f1": 0.7914751254376838
+    }
+  },
+  "computed_at": "2026-05-06T11:24:33.438249+00:00",
+  "config": {
+    "batch_size": 64,
+    "feature_count": 17,
+    "lr": 0.0005,
+    "seed": 4
+  },
+  "phase5_fl_reference": {
+    "comment": "FL reference for ML-lift / federation-cost decomposition",
+    "lstm_fedavg_natural_test_auc": 0.9159
+  }
+}
