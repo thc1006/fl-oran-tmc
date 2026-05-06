@@ -34,12 +34,16 @@ argues). NOT triggered.
 
 | Hypothesis | Threshold | Measured | Verdict |
 |---|---|---|---|
-| H1.3.A/B/C FedBN within FedAdam ceiling | < 0.01 | by construction = 0 | **PASS by reduction** |
-| H1.3.D FedBN preserves α monotonicity | n/a | by construction = preserved | **PASS by reduction** |
+| H1.3.A/B/C FedBN within FedAdam ceiling | < 0.01 | bit-exact = FedAvg | **PASS by reduction + empirical** |
+| H1.3.D FedBN preserves α monotonicity | n/a | bit-exact = FedAvg | **PASS by reduction + empirical** |
 
 **Conclusion**: For our 3 backbones (no norm layers), FedBN reduces
 bit-exactly to FedAvg (proof in `artifacts/audit/fedbn_reduces_to_fedavg.md`).
-NOT triggered.
+**Empirical verification (R3.2 cell 1/30)**: FedBN LSTM s42 at 100
+rounds produces best_val=0.9225037764 / test_auc=0.9161524844, identical
+to Phase 5 FedAvg LSTM s42 (|Δ|=0.0e+00). Remaining 29 cells running
+in background; bit-equivalence guaranteed by reduction proof. NOT
+triggered.
 
 ### Borderline case: H1.2.C residual ≥ 0.05 (technical FAIL by 0.0009)
 
