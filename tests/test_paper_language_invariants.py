@@ -74,6 +74,59 @@ def test_no_dismiss_language_for_fedswa_family() -> None:
             )
 
 
+def test_p15_naive_baselines_section_in_paper() -> None:
+    """P1.5 integration guard: §6 must reference the naive baselines (P1.1
+    GREEN result). Catches regression where someone removes the §6.7
+    table or strips the artifacts/baselines/naive_results.json reference."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    assert "Naive baselines" in md, "§6 markdown must contain a 'Naive baselines' section"
+    assert "0.5133" in md and "0.6258" in md and "0.6523" in md, (
+        "§6 markdown must report the 3 naive baseline AUCs (0.5133, 0.6258, 0.6523)"
+    )
+    assert "naive_results.json" in md, "§6 markdown must reference the canonical results JSON"
+    assert "Naive baselines" in tex or "naive-baselines" in tex.lower(), (
+        "main.tex must mirror the §6 naive baseline section"
+    )
+
+
+def test_p15_tr_embedding_quantification_section_in_paper() -> None:
+    """P1.5 integration guard: §7.1.6 must report the 9% gap-shrinkage
+    quantification from the P1.2 GREEN run."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    assert "9.2%" in md or "0.0921" in md or "gap_shrinkage_fraction" in md, (
+        "§7.1.6 markdown must quote the 9.2% / 0.0921 gap-shrinkage finding"
+    )
+    assert "91% is structural" in md, (
+        "§7.1.6 markdown must state '91% is structural' substantive conclusion"
+    )
+    assert "tr-embedding" in tex.lower() or "tr embedding" in tex.lower(), (
+        "main.tex must mirror the tr-embedding-bug-confound subsection"
+    )
+
+
+def test_p15_fedbn_reduction_proof_in_l2() -> None:
+    """P1.5 integration guard: §8 L2 must use the FedBN reduction proof
+    instead of the previous 'we expect FedBN to extend not overturn'
+    framing."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    assert "reduces bit-exactly to FedAvg" in md, (
+        "§8 L2 markdown must include the FedBN-reduces-to-FedAvg statement"
+    )
+    assert "fedbn_reduces_to_fedavg.md" in md, (
+        "§8 L2 markdown must reference the audit doc with the proof"
+    )
+    # Also ensure the old soft-framing language is GONE
+    assert "we expect the result of such a follow-up" not in md, (
+        "§8 L2 markdown must not retain the pre-P1.5 soft framing"
+    )
+    assert "reduces bit-exactly to FedAvg" in tex, (
+        "main.tex must mirror the FedBN reduction-to-FedAvg statement"
+    )
+
+
 def test_implementation_specific_caveat_in_c4() -> None:
     """RED: §1 contribution 4 (architecture-leverage claim) must contain
     an 'on this implementation' caveat. Mamba uses pure-PyTorch sequential
