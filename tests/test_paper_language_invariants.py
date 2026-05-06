@@ -60,12 +60,35 @@ def test_no_deployment_anti_pattern_phrase() -> None:
 
 
 def test_no_dismiss_language_for_fedswa_family() -> None:
-    """RED: §2.6 + §7.5 must not use 'dismiss' / 'rule out' / 'cannot
-    exceed' for the FedSWA / FedSCAM / FedMoSWA family. The mechanism
-    argument is predictive ('we predict |Δ|<|Δ_FedAdam|') not empirical;
-    use hedged language (predict, anticipated, likely) per reviewer MC7."""
-    forbidden = ("we accordingly dismiss", "cannot systematically exceed",
-                 "rule out FedSWA", "rules out FedSWA")
+    """RED: §2.6 + §6.3 + §7.5 + §8 L2 must not use dismissal / overclaim
+    language for the FedSWA / FedSCAM / FedMoSWA family. The §2.6 mechanism
+    argument is predictive ('we predict |Δ|<|Δ_FedAdam|'), and §7.5's R3.4
+    empirical test directionally REVERSED that prediction (FedSWA marginally
+    exceeds FedAdam by +0.000379 AUC, CI95 excludes 0). Use hedged language
+    (predict, anticipated, prediction-empirically-tested) per reviewer MC7,
+    R3.4, and the R34-A/B/C deep review; ban the post-R3.4-stale phrasings
+    (Round 2/3 deep review of rebuttal-phase1 PR)."""
+    forbidden = (
+        # P1.4-GREEN original guards
+        "we accordingly dismiss",
+        "cannot systematically exceed",
+        "rule out FedSWA",
+        "rules out FedSWA",
+        # Round 2/3 deep-review additions (post-R3.4 staleness)
+        "lacks the variance-estimation needed to systematically exceed",
+        "mechanism-based dismissal of FedSWA",
+        "mechanism-based dismissal of FedSCAM",
+        "dismissal of the LookAhead",
+        "dismissal of LookAhead",
+        # §7.2 line that round-3 review caught: any-aggregation-modification
+        # cannot be the empirical maximum since §7.5 FedSWA exceeds FedAdam
+        "empirical maximum gap any server-side aggregation modification can extract",
+        # §8 L2 / §2.6 stale "we don't evaluate FedSWA" — §7.5 does
+        "We do not empirically evaluate FedSWA",
+        "we do not empirically evaluate FedSWA",
+        "We do not empirically evaluate this family",
+        "we do not empirically evaluate this family",
+    )
     for path in (PAPER_DRAFT, MAIN_TEX):
         text = _read(path)
         for phrase in forbidden:
