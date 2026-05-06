@@ -152,6 +152,28 @@ def test_p2_loto_section_in_paper() -> None:
     )
 
 
+def test_p22_inference_latency_section_in_paper() -> None:
+    """P2.2 inference latency + comm bytes (MC6) must be in §6.8."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    # Headline values — RTX 4080 GPU 1-sample latency
+    for v in ("0.15", "0.52", "1.57"):
+        assert v in md, f"§6.8 markdown must report GPU 1-sample latency {v} ms"
+    # Communication bytes per client
+    for v in ("174", "158", "170"):
+        assert v in md, f"§6.8 markdown must report comm KiB/client {v}"
+    # 10 ms RIC budget framing
+    assert "10 ms" in md or "10\\,ms" in md or "10ms" in md, (
+        "§6.8 markdown must mention the 10 ms near-RT RIC budget"
+    )
+    assert "tab:deployment-cost" in tex, (
+        "main.tex must contain the deployment-cost table"
+    )
+    assert "p2_inference/results.json" in md or "p2_inference/results.json" in tex, (
+        "must reference artifacts/p2_inference/results.json"
+    )
+
+
 def test_implementation_specific_caveat_in_c4() -> None:
     """RED: §1 contribution 4 (architecture-leverage claim) must contain
     an 'on this implementation' caveat. Mamba uses pure-PyTorch sequential

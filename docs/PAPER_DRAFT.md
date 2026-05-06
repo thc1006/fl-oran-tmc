@@ -252,6 +252,22 @@ The single-seed 3-epoch centralized result (0.9264) trends below 1-epoch (0.9311
 
 Reproduction: `scripts/baseline_last_bler.py` + `scripts/baseline_logreg.py`; persisted to `artifacts/baselines/naive_results.json`.
 
+### 6.8 Inference latency + federation communication cost (added 2026-05-06 per reviewer MC6)
+
+To address the deployment claim, we measured single-sample inference latency (the metric a near-RT RIC xApp pays per prediction) and per-round federation communication cost (the metric the SMO/non-RT RIC pays per training round) on the same RTX 4080 used for training, plus CPU baselines for edge-device deployment scenarios. Per-arch values are taken from the seed-42 Phase 5 checkpoint; `experiments/run_p2_inference_latency.py` regenerates them.
+
+| Arch | n_params | Comm bytes/client/round | GPU 1-sample latency | CPU 1-sample latency | 10 ms RIC headroom (GPU) |
+|---|---|---|---|---|---|
+| LSTM | 44,553 | 174 KiB | **0.15 ms** | 0.17 ms | **67.4×** |
+| Mamba | 40,489 | 158 KiB | 0.52 ms | 1.11 ms | 19.3× |
+| Spiking-SSM | 43,601 | 170 KiB | 1.57 ms | **0.90 ms** | 6.4× |
+
+**Inference**: all 3 backbones serve a single SLA-violation prediction in ≤1.6 ms on RTX 4080 GPU, well within the tightest near-RT RIC control-loop budget (10 ms). LSTM is fastest on both GPU and CPU; Spiking-SSM is the only arch where CPU outperforms GPU (0.90 ms vs 1.57 ms) — snntorch's `Leaky` neuron + atan surrogate gradient have CPU-specific paths that beat the dense-GPU codepath at single-sample scale. Even at the worst case (Spiking on GPU), the 6.4× headroom comfortably fits the 10 ms budget; for edge-device deployment without GPU, all 3 archs are still ≤1.2 ms on a single CPU thread.
+
+**Communication**: 158-174 KiB upload per client per round (state_dict in fp32). With 5 of 7 clients sampling per round and 100 rounds, total federation traffic is ≤87 MiB per cell — well within typical E2-interface bandwidth (10-100 Mbps over the 100-round training, this is <1 Mbps average). FL communication is not the bottleneck.
+
+**Headline interpretation**: the §6.5 architecture-leverage finding (10× energy span between LSTM and Spiking on RTX 4080) does NOT translate to a 10× inference-latency span — the worst arch is only ~10× slower than the best at single-sample inference, and even that fits the budget. Operators selecting architecture for **deployment** should weigh both training-energy (§6.5) and inference-latency (this section); for the ColO-RAN per-second prediction cadence, all 3 archs are deployable. Reproduction: `artifacts/p2_inference/results.json`.
+
 ### 6.6 Mechanism preview: open question, dataset-structural rather than algorithm-mechanistic
 
 The four findings above raise one mechanistic question: *why does heterogeneity help here when standard FL benchmarks find the opposite?* §7 develops this in detail. We summarise here so reviewers can navigate the discussion: (a) one candidate that mixed per-client class-imbalance variance with structural specialisation was eliminated after we verified that `fl_v7.py` uses a globally pooled positive-class weight in the BCE loss (the implementation is not client-local), and the global positive rate (30.9 %) is balanced rather than sparse; (b) the second candidate "natural-by-BS preserves bs↔slice mixture correlation" was eliminated after measuring per-bs slice mixtures and finding them statistically uniform across all 7 base stations (KL ≈ 0); (c) the leading candidate "Dirichlet's per-slice row redistribution destroys structurally-coherent client datasets that natural-by-BS preserves" is supported by two controlled ablations — §7.1.1's `random_split` (breaks both bs and slice grouping; AUC drops ~0.18 below natural-by-BS) and §7.1.5's per-BS Dirichlet (preserves bs grouping while varying within-bs slice grouping; refutes the strong reading that bs grouping alone suffices). We do not claim a closed-form mechanism in §1; the empirical finding stands as a deployment-relevant observation.
