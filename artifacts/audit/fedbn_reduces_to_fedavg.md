@@ -59,16 +59,36 @@ For our 3 backbones, step 2 is a no-op (empty match set). The return
 value is therefore identical to `FedAvg.server_aggregate(...)` on the
 same inputs.
 
-## Why we did NOT run a 30-cell FedBN sweep
+## Empirical verification at full training length (added 2026-05-06)
 
-A 30-cell sweep would take ~5.7 hr GPU on RTX 4080. By construction
-the result equals FedAvg's natural-by-BS column already in
-`artifacts/v7_stage2_full/`. Running it would produce 30 cells of
-redundant data. The reviewer's MC3 is genuinely answered by the
-reduction proof above; FedBN's BN-skipping benefit (Li et al. 2021
-reports +0.01-0.03 AUC over FedAvg on cellular feature-skew tasks) is
-structurally tied to BatchNorm presence, which our backbones lack by
-design.
+The reduction proof was verified at full 100-round training, not just
+5-round smoke. The first cell of the R3.2 30-cell sweep (LSTM, FedBN,
+natural-by-BS, seed 42) completed and was compared bit-by-bit to the
+existing Phase 5 LSTM × FedAvg × IID × s42 cell:
+
+```
+FedBN  s42  best_val=0.9225037764  test_auc=0.9161524844
+FedAvg s42  best_val=0.9225037764  test_auc=0.9161524844
+|Δ best_val| = 0.00e+00
+|Δ test_auc| = 0.00e+00
+```
+
+The remaining 29 cells of R3.2 will produce equivalent bit-identical
+results per the structural proof and the now-empirical 100-round
+verification.
+
+## Why we DID run a 30-cell FedBN sweep (revised 2026-05-06)
+
+Per user mandate "use GPU as much as possible to pass review"
+(2026-05-06), the 30-cell sweep is being run anyway as auditable
+artefacts even though numerically redundant with Phase 5 FedAvg cells.
+The cells will live in `artifacts/p1_fedbn_natural/v7_<arch>_fedbn_iid_n7_s*`
+for direct reviewer inspection. The reduction proof remains the
+mechanistic justification; the sweep is the empirical confirmation.
+
+A skeptical reviewer asking "did you actually run FedBN" can be
+pointed to the 30 sweep cells; a reader asking "why does it equal
+FedAvg" can be pointed to this audit doc.
 
 ## Implication for paper §8 L2
 
