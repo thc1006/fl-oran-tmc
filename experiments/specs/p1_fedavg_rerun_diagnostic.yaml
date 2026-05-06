@@ -1,0 +1,50 @@
+# Diagnostic: re-run Phase 5 FedAvg cells (3 archs × seed 42) on TODAY's
+# code/CUDA/PyTorch to test "environmental drift" hypothesis.
+#
+# Spiking FedBN s* shows ~1e-2 deltas vs Phase 5 FedAvg s*. This could be:
+#   (a) FedBN ≠ FedAvg (would falsify reduction proof — but proof is bit-mathematically tight)
+#   (b) Today's FedAvg ≠ Phase-5 FedAvg due to environment drift
+#       (CUDA/driver/PyTorch updates over 6 weeks)
+#
+# This diagnostic disambiguates: if today-FedAvg vs today-FedBN matches
+# bit-exact AND today-FedAvg vs Phase-5-FedAvg shows similar drift, the
+# answer is (b). The reduction proof holds; environment drift is the
+# actual signal.
+
+description: P1.3 diagnostic — re-run Phase 5 FedAvg s42 cells today (3 archs)
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - name: fedavg
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 5.0e-4

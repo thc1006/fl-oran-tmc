@@ -1,0 +1,252 @@
+{
+  "computed_at": "2026-05-06T09:13:52.287682+00:00",
+  "description": "R3.2 FedBN sweep aggregate vs Phase 5 FedAvg (30 cells, 3 archs)",
+  "per_arch": {
+    "lstm": {
+      "ci95_includes_zero": true,
+      "fedavg_phase5_mean_test_auc": 0.9159047082774895,
+      "fedbn_mean_test_auc": 0.9159047082774895,
+      "n_seeds": 10,
+      "paired_delta_ci95_high": 0.0,
+      "paired_delta_ci95_low": 0.0,
+      "paired_delta_mean": 0.0,
+      "paired_delta_se": 0.0,
+      "paired_delta_std": 0.0
+    },
+    "mamba": {
+      "ci95_includes_zero": true,
+      "fedavg_phase5_mean_test_auc": 0.9165260399933168,
+      "fedbn_mean_test_auc": 0.9165271771102109,
+      "n_seeds": 10,
+      "paired_delta_ci95_high": 7.757673512738779e-06,
+      "paired_delta_ci95_low": -5.483439724558966e-06,
+      "paired_delta_mean": 1.1371168940899068e-06,
+      "paired_delta_se": 3.377835009514731e-06,
+      "paired_delta_std": 1.0681652190323079e-05
+    },
+    "spiking_expand2": {
+      "ci95_includes_zero": true,
+      "fedavg_phase5_mean_test_auc": 0.8528554311524943,
+      "fedbn_mean_test_auc": 0.8533469775187831,
+      "n_seeds": 10,
+      "paired_delta_ci95_high": 0.0050915349094218755,
+      "paired_delta_ci95_low": -0.004108442176844414,
+      "paired_delta_mean": 0.0004915463662887309,
+      "paired_delta_se": 0.002346932930169972,
+      "paired_delta_std": 0.007421653574990018
+    }
+  },
+  "per_cell": [
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9164104275145549,
+      "fedbn_test_auc": 0.9164104275145549,
+      "paired_delta": 0.0,
+      "seed": 0
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9149700351068929,
+      "fedbn_test_auc": 0.9149700351068929,
+      "paired_delta": 0.0,
+      "seed": 1
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9156521688036081,
+      "fedbn_test_auc": 0.9156521688036081,
+      "paired_delta": 0.0,
+      "seed": 2
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9157104467955532,
+      "fedbn_test_auc": 0.9157104467955532,
+      "paired_delta": 0.0,
+      "seed": 3
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.916012294710011,
+      "fedbn_test_auc": 0.916012294710011,
+      "paired_delta": 0.0,
+      "seed": 4
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9161524843636635,
+      "fedbn_test_auc": 0.9161524843636635,
+      "paired_delta": 0.0,
+      "seed": 42
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9156773353866667,
+      "fedbn_test_auc": 0.9156773353866667,
+      "paired_delta": 0.0,
+      "seed": 5
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9162511821793881,
+      "fedbn_test_auc": 0.9162511821793881,
+      "paired_delta": 0.0,
+      "seed": 6
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9162834740530691,
+      "fedbn_test_auc": 0.9162834740530691,
+      "paired_delta": 0.0,
+      "seed": 7
+    },
+    {
+      "arch": "lstm",
+      "fedavg_phase5_test_auc": 0.9159272338614873,
+      "fedbn_test_auc": 0.9159272338614873,
+      "paired_delta": 0.0,
+      "seed": 8
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9165400892503622,
+      "fedbn_test_auc": 0.9165346069368493,
+      "paired_delta": -5.48231351293893e-06,
+      "seed": 0
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9155391199302082,
+      "fedbn_test_auc": 0.9155378979695719,
+      "paired_delta": -1.221960636343944e-06,
+      "seed": 1
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9171840810631258,
+      "fedbn_test_auc": 0.9171746199338074,
+      "paired_delta": -9.461129318322214e-06,
+      "seed": 2
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9165196240473918,
+      "fedbn_test_auc": 0.9165350256742038,
+      "paired_delta": 1.5401626811906155e-05,
+      "seed": 3
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9161973784187493,
+      "fedbn_test_auc": 0.9161949386164958,
+      "paired_delta": -2.4398022534510844e-06,
+      "seed": 4
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9162362976780138,
+      "fedbn_test_auc": 0.9162356686767499,
+      "paired_delta": -6.29001263963147e-07,
+      "seed": 42
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9162439208261408,
+      "fedbn_test_auc": 0.9162386704256296,
+      "paired_delta": -5.250400511247477e-06,
+      "seed": 5
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9163705691405077,
+      "fedbn_test_auc": 0.9163693844170961,
+      "paired_delta": -1.1847234115958116e-06,
+      "seed": 6
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9169157504764508,
+      "fedbn_test_auc": 0.9169409243303798,
+      "paired_delta": 2.5173853928972534e-05,
+      "seed": 7
+    },
+    {
+      "arch": "mamba",
+      "fedavg_phase5_test_auc": 0.9175135691022182,
+      "fedbn_test_auc": 0.917510034121326,
+      "paired_delta": -3.5349808921170123e-06,
+      "seed": 8
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8515418386419504,
+      "fedbn_test_auc": 0.856746673169492,
+      "paired_delta": 0.005204834527541613,
+      "seed": 0
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8583584831648591,
+      "fedbn_test_auc": 0.8414694006002092,
+      "paired_delta": -0.016889082564649827,
+      "seed": 1
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8592028972919918,
+      "fedbn_test_auc": 0.8677790017875238,
+      "paired_delta": 0.008576104495531922,
+      "seed": 2
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8558002293528643,
+      "fedbn_test_auc": 0.850631468098512,
+      "paired_delta": -0.005168761254352283,
+      "seed": 3
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8530872341663249,
+      "fedbn_test_auc": 0.8530503243032013,
+      "paired_delta": -3.6909863123657516e-05,
+      "seed": 4
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8537871844702467,
+      "fedbn_test_auc": 0.8502373427331207,
+      "paired_delta": -0.003549841737126025,
+      "seed": 42
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.842494882608047,
+      "fedbn_test_auc": 0.8459454544662224,
+      "paired_delta": 0.003450571858175433,
+      "seed": 5
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8465192335179086,
+      "fedbn_test_auc": 0.8498666082048749,
+      "paired_delta": 0.0033473746869663312,
+      "seed": 6
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8536486813675883,
+      "fedbn_test_auc": 0.8587431101478626,
+      "paired_delta": 0.005094428780274329,
+      "seed": 7
+    },
+    {
+      "arch": "spiking_expand2",
+      "fedavg_phase5_test_auc": 0.8541136469431624,
+      "fedbn_test_auc": 0.8590003916768119,
+      "paired_delta": 0.004886744733649473,
+      "seed": 8
+    }
+  ],
+  "statistical_conclusion": "All 3 architectures: paired (FedBN - FedAvg) test_auc CI95 includes 0 \u2192 FedBN \u2261 FedAvg statistically. LSTM bit-exact (\u03c3=0); Mamba near-bit-exact (\u03c3=1e-5); Spiking BF16-noise-equivalent (\u03c3=7e-3). Reduction proof empirically verified."
+}

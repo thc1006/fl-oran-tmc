@@ -1,0 +1,37 @@
+# P1.3-AUDIT smoke: 1 LSTM × FedBN × natural-by-BS × seed=42 × 5 rounds.
+# Validates the launcher → spec_loader → algo class signature path before
+# kicking off the full 30-cell sweep (~5-6 hr GPU). Per
+# feedback_audit_before_launch memory entry: catch the kwargs-leak class of
+# bug at 1-cell scope, not at 30-cell scope.
+
+description: P1.3-AUDIT FedBN smoke (1 cell, 5 rounds)
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedbn
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 5                 # smoke only
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 1
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4

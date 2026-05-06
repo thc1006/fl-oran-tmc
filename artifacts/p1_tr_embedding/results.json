@@ -1,0 +1,481 @@
+{
+  "computed_at": "2026-05-06T06:36:52.825083+00:00",
+  "dirichlet_a005_frozen_auc_mean": 0.8674218076143535,
+  "dirichlet_a005_meanfix_auc_mean": 0.8674218076143535,
+  "dirichlet_a005_normal_auc_mean": 0.8618456624677986,
+  "gap_meanfix": 0.049061719486352184,
+  "gap_normal": 0.05403623378368527,
+  "gap_shrinkage_fraction": 0.09205886400682135,
+  "n_seeds": 9,
+  "natural_by_bs_frozen_auc_mean": 0.9164835271007057,
+  "natural_by_bs_meanfix_auc_mean": 0.9164835271007057,
+  "natural_by_bs_normal_auc_mean": 0.9158818962514839,
+  "per_arch": {
+    "lstm": {
+      "dirichlet_meanfix": 0.8674218076143535,
+      "dirichlet_normal": 0.8618456624677986,
+      "gap_meanfix": 0.049061719486352184,
+      "gap_normal": 0.05403623378368527,
+      "gap_shrinkage_fraction": 0.09205886400682135,
+      "n_seeds": 9,
+      "natural_meanfix": 0.9164835271007057,
+      "natural_normal": 0.9158818962514839
+    },
+    "mamba": {
+      "dirichlet_meanfix": 0.8741131502570447,
+      "dirichlet_normal": 0.8688846113988931,
+      "gap_meanfix": 0.042828594223389915,
+      "gap_normal": 0.04767724738630119,
+      "gap_shrinkage_fraction": 0.10169742232863069,
+      "n_seeds": 9,
+      "natural_meanfix": 0.9169417444804346,
+      "natural_normal": 0.9165618587851943
+    },
+    "spiking_expand2": {
+      "dirichlet_meanfix": 0.7008158713046434,
+      "dirichlet_normal": 0.6946730580754217,
+      "gap_meanfix": 0.15445447586353633,
+      "gap_normal": 0.1580479311060441,
+      "gap_shrinkage_fraction": 0.022736490236602267,
+      "n_seeds": 9,
+      "natural_meanfix": 0.8552703471681797,
+      "natural_normal": 0.8527209891814658
+    }
+  },
+  "per_cell": [
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9168228275849375,
+      "auc_normal": 0.9164154467689536,
+      "delta_meanfix_minus_normal": 0.0004073808159839043,
+      "partition": "iid",
+      "seed": 0
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9160309746221497,
+      "auc_normal": 0.9149890417233425,
+      "delta_meanfix_minus_normal": 0.001041932898807163,
+      "partition": "iid",
+      "seed": 1
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.916065928639548,
+      "auc_normal": 0.9156596934495693,
+      "delta_meanfix_minus_normal": 0.000406235189978732,
+      "partition": "iid",
+      "seed": 2
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9164666562283172,
+      "auc_normal": 0.915713373576259,
+      "delta_meanfix_minus_normal": 0.000753282652058207,
+      "partition": "iid",
+      "seed": 3
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9162849501271992,
+      "auc_normal": 0.9160143734031485,
+      "delta_meanfix_minus_normal": 0.00027057672405073063,
+      "partition": "iid",
+      "seed": 4
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9164711511307736,
+      "auc_normal": 0.9156775617260952,
+      "delta_meanfix_minus_normal": 0.0007935894046784409,
+      "partition": "iid",
+      "seed": 5
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9168231984791796,
+      "auc_normal": 0.9162569446831634,
+      "delta_meanfix_minus_normal": 0.0005662537960161584,
+      "partition": "iid",
+      "seed": 6
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9168715177796494,
+      "auc_normal": 0.9162864290014257,
+      "delta_meanfix_minus_normal": 0.0005850887782237191,
+      "partition": "iid",
+      "seed": 7
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9165145393145977,
+      "auc_normal": 0.9159242019313976,
+      "delta_meanfix_minus_normal": 0.0005903373832001346,
+      "partition": "iid",
+      "seed": 8
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8549642954118479,
+      "auc_normal": 0.8507528086674345,
+      "delta_meanfix_minus_normal": 0.004211486744413406,
+      "partition": "dirichlet_a0p05",
+      "seed": 0
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8716497330554934,
+      "auc_normal": 0.8683867936021414,
+      "delta_meanfix_minus_normal": 0.0032629394533519873,
+      "partition": "dirichlet_a0p05",
+      "seed": 1
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8587214485723699,
+      "auc_normal": 0.85144295006602,
+      "delta_meanfix_minus_normal": 0.007278498506349873,
+      "partition": "dirichlet_a0p05",
+      "seed": 2
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8668053050175686,
+      "auc_normal": 0.8651304123349803,
+      "delta_meanfix_minus_normal": 0.001674892682588247,
+      "partition": "dirichlet_a0p05",
+      "seed": 3
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8759209184978485,
+      "auc_normal": 0.8678146249468152,
+      "delta_meanfix_minus_normal": 0.008106293551033317,
+      "partition": "dirichlet_a0p05",
+      "seed": 4
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.9001168173465786,
+      "auc_normal": 0.8982001983057493,
+      "delta_meanfix_minus_normal": 0.0019166190408292927,
+      "partition": "dirichlet_a0p05",
+      "seed": 5
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8601814681023876,
+      "auc_normal": 0.8427997076935357,
+      "delta_meanfix_minus_normal": 0.017381760408851865,
+      "partition": "dirichlet_a0p05",
+      "seed": 6
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8533724463257815,
+      "auc_normal": 0.8485544119278787,
+      "delta_meanfix_minus_normal": 0.004818034397902737,
+      "partition": "dirichlet_a0p05",
+      "seed": 7
+    },
+    {
+      "arch": "lstm",
+      "auc_meanfix": 0.8650638361993054,
+      "auc_normal": 0.8635290546656321,
+      "delta_meanfix_minus_normal": 0.0015347815336732573,
+      "partition": "dirichlet_a0p05",
+      "seed": 8
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9169641650410393,
+      "auc_normal": 0.9165453638731645,
+      "delta_meanfix_minus_normal": 0.0004188011678747383,
+      "partition": "iid",
+      "seed": 0
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9161350907218425,
+      "auc_normal": 0.9155398489788245,
+      "delta_meanfix_minus_normal": 0.0005952417430180601,
+      "partition": "iid",
+      "seed": 1
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9174654452120912,
+      "auc_normal": 0.9171862463849558,
+      "delta_meanfix_minus_normal": 0.0002791988271353407,
+      "partition": "iid",
+      "seed": 2
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9171397858984445,
+      "auc_normal": 0.916529752071174,
+      "delta_meanfix_minus_normal": 0.0006100338272704287,
+      "partition": "iid",
+      "seed": 3
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9161497375319266,
+      "auc_normal": 0.91619810275068,
+      "delta_meanfix_minus_normal": -4.836521875339894e-05,
+      "partition": "iid",
+      "seed": 4
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9170089030430438,
+      "auc_normal": 0.9162435539919751,
+      "delta_meanfix_minus_normal": 0.0007653490510687311,
+      "partition": "iid",
+      "seed": 5
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9168893661785337,
+      "auc_normal": 0.9163769080160319,
+      "delta_meanfix_minus_normal": 0.0005124581625017832,
+      "partition": "iid",
+      "seed": 6
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9170847754262227,
+      "auc_normal": 0.9169226073323987,
+      "delta_meanfix_minus_normal": 0.00016216809382396669,
+      "partition": "iid",
+      "seed": 7
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.9176384312707666,
+      "auc_normal": 0.9175143456675436,
+      "delta_meanfix_minus_normal": 0.00012408560322296758,
+      "partition": "iid",
+      "seed": 8
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8658548769269125,
+      "auc_normal": 0.8627395151420372,
+      "delta_meanfix_minus_normal": 0.00311536178487537,
+      "partition": "dirichlet_a0p05",
+      "seed": 0
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8827049700701741,
+      "auc_normal": 0.8752579798143754,
+      "delta_meanfix_minus_normal": 0.007446990255798758,
+      "partition": "dirichlet_a0p05",
+      "seed": 1
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.862202846456976,
+      "auc_normal": 0.851681354403433,
+      "delta_meanfix_minus_normal": 0.010521492053543025,
+      "partition": "dirichlet_a0p05",
+      "seed": 2
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8741321390799042,
+      "auc_normal": 0.8749086798719222,
+      "delta_meanfix_minus_normal": -0.0007765407920180545,
+      "partition": "dirichlet_a0p05",
+      "seed": 3
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8822770558893461,
+      "auc_normal": 0.8790464149277388,
+      "delta_meanfix_minus_normal": 0.0032306409616073006,
+      "partition": "dirichlet_a0p05",
+      "seed": 4
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8998235036085052,
+      "auc_normal": 0.8986208835220403,
+      "delta_meanfix_minus_normal": 0.0012026200864648784,
+      "partition": "dirichlet_a0p05",
+      "seed": 5
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8690946025322764,
+      "auc_normal": 0.853492584794597,
+      "delta_meanfix_minus_normal": 0.015602017737679441,
+      "partition": "dirichlet_a0p05",
+      "seed": 6
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8595325208511823,
+      "auc_normal": 0.8551169439831272,
+      "delta_meanfix_minus_normal": 0.004415576868055049,
+      "partition": "dirichlet_a0p05",
+      "seed": 7
+    },
+    {
+      "arch": "mamba",
+      "auc_meanfix": 0.8713958368981256,
+      "auc_normal": 0.8690971461307665,
+      "delta_meanfix_minus_normal": 0.002298690767359113,
+      "partition": "dirichlet_a0p05",
+      "seed": 8
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8523892471469533,
+      "auc_normal": 0.851566019851596,
+      "delta_meanfix_minus_normal": 0.0008232272953573316,
+      "partition": "iid",
+      "seed": 0
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8605014981469008,
+      "auc_normal": 0.8583343645473166,
+      "delta_meanfix_minus_normal": 0.0021671335995842034,
+      "partition": "iid",
+      "seed": 1
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.864039659104165,
+      "auc_normal": 0.8591717556538905,
+      "delta_meanfix_minus_normal": 0.004867903450274547,
+      "partition": "iid",
+      "seed": 2
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8574785331681732,
+      "auc_normal": 0.8557544452328494,
+      "delta_meanfix_minus_normal": 0.0017240879353238592,
+      "partition": "iid",
+      "seed": 3
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8561123555658973,
+      "auc_normal": 0.8530909151838381,
+      "delta_meanfix_minus_normal": 0.003021440382059204,
+      "partition": "iid",
+      "seed": 4
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8458199237705596,
+      "auc_normal": 0.8423635212803263,
+      "delta_meanfix_minus_normal": 0.003456402490233268,
+      "partition": "iid",
+      "seed": 5
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8493880061526554,
+      "auc_normal": 0.8464599869664379,
+      "delta_meanfix_minus_normal": 0.0029280191862175453,
+      "partition": "iid",
+      "seed": 6
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8546871146492366,
+      "auc_normal": 0.8536450840867716,
+      "delta_meanfix_minus_normal": 0.0010420305624649906,
+      "partition": "iid",
+      "seed": 7
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8570167868090767,
+      "auc_normal": 0.8541028098301644,
+      "delta_meanfix_minus_normal": 0.0029139769789122694,
+      "partition": "iid",
+      "seed": 8
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.6891662442855817,
+      "auc_normal": 0.6852469327022793,
+      "delta_meanfix_minus_normal": 0.003919311583302387,
+      "partition": "dirichlet_a0p05",
+      "seed": 0
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.66698537717287,
+      "auc_normal": 0.6634051831319906,
+      "delta_meanfix_minus_normal": 0.003580194040879392,
+      "partition": "dirichlet_a0p05",
+      "seed": 1
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.7116023619035584,
+      "auc_normal": 0.6956966661755271,
+      "delta_meanfix_minus_normal": 0.015905695728031355,
+      "partition": "dirichlet_a0p05",
+      "seed": 2
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.6759271204022693,
+      "auc_normal": 0.670965238277132,
+      "delta_meanfix_minus_normal": 0.0049618821251373735,
+      "partition": "dirichlet_a0p05",
+      "seed": 3
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.6974049708571504,
+      "auc_normal": 0.6939981546666026,
+      "delta_meanfix_minus_normal": 0.0034068161905477234,
+      "partition": "dirichlet_a0p05",
+      "seed": 4
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.8225925493656654,
+      "auc_normal": 0.8206210797477473,
+      "delta_meanfix_minus_normal": 0.0019714696179180535,
+      "partition": "dirichlet_a0p05",
+      "seed": 5
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.6707835747491395,
+      "auc_normal": 0.6527687074969443,
+      "delta_meanfix_minus_normal": 0.018014867252195255,
+      "partition": "dirichlet_a0p05",
+      "seed": 6
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.6872218436005375,
+      "auc_normal": 0.6854788300652219,
+      "delta_meanfix_minus_normal": 0.0017430135353155851,
+      "partition": "dirichlet_a0p05",
+      "seed": 7
+    },
+    {
+      "arch": "spiking_expand2",
+      "auc_meanfix": 0.6856587994050181,
+      "auc_normal": 0.6838767304153504,
+      "delta_meanfix_minus_normal": 0.0017820689896677067,
+      "partition": "dirichlet_a0p05",
+      "seed": 8
+    }
+  ],
+  "primary_arch": "lstm",
+  "residual_natural_minus_dirichlet_auc": 0.049061719486352184
+}

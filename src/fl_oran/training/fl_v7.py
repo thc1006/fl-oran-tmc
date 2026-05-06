@@ -256,6 +256,12 @@ _ALGO_REQUIRED_KWARGS: dict[str, set[str]] = {
     "fedadam":  {"server_lr"},
     "scaffold": set(),
     "feddyn":   {"alpha"},  # FedDyn regularization; NOT V7Config.alpha (Dirichlet)
+    "fedbn":    set(),       # P1.3 R3.2: FedBN takes no algorithm-specific kwargs;
+                              # it just skips norm-layer params during aggregation
+                              # (no-op on our 3 no-norm backbones, see
+                              # artifacts/audit/fedbn_reduces_to_fedavg.md)
+    "fedswa":   {"alpha_la"}, # R3.4: FedSWA's LookAhead extrapolation rate
+                              # (Liu et al. 2025 paper uses 1.5)
 }
 
 # Partition-axis kwargs that ride on cfg.algo_kwargs for spec-yaml/CLI

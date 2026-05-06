@@ -1,0 +1,193 @@
+{
+  "batch_sizes_tested": [
+    1,
+    8,
+    64,
+    256
+  ],
+  "computed_at": "2026-05-06T12:22:17.807072+00:00",
+  "description": "P2.2 inference latency + comm bytes (arch checkpoints from seed=42)",
+  "device_gpu_avail": true,
+  "device_gpu_name": "NVIDIA GeForce RTX 4080",
+  "n_clients_per_round": 5,
+  "near_rt_ric_budget_ms": 10,
+  "per_arch": {
+    "lstm": {
+      "bytes_per_client_per_round": 178212,
+      "bytes_per_round_total_5clients": 891060,
+      "checkpoint": "artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s42/best.pt",
+      "cpu_latency": {
+        "1": {
+          "latency_per_batch_ms": 0.17127479426562786,
+          "latency_per_sample_ms": 0.17127479426562786,
+          "n_iter": 50,
+          "throughput_samples_per_s": 5838.570726578208
+        },
+        "8": {
+          "latency_per_batch_ms": 0.2037614956498146,
+          "latency_per_sample_ms": 0.025470186956226826,
+          "n_iter": 50,
+          "throughput_samples_per_s": 39261.58852774047
+        },
+        "64": {
+          "latency_per_batch_ms": 0.28068091720342636,
+          "latency_per_sample_ms": 0.004385639331303537,
+          "n_iter": 50,
+          "throughput_samples_per_s": 228016.92625799472
+        },
+        "256": {
+          "latency_per_batch_ms": 0.9040096774697304,
+          "latency_per_sample_ms": 0.0035312878026161343,
+          "n_iter": 50,
+          "throughput_samples_per_s": 283182.8091890884
+        }
+      },
+      "gpu_latency": {
+        "1": {
+          "latency_per_batch_ms": 0.14841500436887145,
+          "latency_per_sample_ms": 0.14841500436887145,
+          "n_iter": 200,
+          "throughput_samples_per_s": 6737.863225166875
+        },
+        "8": {
+          "latency_per_batch_ms": 0.15329455491155386,
+          "latency_per_sample_ms": 0.019161819363944232,
+          "n_iter": 200,
+          "throughput_samples_per_s": 52187.111307480875
+        },
+        "64": {
+          "latency_per_batch_ms": 0.157909095287323,
+          "latency_per_sample_ms": 0.002467329613864422,
+          "n_iter": 200,
+          "throughput_samples_per_s": 405296.4769606779
+        },
+        "256": {
+          "latency_per_batch_ms": 0.1608998142182827,
+          "latency_per_sample_ms": 0.0006285148992901668,
+          "n_iter": 200,
+          "throughput_samples_per_s": 1591052.1789211072
+        }
+      },
+      "kib_per_client_per_round": 174.03515625,
+      "n_params": 44553
+    },
+    "mamba": {
+      "bytes_per_client_per_round": 161956,
+      "bytes_per_round_total_5clients": 809780,
+      "checkpoint": "artifacts/v7_stage2_full/v7_mamba_fedavg_iid_n7_s42/best.pt",
+      "cpu_latency": {
+        "1": {
+          "latency_per_batch_ms": 1.106310524046421,
+          "latency_per_sample_ms": 1.106310524046421,
+          "n_iter": 50,
+          "throughput_samples_per_s": 903.9053486921723
+        },
+        "8": {
+          "latency_per_batch_ms": 1.3537792768329382,
+          "latency_per_sample_ms": 0.16922240960411727,
+          "n_iter": 50,
+          "throughput_samples_per_s": 5909.382819565226
+        },
+        "64": {
+          "latency_per_batch_ms": 2.3087668232619762,
+          "latency_per_sample_ms": 0.03607448161346838,
+          "n_iter": 50,
+          "throughput_samples_per_s": 27720.42605392979
+        },
+        "256": {
+          "latency_per_batch_ms": 4.893235005438328,
+          "latency_per_sample_ms": 0.019114199239993468,
+          "n_iter": 50,
+          "throughput_samples_per_s": 52317.127568057185
+        }
+      },
+      "gpu_latency": {
+        "1": {
+          "latency_per_batch_ms": 0.5191116034984589,
+          "latency_per_sample_ms": 0.5191116034984589,
+          "n_iter": 200,
+          "throughput_samples_per_s": 1926.368035814805
+        },
+        "8": {
+          "latency_per_batch_ms": 0.539379685651511,
+          "latency_per_sample_ms": 0.06742246070643887,
+          "n_iter": 200,
+          "throughput_samples_per_s": 14831.852612945342
+        },
+        "64": {
+          "latency_per_batch_ms": 0.5376353906467557,
+          "latency_per_sample_ms": 0.008400552978855558,
+          "n_iter": 200,
+          "throughput_samples_per_s": 119039.78256158016
+        },
+        "256": {
+          "latency_per_batch_ms": 0.5246639414690435,
+          "latency_per_sample_ms": 0.002049468521363451,
+          "n_iter": 200,
+          "throughput_samples_per_s": 487931.3780992983
+        }
+      },
+      "kib_per_client_per_round": 158.16015625,
+      "n_params": 40489
+    },
+    "spiking_expand2": {
+      "bytes_per_client_per_round": 174412,
+      "bytes_per_round_total_5clients": 872060,
+      "checkpoint": "artifacts/v7_stage2_full/v7_spiking_expand2_fedavg_iid_n7_s42/best.pt",
+      "cpu_latency": {
+        "1": {
+          "latency_per_batch_ms": 0.9032867010682821,
+          "latency_per_sample_ms": 0.9032867010682821,
+          "n_iter": 50,
+          "throughput_samples_per_s": 1107.0682196664013
+        },
+        "8": {
+          "latency_per_batch_ms": 1.0545741580426693,
+          "latency_per_sample_ms": 0.13182176975533366,
+          "n_iter": 50,
+          "throughput_samples_per_s": 7586.000414469014
+        },
+        "64": {
+          "latency_per_batch_ms": 1.5403905417770147,
+          "latency_per_sample_ms": 0.024068602215265855,
+          "n_iter": 50,
+          "throughput_samples_per_s": 41547.90506969016
+        },
+        "256": {
+          "latency_per_batch_ms": 3.834498720243573,
+          "latency_per_sample_ms": 0.014978510625951458,
+          "n_iter": 50,
+          "throughput_samples_per_s": 66762.31201968911
+        }
+      },
+      "gpu_latency": {
+        "1": {
+          "latency_per_batch_ms": 1.5667501301504672,
+          "latency_per_sample_ms": 1.5667501301504672,
+          "n_iter": 200,
+          "throughput_samples_per_s": 638.263869111
+        },
+        "8": {
+          "latency_per_batch_ms": 1.6018263739533722,
+          "latency_per_sample_ms": 0.20022829674417153,
+          "n_iter": 200,
+          "throughput_samples_per_s": 4994.299088892934
+        },
+        "64": {
+          "latency_per_batch_ms": 1.621151219587773,
+          "latency_per_sample_ms": 0.025330487806058954,
+          "n_iter": 200,
+          "throughput_samples_per_s": 39478.11852880322
+        },
+        "256": {
+          "latency_per_batch_ms": 1.6208204254508018,
+          "latency_per_sample_ms": 0.006331329786917195,
+          "n_iter": 200,
+          "throughput_samples_per_s": 157944.70255938332
+        }
+      },
+      "kib_per_client_per_round": 170.32421875,
+      "n_params": 43601
+    }
+  }
+}

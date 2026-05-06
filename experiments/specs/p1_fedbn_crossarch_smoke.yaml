@@ -1,0 +1,44 @@
+# Cross-arch FedBN ≡ FedAvg verification: Mamba + Spiking × {FedBN, FedAvg}
+# × seed 42 × 5 rounds = 4 cells. Confirms the reduction proof holds beyond
+# the LSTM smoke (which already showed bit-identical 0.8132799429 AUC).
+#
+# After this passes, launching the full 30-cell sweep is justified by:
+#   (a) reduction proof (mechanism)
+#   (b) LSTM bit-identical smoke (seed 42, 5 rounds, 0.0 |Δ|)
+#   (c) Mamba + Spiking bit-identical smoke (THIS file)
+
+description: P1.3-AUDIT cross-arch FedBN ≡ FedAvg smoke (4 cells)
+
+archs:
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - name: fedavg
+  - name: fedbn
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 5
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 1
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 5.0e-4

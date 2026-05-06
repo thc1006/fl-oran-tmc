@@ -1,0 +1,2 @@
+name,arch,algorithm,partition_mode,alpha,n_clients,seed,lr,lr_warmup_rounds,test_auc,test_acc,test_f1,best_val_auc,duration_s,status
+v7_lstm_fedbn_iid_n7_s42,lstm,fedbn,iid,,7,42,0.0005,1,0.8132799428644342,0.6943590504697418,0.6244713524514646,0.8207957209558892,48.03,ok

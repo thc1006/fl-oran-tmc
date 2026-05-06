@@ -84,7 +84,7 @@ class TestRegistryConsistency:
         # Future-proofing: if someone adds a new algorithm class to the
         # registry but forgets to update the table, this test catches it.
         # The expected set is what Phase 1.5/2 supports per ADR D-22.
-        expected = {"fedavg", "fedprox", "fedadam", "scaffold", "feddyn"}
+        expected = {"fedavg", "fedprox", "fedadam", "scaffold", "feddyn", "fedbn", "fedswa"}
         assert set(_ALGO_REQUIRED_KWARGS.keys()) == expected, (
             "table drift — update _ALGO_REQUIRED_KWARGS and this test together"
         )

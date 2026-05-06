@@ -431,9 +431,13 @@ def plot_interaction_heatmap(agg: pd.DataFrame, out_path: Path) -> None:
 
 
 def plot_algo_ranking(agg: pd.DataFrame, out_path: Path) -> None:
-    """Per-arch bar chart: mean best_val_auc averaged over Dirichlet
-    partitions only (IID excluded — that's the upper bound, not a
-    stress test). Quick read for which algo dominates on which arch."""
+    """Per-arch bar chart: mean TEST AUC averaged over Dirichlet partitions
+    only (IID excluded — that's the upper bound, not a stress test). Quick
+    read for which algo dominates on which arch.
+
+    Switched from best_val to test AUC per reviewer Minor#2 (P1.4b-GREEN
+    2026-05-06): headline figures must use the same metric the body claims
+    are evaluated on, to avoid selection-bias appearance."""
     archs = list(ARCH_COLORS.keys())
     algos = list(ALGO_MARKERS.keys())
 
@@ -450,7 +454,7 @@ def plot_algo_ranking(agg: pd.DataFrame, out_path: Path) -> None:
         for algo in algos:
             r = sub[sub["algo"] == algo]
             if len(r):
-                means.append(float(r["auc_mean"].mean()))
+                means.append(float(r["test_auc_mean"].mean()))
                 ns.append(int(r["n_seeds"].sum()))
             else:
                 means.append(np.nan)
@@ -472,9 +476,9 @@ def plot_algo_ranking(agg: pd.DataFrame, out_path: Path) -> None:
         ax.set_title(ARCH_LABELS[arch], color=ARCH_COLORS[arch], fontweight="bold")
         ax.set_ylim(0.5, 1.0)
         ax.grid(axis="y", alpha=0.3)
-    axes[0].set_ylabel("mean best_val_auc  (Dirichlet partitions only)")
+    axes[0].set_ylabel("mean test AUC  (Dirichlet partitions only)")
 
-    fig.suptitle("Phase 5 — algorithm ranking per architecture (Dirichlet stress avg)",
+    fig.suptitle("Phase 5 — algorithm ranking per architecture (Dirichlet stress avg, test AUC)",
                  fontsize=11, y=1.02)
     fig.tight_layout()
     fig.savefig(out_path, dpi=120, bbox_inches="tight")

@@ -136,6 +136,13 @@ def partition_clients(
             raise ValueError("per_bs_dirichlet mode requires alpha")
         if sub_per_bs is None:
             raise ValueError("per_bs_dirichlet mode requires sub_per_bs")
+        if sub_per_bs < 1:
+            raise ValueError(f"per_bs_dirichlet sub_per_bs must be >= 1, got {sub_per_bs}")
+        if sub_per_bs == 1:
+            log.warning(
+                "per_bs_dirichlet with sub_per_bs=1 degenerates to natural-by-BS "
+                "(one shard per BS, alpha is ignored). Did you mean sub_per_bs>=2?"
+            )
         rng = np.random.default_rng(seed)
         shards: dict[int, pd.DataFrame] = {}
         next_cid = 0

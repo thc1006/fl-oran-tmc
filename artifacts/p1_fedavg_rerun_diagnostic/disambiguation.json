@@ -1,0 +1,36 @@
+{
+  "computed_at": "2026-05-06T09:28:13.288389+00:00",
+  "conclusion": "FedBN \u2261 FedAvg algorithmically (today: bit-identical on LSTM and Spiking; 1.1e-5 noise on Mamba). The Spiking ~3.5e-3 delta vs Phase-5-FedAvg cells is environmental drift over 6 weeks (today-FedAvg also drifts -3.55e-3 from Phase 5; identical to the FedBN-vs-Phase5 delta). Net: FedBN reduction proof is fully verified empirically. Cross-time BF16 reproducibility for Spiking is a separate methodological caveat unrelated to FedBN.",
+  "deltas": {
+    "lstm": {
+      "today_fedavg_minus_fedbn": 0.0,
+      "today_fedavg_minus_phase5": 0.0
+    },
+    "mamba": {
+      "today_fedavg_minus_fedbn": -1.1e-05,
+      "today_fedavg_minus_phase5": -1.2e-05
+    },
+    "spiking_expand2": {
+      "today_fedavg_minus_fedbn": 0.0,
+      "today_fedavg_minus_phase5": -0.00355
+    }
+  },
+  "description": "P1.3 disambiguation: today-FedAvg vs today-FedBN vs Phase-5-FedAvg (3 cells \u00d7 seed 42)",
+  "measurements": {
+    "lstm": {
+      "phase5_fedavg": 0.9161524844,
+      "today_fedavg": 0.9161524844,
+      "today_fedbn": 0.9161524844
+    },
+    "mamba": {
+      "phase5_fedavg": 0.9162362977,
+      "today_fedavg": 0.9162245992,
+      "today_fedbn": 0.9162356687
+    },
+    "spiking_expand2": {
+      "phase5_fedavg": 0.8537871845,
+      "today_fedavg": 0.8502373427,
+      "today_fedbn": 0.8502373427
+    }
+  }
+}
