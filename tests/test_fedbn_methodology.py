@@ -16,10 +16,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FEDBN_PATH = REPO_ROOT / "src" / "fl_oran" / "federated" / "algorithms" / "fedbn.py"
 
 
-@pytest.mark.xfail(strict=True, reason="P1.3-GREEN: implement src/fl_oran/federated/algorithms/fedbn.py")
 def test_fedbn_module_exists() -> None:
-    """RED: src/fl_oran/federated/algorithms/fedbn.py must exist.
-    xfail strict=True → when GREEN lands, remove this marker."""
+    """GREEN (xfail removed 2026-05-06): FedBN class implemented.
+    For our 3 backbones (no norm layers), FedBN reduces to FedAvg by
+    construction; documented in artifacts/audit/fedbn_reduces_to_fedavg.md."""
     assert FEDBN_PATH.exists(), (
         f"{FEDBN_PATH} not found. Implement P1.3-GREEN: FedBN FLAlgorithm "
         f"that mirrors FedAvg's server_aggregate but skips BatchNorm "
@@ -28,12 +28,18 @@ def test_fedbn_module_exists() -> None:
 
 
 def test_fedbn_class_implements_flalgorithm_protocol() -> None:
-    """RED: FedBN must expose init_state / local_train / server_aggregate."""
+    """GREEN: FedBN must implement the actual FLAlgorithm protocol used by
+    the v7 sweep — client_update() + server_aggregate(). (Earlier RED
+    version asserted a wrong method-name guess; corrected to match
+    fedavg.py / fedadam.py / etc.)"""
     if not FEDBN_PATH.exists():
         pytest.skip("FedBN not yet implemented (P1.3-GREEN)")
     from fl_oran.federated.algorithms.fedbn import FedBN
-    for method in ("init_state", "local_train", "server_aggregate"):
+    for method in ("client_update", "server_aggregate"):
         assert hasattr(FedBN, method), f"FedBN missing required method {method!r}"
+    # name attribute is required by the registry
+    assert hasattr(FedBN, "name"), "FedBN missing class attribute 'name' for registry"
+    assert FedBN.name == "fedbn"
 
 
 def test_fedbn_skips_bn_params_in_aggregation() -> None:

@@ -1,0 +1,142 @@
+{
+  "computed_at": "2026-05-06T06:11:29.693608+00:00",
+  "dirichlet_a005_frozen_auc_mean": 0.8674218076143535,
+  "dirichlet_a005_meanfix_auc_mean": 0.8674218076143535,
+  "dirichlet_a005_normal_auc_mean": 0.8618456624677986,
+  "gap_meanfix": 0.049061719486352184,
+  "gap_normal": 0.05403623378368527,
+  "gap_shrinkage_fraction": 0.09205886400682135,
+  "n_seeds": 9,
+  "natural_by_bs_frozen_auc_mean": 0.9164835271007057,
+  "natural_by_bs_meanfix_auc_mean": 0.9164835271007057,
+  "natural_by_bs_normal_auc_mean": 0.9158818962514839,
+  "per_cell": [
+    {
+      "auc_meanfix": 0.9168228275849375,
+      "auc_normal": 0.9164154467689536,
+      "delta_meanfix_minus_normal": 0.0004073808159839043,
+      "partition": "iid",
+      "seed": 0
+    },
+    {
+      "auc_meanfix": 0.9160309746221497,
+      "auc_normal": 0.9149890417233425,
+      "delta_meanfix_minus_normal": 0.001041932898807163,
+      "partition": "iid",
+      "seed": 1
+    },
+    {
+      "auc_meanfix": 0.916065928639548,
+      "auc_normal": 0.9156596934495693,
+      "delta_meanfix_minus_normal": 0.000406235189978732,
+      "partition": "iid",
+      "seed": 2
+    },
+    {
+      "auc_meanfix": 0.9164666562283172,
+      "auc_normal": 0.915713373576259,
+      "delta_meanfix_minus_normal": 0.000753282652058207,
+      "partition": "iid",
+      "seed": 3
+    },
+    {
+      "auc_meanfix": 0.9162849501271992,
+      "auc_normal": 0.9160143734031485,
+      "delta_meanfix_minus_normal": 0.00027057672405073063,
+      "partition": "iid",
+      "seed": 4
+    },
+    {
+      "auc_meanfix": 0.9164711511307736,
+      "auc_normal": 0.9156775617260952,
+      "delta_meanfix_minus_normal": 0.0007935894046784409,
+      "partition": "iid",
+      "seed": 5
+    },
+    {
+      "auc_meanfix": 0.9168231984791796,
+      "auc_normal": 0.9162569446831634,
+      "delta_meanfix_minus_normal": 0.0005662537960161584,
+      "partition": "iid",
+      "seed": 6
+    },
+    {
+      "auc_meanfix": 0.9168715177796494,
+      "auc_normal": 0.9162864290014257,
+      "delta_meanfix_minus_normal": 0.0005850887782237191,
+      "partition": "iid",
+      "seed": 7
+    },
+    {
+      "auc_meanfix": 0.9165145393145977,
+      "auc_normal": 0.9159242019313976,
+      "delta_meanfix_minus_normal": 0.0005903373832001346,
+      "partition": "iid",
+      "seed": 8
+    },
+    {
+      "auc_meanfix": 0.8549642954118479,
+      "auc_normal": 0.8507528086674345,
+      "delta_meanfix_minus_normal": 0.004211486744413406,
+      "partition": "dirichlet_a0p05",
+      "seed": 0
+    },
+    {
+      "auc_meanfix": 0.8716497330554934,
+      "auc_normal": 0.8683867936021414,
+      "delta_meanfix_minus_normal": 0.0032629394533519873,
+      "partition": "dirichlet_a0p05",
+      "seed": 1
+    },
+    {
+      "auc_meanfix": 0.8587214485723699,
+      "auc_normal": 0.85144295006602,
+      "delta_meanfix_minus_normal": 0.007278498506349873,
+      "partition": "dirichlet_a0p05",
+      "seed": 2
+    },
+    {
+      "auc_meanfix": 0.8668053050175686,
+      "auc_normal": 0.8651304123349803,
+      "delta_meanfix_minus_normal": 0.001674892682588247,
+      "partition": "dirichlet_a0p05",
+      "seed": 3
+    },
+    {
+      "auc_meanfix": 0.8759209184978485,
+      "auc_normal": 0.8678146249468152,
+      "delta_meanfix_minus_normal": 0.008106293551033317,
+      "partition": "dirichlet_a0p05",
+      "seed": 4
+    },
+    {
+      "auc_meanfix": 0.9001168173465786,
+      "auc_normal": 0.8982001983057493,
+      "delta_meanfix_minus_normal": 0.0019166190408292927,
+      "partition": "dirichlet_a0p05",
+      "seed": 5
+    },
+    {
+      "auc_meanfix": 0.8601814681023876,
+      "auc_normal": 0.8427997076935357,
+      "delta_meanfix_minus_normal": 0.017381760408851865,
+      "partition": "dirichlet_a0p05",
+      "seed": 6
+    },
+    {
+      "auc_meanfix": 0.8533724463257815,
+      "auc_normal": 0.8485544119278787,
+      "delta_meanfix_minus_normal": 0.004818034397902737,
+      "partition": "dirichlet_a0p05",
+      "seed": 7
+    },
+    {
+      "auc_meanfix": 0.8650638361993054,
+      "auc_normal": 0.8635290546656321,
+      "delta_meanfix_minus_normal": 0.0015347815336732573,
+      "partition": "dirichlet_a0p05",
+      "seed": 8
+    }
+  ],
+  "residual_natural_minus_dirichlet_auc": 0.049061719486352184
+}
