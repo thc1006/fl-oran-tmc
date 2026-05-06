@@ -139,6 +139,8 @@ def test_p2_loto_section_in_paper() -> None:
     # σ ratio per arch (the headline finding)
     for ratio in ("17.8", "13.0", "2.3"):
         assert ratio in md, f"§8 L15 markdown must report ratio {ratio} per-arch"
+    # Width ratio range — must use accurate "3.7" not rounded "4" (LOTO-A fix)
+    assert "3.7" in md, "§8 L15 markdown must use accurate width-ratio lower bound 3.7×, not rounded 4×"
     assert "LOTO" in md or "leave-one-traffic-config-out" in md, (
         "§8 L15 markdown must name the LOTO methodology"
     )
