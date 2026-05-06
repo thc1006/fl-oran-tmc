@@ -1,5 +1,5 @@
 {
-  "computed_at": "2026-05-05T18:07:34.153648+00:00",
+  "computed_at": "2026-05-06T05:33:14.776129+00:00",
   "last_bler_test_auc": 0.5133347075222827,
   "last_bler_test_f1": 0.32415058054076495,
   "logreg_computed_at": "2026-05-05T18:08:53.807070+00:00",
@@ -8,5 +8,7 @@
   "logreg_test_f1": 0.4982012508078926,
   "n_test_rows": 1930796,
   "positive_rate": 0.3056563138961792,
-  "threshold": 0.1
+  "smoothed_5s_persistence_test_auc": 0.6257795529933541,
+  "threshold": 0.1,
+  "ul_bler_lag1_pearson_per_group_mean": -0.05092555957732265
 }

@@ -16,7 +16,7 @@ hypothesis_set:
       so the persistence baseline `predict_t+1 = 1[ul_bler[t] > 0.10]` will
       catch the autoregressive signal. We expect FL methods to add ≥0.02 AUC
       on top of this trivial baseline; if not, the FL machinery is questionable.
-    measurement: artifacts/baselines/naive_results.json :: last_bler_test_auc
+    measurement: "artifacts/baselines/naive_results.json :: last_bler_test_auc"
     reference: 0.9159  # Phase 5 LSTM+FedAvg+natural-by-BS test AUC (paper §6.2)
     fail_state_threshold: 0.02
     fail_state_name: FAIL_STATE_1
@@ -28,7 +28,7 @@ hypothesis_set:
       LR over the 17 V3_CONTINUOUS features can learn linear combinations
       including ul_bler thresholding. Should beat last-BLER persistence
       slightly but not match LSTM (which captures sequential structure).
-    measurement: artifacts/baselines/naive_results.json :: logreg_test_auc
+    measurement: "artifacts/baselines/naive_results.json :: logreg_test_auc"
     reference: 0.9159
     fail_state_threshold: 0.03
     fail_state_name: FAIL_STATE_1_LR
@@ -40,7 +40,7 @@ hypothesis_set:
       Sanity check: if persistence AUC is at chance, the 10% threshold may
       be poorly chosen or the test split has near-zero autoregressive signal,
       making the binary forecasting task trivial in the wrong direction.
-    measurement: artifacts/baselines/naive_results.json :: last_bler_test_auc
+    measurement: "artifacts/baselines/naive_results.json :: last_bler_test_auc"
     fail_state_threshold: 0.55
     fail_state_name: SANITY_FAIL
     on_fail: investigate dataset / split / threshold before proceeding

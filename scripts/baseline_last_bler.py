@@ -32,6 +32,18 @@ def score_last_bler(ul_bler: np.ndarray) -> np.ndarray:
     return np.asarray(ul_bler).astype(np.float32)
 
 
+def score_smoothed_bler(
+    ul_bler_seq: np.ndarray, window: int = 5
+) -> np.ndarray:
+    """Smoothed persistence: score = trailing mean of ul_bler over the
+    last `window` seconds within the same (run, slice) group. Addresses
+    the issue that raw ul_bler[t] can be noisy at 1-s granularity even if
+    short-term mean is informative."""
+    import pandas as pd
+    s = pd.Series(np.asarray(ul_bler_seq))
+    return s.rolling(window=window, min_periods=1).mean().to_numpy().astype(np.float32)
+
+
 def _merge_results_json(out_path: Path, payload: dict) -> dict:
     """Merge new keys into existing naive_results.json (so persistence
     + logreg can share the file)."""
@@ -83,7 +95,18 @@ def main() -> int:
     test = split.test
     print(f"Test rows: {len(test):,}; train rows: {len(split.train):,}")
 
-    # Persistence baseline
+    # Per-(run_id, slice_id) Pearson auto-correlation diagnostic — distinguishes
+    # "BLER is white noise" from "BLER is correlated but threshold crossings
+    # are unpredictable". My previous interpretation conflated AUC<0.55 with
+    # "near-zero autoregressive correlation"; this measures it directly.
+    test_sorted = test.sort_values(["run_id", "slice_id", "step_idx"])
+    pearson_corr = float(
+        test_sorted.groupby(["run_id", "slice_id"], observed=True)["ul_bler"]
+        .apply(lambda s: s.autocorr(lag=1) if len(s) > 1 else np.nan)
+        .dropna().mean()
+    )
+
+    # Raw persistence baseline
     ul_bler_test = test["ul_bler"].values
     y_test = test["y_sla_violation_next"].values
     score = score_last_bler(ul_bler_test)
@@ -92,17 +115,32 @@ def main() -> int:
     test_f1 = float(f1_score(y_test, pred))
     pos_rate = float(y_test.mean())
 
+    # Smoothed persistence baseline (per-group rolling mean over 5 seconds)
+    smoothed_score = (
+        test_sorted.groupby(["run_id", "slice_id"], observed=True)["ul_bler"]
+        .transform(lambda s: s.rolling(window=5, min_periods=1).mean())
+    )
+    # re-align to original test order (test_sorted re-sorts; rebuild AUC on the
+    # sorted index then map back)
+    smoothed_auc = float(roc_auc_score(
+        test_sorted["y_sla_violation_next"].values, smoothed_score.values
+    ))
+
     print()
     print("=== Last-BLER persistence baseline (test split, tr ∈ {25..27}) ===")
-    print(f"  threshold:                   {args.threshold}")
-    print(f"  test rows:                   {len(test):,}")
-    print(f"  positive rate:               {pos_rate:.4f}")
-    print(f"  ROC-AUC (score=ul_bler):     {test_auc:.4f}")
-    print(f"  F1 (predict@threshold):      {test_f1:.4f}")
+    print(f"  threshold:                       {args.threshold}")
+    print(f"  test rows:                       {len(test):,}")
+    print(f"  positive rate:                   {pos_rate:.4f}")
+    print(f"  per-group lag-1 Pearson(ul_bler): {pearson_corr:.4f}")
+    print(f"  Raw  persistence ROC-AUC:        {test_auc:.4f}")
+    print(f"  Raw  persistence F1@threshold:   {test_f1:.4f}")
+    print(f"  Smoothed-5s persistence ROC-AUC: {smoothed_auc:.4f}")
 
     payload = {
         "last_bler_test_auc": test_auc,
         "last_bler_test_f1": test_f1,
+        "smoothed_5s_persistence_test_auc": smoothed_auc,
+        "ul_bler_lag1_pearson_per_group_mean": pearson_corr,
         "n_test_rows": int(len(test)),
         "positive_rate": pos_rate,
         "threshold": args.threshold,

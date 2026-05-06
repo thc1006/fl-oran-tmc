@@ -21,7 +21,7 @@ hypothesis_set:
       ~0.02-0.05 typically (test-time random feature). We hypothesize the
       bug contributes <50% of the observed gap; the rest is real structural
       partition difference (bs grouping preservation).
-    measurement: artifacts/p1_tr_embedding/results.json :: gap_shrinkage_fraction
+    measurement: "artifacts/p1_tr_embedding/results.json :: gap_shrinkage_fraction"
     fail_state_threshold: 0.50  # gap shrinkage > 50% triggers FAIL_STATE_2
     fail_state_name: FAIL_STATE_2
     on_fail: trigger P1-GATE; C1 mechanism story has substantial tr-bug confound
@@ -32,7 +32,7 @@ hypothesis_set:
       Even if the bug contributes some of the gap, the bs-grouping
       preservation effect should dominate. If the gap goes to zero with
       the fix, C1 is fully bug-driven and headline finding dies.
-    measurement: artifacts/p1_tr_embedding/results.json :: residual_natural_minus_dirichlet_auc
+    measurement: "artifacts/p1_tr_embedding/results.json :: residual_natural_minus_dirichlet_auc"
     fail_state_threshold: 0.05
     fail_state_name: C1_DIES
     on_fail: paper restructure required; natural-by-BS dominance was tr-bug artefact

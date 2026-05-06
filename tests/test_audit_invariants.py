@@ -77,6 +77,32 @@ def test_test_tr_range_is_25_to_27() -> None:
     )
 
 
+def test_plot_algo_ranking_uses_test_auc_not_best_val() -> None:
+    """Per P1.4b-GREEN (reviewer Minor#2), Figure 1 must use test_auc_mean
+    not auc_mean (which is best_val_auc per the aggregator). Regression
+    guard: if someone reverts plot_algo_ranking() to best_val, this test
+    fails and the GREEN flip in test_paper_language_invariants becomes
+    inconsistent with the figure."""
+    import inspect
+    import re
+    from pathlib import Path
+    script = Path(__file__).resolve().parent.parent / "scripts" / "phase5_paper_figures.py"
+    src = script.read_text()
+    # Find plot_algo_ranking function body
+    m = re.search(r"def plot_algo_ranking\b.*?(?=\ndef |\Z)", src, re.DOTALL)
+    assert m, "plot_algo_ranking function not found in phase5_paper_figures.py"
+    fn_body = m.group(0)
+    assert 'r["test_auc_mean"]' in fn_body, (
+        "plot_algo_ranking must aggregate test_auc_mean (not auc_mean / "
+        "best_val) per P1.4b-GREEN. Reviewer Minor#2: headline figure "
+        "must use the test metric to avoid selection-bias appearance."
+    )
+    assert 'r["auc_mean"]' not in fn_body, (
+        "plot_algo_ranking must NOT use auc_mean (best_val) — switched to "
+        "test_auc_mean per P1.4b-GREEN. Found stale auc_mean reference."
+    )
+
+
 def test_sla_bler_threshold_is_0_10() -> None:
     """The 10% BLER SLA threshold is paper §3.2 + Polese 2022 §V canonical
     value. The naive last-BLER persistence baseline depends on this exact
