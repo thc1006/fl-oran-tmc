@@ -1,0 +1,49 @@
+{
+  "computed_at": "2026-05-06T14:26:35.190226+00:00",
+  "description": "R3.4 FedSWA vs FedAdam vs FedAvg paired comparison (LSTM \u00d7 natural-by-BS \u00d7 5 seeds)",
+  "fedadam_mean_phase5": 0.9176221086934186,
+  "fedadam_test_aucs_phase5": [
+    0.9177793872951885,
+    0.9184830576316367,
+    0.9169290395003125,
+    0.9177473244900474,
+    0.9171717345499081
+  ],
+  "fedavg_mean_phase5": 0.9157791125168545,
+  "fedavg_test_aucs_phase5": [
+    0.9161524843636635,
+    0.9164104275145549,
+    0.9149700351068929,
+    0.9156521688036081,
+    0.9157104467955532
+  ],
+  "fedswa_mean": 0.9180012830705493,
+  "fedswa_test_aucs": [
+    0.9183331700301087,
+    0.9186214977232552,
+    0.9172694714192259,
+    0.9179525616036164,
+    0.91782971457654
+  ],
+  "mechanism_prediction": "paper \u00a72.6 + \u00a76.3 + \u00a77.5 predict FedSWA underperforms FedAdam in our regime",
+  "paired_delta_swa_minus_adam": {
+    "ci95_excludes_zero": true,
+    "ci95_hi": 0.0005527914884035257,
+    "ci95_lo": 0.00020555726585766987,
+    "mean": 0.00037917437713059777
+  },
+  "paired_delta_swa_minus_avg": {
+    "ci95_excludes_zero": true,
+    "ci95_hi": 0.002282145686676551,
+    "ci95_lo": 0.0021621954207128313,
+    "mean": 0.002222170553694691
+  },
+  "seeds": [
+    42,
+    0,
+    1,
+    2,
+    3
+  ],
+  "verdict": "mechanism REFUTED (FedSWA significantly exceeds FedAdam)"
+}

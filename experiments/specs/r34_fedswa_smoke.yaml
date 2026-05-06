@@ -1,0 +1,37 @@
+# R3.4 pre-launch smoke: 1 LSTM × FedSWA × natural-by-BS × seed=42 × 5 rounds.
+# Verifies the launcher → spec_loader → FedSWA class signature path before
+# running the full 5-cell sweep.
+
+description: R3.4 FedSWA pre-launch smoke (1 cell, 5 rounds)
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedswa
+    kwargs:
+      alpha_la: 1.5             # FedSWA paper eq. 17 default
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 5
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 1
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4

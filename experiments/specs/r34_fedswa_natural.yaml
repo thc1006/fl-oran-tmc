@@ -1,0 +1,47 @@
+# R3.4: FedSWA × LSTM × natural-by-BS × 5 seeds = 5 cells, 100 rounds.
+# Empirical refutation (or confirmation) of MC7 dismissal language.
+#
+# Pre-launch verifications passed:
+#   - FedSWA class registered in _ALGO_REQUIRED_KWARGS
+#   - 23/23 algo-kwargs tests pass
+#   - 1-cell smoke (5 rounds) ran successfully (test_auc=0.8559)
+#   - smoke vs FedAvg-smoke shows 4pp delta confirming alpha_la=1.5 != 1.0
+#
+# Hardware: RTX 4080. ~30 min GPU (5 LSTM cells × ~3.5 min/cell).
+# Same hyperparameters as Phase 5 LSTM × FedAdam × natural-by-BS for
+# paired-bootstrap CI95 comparison.
+
+description: R3.4 FedSWA × LSTM × natural-by-BS sweep (5 cells, MC7 empirical)
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedswa
+    kwargs:
+      alpha_la: 1.5             # FedSWA paper eq. 17 default
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+# Subset of Phase 5 seeds for paired comparison vs FedAdam cells
+seeds: [42, 0, 1, 2, 3]
+
+shared:
+  num_rounds: 100               # match Phase 5
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4

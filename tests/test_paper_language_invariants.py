@@ -152,6 +152,35 @@ def test_p2_loto_section_in_paper() -> None:
     )
 
 
+def test_r34_fedswa_empirical_section_in_paper() -> None:
+    """R3.4 FedSWA 5-seed empirical benchmark must be in §7.5 (markdown +
+    LaTeX). Reviewer MC7 answer: empirically tested, FedSWA marginally
+    exceeds FedAdam by +0.0004 AUC (mechanism prediction directionally
+    REVERSED but quantitatively in same neighbourhood)."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    # Headline values: FedSWA test_auc 0.918001, FedAdam 0.917622, FedAvg 0.915779
+    assert "0.918001" in md, "§7.5 must report FedSWA test_auc mean 0.918001"
+    assert "0.917622" in md, "§7.5 must report FedAdam test_auc mean 0.917622"
+    # Paired Δ result with CI95 excluding 0
+    assert "+0.000379" in md or "0.000379" in md, (
+        "§7.5 must report paired Δ FedSWA-FedAdam = +0.000379"
+    )
+    assert "[+0.000206, +0.000553]" in md, (
+        "§7.5 must report CI95 [+0.000206, +0.000553] for FedSWA-FedAdam"
+    )
+    # Empirical revision framing
+    assert "REVERSED" in md or "reversed" in md, (
+        "§7.5 must explicitly note mechanism prediction was REVERSED by the empirical test"
+    )
+    assert "tab:fedswa-empirical" in tex, (
+        "main.tex must contain the FedSWA empirical comparison table"
+    )
+    assert "r34_fedswa_natural" in md or "r34_fedswa_natural" in tex, (
+        "must reference artifacts/r34_fedswa_natural/"
+    )
+
+
 def test_p22_inference_latency_section_in_paper() -> None:
     """P2.2 inference latency + comm bytes (MC6) must be in §6.8."""
     md = _read(PAPER_DRAFT)
