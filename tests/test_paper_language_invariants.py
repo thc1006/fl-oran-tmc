@@ -172,6 +172,22 @@ def test_p22_inference_latency_section_in_paper() -> None:
     assert "p2_inference/results.json" in md or "p2_inference/results.json" in tex, (
         "must reference artifacts/p2_inference/results.json"
     )
+    # P22-G fix: Spiking n_params must be 43,593 (parameters() count matching §4.1),
+    # not 43,601 (state_dict() count including 8 LIF buffer tensors)
+    assert "43,593" in md, (
+        "§6.8 must report Spiking n_params=43,593 (trainable params, matching §4.1), "
+        "not 43,601 (state_dict including LIF buffers)"
+    )
+    # P22-I fix: comm cost must report bidirectional ~170 MiB total, not uplink-only 87 MiB
+    assert "170 MiB" in md or "170\\,MiB" in md, (
+        "§6.8 must report bidirectional ~170 MiB total federation traffic, "
+        "not uplink-only ~87 MiB"
+    )
+    # P22-H fix: must clarify 10 ms is FULL control-loop budget, inference is one component
+    assert "control-loop budget" in md or "loop budget" in md, (
+        "§6.8 must clarify 10 ms is the full near-RT RIC control-loop budget, "
+        "with inference as one component"
+    )
 
 
 def test_implementation_specific_caveat_in_c4() -> None:

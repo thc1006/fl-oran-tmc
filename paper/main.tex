@@ -386,18 +386,18 @@ Added 2026-05-06 per reviewer MC6. To address the deployment claim, we measured 
 \centering
 \begin{tabular}{@{}lccccc@{}}
 \toprule
-arch & n\_params & comm KiB/client & GPU 1-sample & CPU 1-sample & 10\,ms GPU headroom \\
+arch & n\_params (trainable) & comm KiB/client (state\_dict) & GPU 1-sample & CPU 1-sample & 10\,ms GPU headroom \\
 \midrule
 LSTM        & 44{,}553 & 174 & $\mathbf{0.15}$\,ms & $0.17$\,ms & $\mathbf{67.4\times}$ \\
 Mamba       & 40{,}489 & 158 & $0.52$\,ms          & $1.11$\,ms & $19.3\times$          \\
-Spiking-SSM & 43{,}601 & 170 & $1.57$\,ms          & $\mathbf{0.90}$\,ms & $6.4\times$           \\
+Spiking-SSM & 43{,}593 & 170 & $1.57$\,ms          & $\mathbf{0.90}$\,ms & $6.4\times$           \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\textbf{Inference}: all 3 backbones serve a single SLA-violation prediction in $\leq 1.6$\,ms on RTX~4080 GPU, well within the tightest near-RT RIC control-loop budget (10\,ms). LSTM is fastest on both GPU and CPU; Spiking-SSM is the only arch where CPU outperforms GPU ($0.90$\,ms vs $1.57$\,ms) --- snntorch's \lstinline|Leaky| neuron $+$ atan surrogate gradient have CPU-specific paths that beat the dense-GPU codepath at single-sample scale. Even at the worst case (Spiking on GPU), the $6.4\times$ headroom comfortably fits the 10\,ms budget; for edge-device deployment without GPU, all 3 archs are still $\leq 1.2$\,ms on a single CPU thread.
+\textbf{Inference}: all 3 backbones serve a single SLA-violation prediction in $\leq 1.6$\,ms on RTX~4080 GPU. The 10\,ms figure is the full near-RT RIC control-loop budget (sense $\rightarrow$ predict $\rightarrow$ decide $\rightarrow$ actuate $\rightarrow$ confirm); inference is one component of that budget, so the $67.4\times$ / $19.3\times$ / $6.4\times$ headroom should be read as ``inference uses $1$--$15\%$ of the loop budget'', leaving $85$--$99\%$ for the remaining steps. LSTM is fastest on both GPU and CPU; Spiking-SSM is the only arch where CPU outperforms GPU ($0.90$\,ms vs $1.57$\,ms) --- snntorch's \lstinline|Leaky| neuron $+$ atan surrogate gradient have CPU-specific paths that beat the dense-GPU codepath at single-sample scale. Even at worst-case (Spiking on GPU), inference fits well; for edge-device deployment without GPU, all 3 archs are $\leq 1.2$\,ms on a single CPU thread.
 
-\textbf{Communication}: 158--174\,KiB upload per client per round (state\_dict in fp32). With 5 of 7 clients sampling per round and 100 rounds, total federation traffic is $\leq 87$\,MiB per cell --- well within typical E2-interface bandwidth (10--100\,Mbps over the 100-round training, this is $<1$\,Mbps average). FL communication is not the bottleneck.
+\textbf{Communication}: 158--174\,KiB per client per round (state\_dict in fp32). Standard FedAvg requires both downlink (server $\rightarrow$ client model broadcast) and uplink (client $\rightarrow$ server update); per round, 5 sampled clients each receive $\sim 170$\,KiB downlink $+$ send $\sim 170$\,KiB uplink $\approx 1.7$\,MiB per round total bidirectional. Over 100 rounds: $\sim 170$\,MiB total federation traffic per cell. Spread over the 100-round training ($\approx 1$\,round/sec wall-clock on RTX~4080), this averages $\approx 14$\,Mbps --- well within typical E2/A1/O1 interface bandwidth allocations. FL communication is not the deployment bottleneck.
 
 \textbf{Headline interpretation}: the Section~\ref{sec:arch-leverage} architecture-leverage finding ($10\times$ energy span between LSTM and Spiking on RTX~4080) does \emph{not} translate to a $10\times$ inference-latency span --- the worst arch is only $\sim 10\times$ slower than the best at single-sample inference, and even that fits the budget. Operators selecting architecture for \emph{deployment} should weigh both training-energy (Section~\ref{sec:arch-leverage}) and inference-latency (this section); for the ColO-RAN per-second prediction cadence, all 3 archs are deployable. Reproduction: \lstinline|artifacts/p2_inference/results.json|.
 

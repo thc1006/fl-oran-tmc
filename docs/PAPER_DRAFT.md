@@ -256,15 +256,17 @@ Reproduction: `scripts/baseline_last_bler.py` + `scripts/baseline_logreg.py`; pe
 
 To address the deployment claim, we measured single-sample inference latency (the metric a near-RT RIC xApp pays per prediction) and per-round federation communication cost (the metric the SMO/non-RT RIC pays per training round) on the same RTX 4080 used for training, plus CPU baselines for edge-device deployment scenarios. Per-arch values are taken from the seed-42 Phase 5 checkpoint; `experiments/run_p2_inference_latency.py` regenerates them.
 
-| Arch | n_params | Comm bytes/client/round | GPU 1-sample latency | CPU 1-sample latency | 10 ms RIC headroom (GPU) |
+| Arch | n_params (trainable) | Comm KiB/client/round (state_dict) | GPU 1-sample latency | CPU 1-sample latency | 10 ms RIC headroom (GPU) |
 |---|---|---|---|---|---|
 | LSTM | 44,553 | 174 KiB | **0.15 ms** | 0.17 ms | **67.4×** |
 | Mamba | 40,489 | 158 KiB | 0.52 ms | 1.11 ms | 19.3× |
-| Spiking-SSM | 43,601 | 170 KiB | 1.57 ms | **0.90 ms** | 6.4× |
+| Spiking-SSM | 43,593 | 170 KiB | 1.57 ms | **0.90 ms** | 6.4× |
 
-**Inference**: all 3 backbones serve a single SLA-violation prediction in ≤1.6 ms on RTX 4080 GPU, well within the tightest near-RT RIC control-loop budget (10 ms). LSTM is fastest on both GPU and CPU; Spiking-SSM is the only arch where CPU outperforms GPU (0.90 ms vs 1.57 ms) — snntorch's `Leaky` neuron + atan surrogate gradient have CPU-specific paths that beat the dense-GPU codepath at single-sample scale. Even at the worst case (Spiking on GPU), the 6.4× headroom comfortably fits the 10 ms budget; for edge-device deployment without GPU, all 3 archs are still ≤1.2 ms on a single CPU thread.
+(Communication cost is state_dict bytes, which for Spiking includes 8 LIF buffer tensors not counted as trainable parameters; the 43,593 figure matches §4.1.)
 
-**Communication**: 158-174 KiB upload per client per round (state_dict in fp32). With 5 of 7 clients sampling per round and 100 rounds, total federation traffic is ≤87 MiB per cell — well within typical E2-interface bandwidth (10-100 Mbps over the 100-round training, this is <1 Mbps average). FL communication is not the bottleneck.
+**Inference**: all 3 backbones serve a single SLA-violation prediction in ≤1.6 ms on RTX 4080 GPU. The 10 ms figure is the full near-RT RIC control-loop budget (sense → predict → decide → actuate → confirm); inference is ONE component of that budget, so the "67.4× / 19.3× / 6.4× headroom" should be read as "inference uses 1-15% of the loop budget", leaving 85-99% for the remaining steps. LSTM is fastest on both GPU and CPU; Spiking-SSM is the only arch where CPU outperforms GPU (0.90 ms vs 1.57 ms) — snntorch's `Leaky` neuron + atan surrogate gradient have CPU-specific paths that beat the dense-GPU codepath at single-sample scale. Even at the worst case (Spiking on GPU), inference fits well; for edge-device deployment without GPU, all 3 archs are ≤1.2 ms on a single CPU thread.
+
+**Communication**: 158-174 KiB per client per round (state_dict in fp32). Standard FedAvg requires both downlink (server → client model broadcast) and uplink (client → server update); per round, 5 sampled clients each receive ~170 KiB downlink + send ~170 KiB uplink ≈ 1.7 MiB per round total bidirectional. Over 100 rounds: ~170 MiB total federation traffic per cell. Spread over the 100-round training (≈1 round/sec wall-clock on RTX 4080), this averages ≈14 Mbps — well within typical E2/A1/O1 interface bandwidth allocations. FL communication is not the deployment bottleneck.
 
 **Headline interpretation**: the §6.5 architecture-leverage finding (10× energy span between LSTM and Spiking on RTX 4080) does NOT translate to a 10× inference-latency span — the worst arch is only ~10× slower than the best at single-sample inference, and even that fits the budget. Operators selecting architecture for **deployment** should weigh both training-energy (§6.5) and inference-latency (this section); for the ColO-RAN per-second prediction cadence, all 3 archs are deployable. Reproduction: `artifacts/p2_inference/results.json`.
 
