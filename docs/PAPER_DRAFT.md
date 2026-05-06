@@ -385,6 +385,16 @@ We enumerate the limitations and threats to the validity of the §1 contribution
 
 * **L14 (threats contribution 2): FedAdam hyperparameter sensitivity untested.** β₁ = 0.9, β₂ = 0.99, η_server = 0.01 follow Reddi et al. 2021 preregistered values; (β₁, β₂, η_server) sensitivity sweep deferred. Full discussion in App. C.6.
 
+* **L15 (added 2026-05-06 per reviewer MC5; threats contribution 5 reproducibility):** Standard 10-seed paired-bootstrap CI95 captures init-RNG noise but not external uncertainty across test traffic configurations. We ran a leave-one-traffic-config-out (LOTO) cluster bootstrap on the LSTM/Mamba/Spiking × FedAvg × natural-by-BS Phase 5 cells (10 seeds × 3 test tr configs each, inference-only, `experiments/run_p2_loto_cluster_bootstrap.py`):
+
+  | Arch | σ_init (across seeds) | σ_tr (within-cell, across 3 tr) | Ratio σ_tr / σ_init | Cluster-CI95 width / standard width |
+  |---|---|---|---|---|
+  | LSTM | 4.2e-4 | 7.5e-3 | 17.8× | 28× |
+  | Mamba | 5.6e-4 | 7.3e-3 | 13.0× | 20× |
+  | Spiking-SSM | 5.1e-3 | 1.2e-2 | 2.3× | 3.7× |
+
+  External uncertainty exceeds internal by 2-18×, and the corresponding cluster-bootstrap CI95 widths exceed the standard seed-paired CI95 widths by 4-28× across the 3 backbones. **For absolute test-AUC claims** (the per-cell numbers in §6 tables), this means the standard CI95 is 4-28× too tight — though the qualitative conclusions survive because the inverted-α gap (~0.17 AUC, §6.2) and the architecture-band separation (~0.06-0.07 AUC, §6.5) dwarf even the cluster-CI95 widths (≤0.023 AUC). **For paired-delta claims** (§6.3 FedAdam-vs-FedAvg, §6.4 Mamba×SCAFFOLD, the 270 paired-bootstrap distributions), the per-test-config noise cancels per-pair (both algorithms in a contrast see the same tr) and the existing paired-bootstrap CI95 remains valid. The headline §6.4 Mamba×SCAFFOLD finding (paired Δ=−0.0915, CI95 [−0.1288, −0.0544], 10/10 seeds same direction) is robust under the cluster framework. Per-arch LOTO data in `artifacts/p2_loto/results*.json`.
+
 ---
 
 ## 9. Conclusion

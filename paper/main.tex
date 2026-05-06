@@ -534,6 +534,25 @@ We enumerate the limitations and threats to the validity of the Section~\ref{sec
   \item \textbf{L13 (threats contribution 5 reproducibility): Bootstrap CI uses percentile interval, not BCa.} At our $n = 10$ paired seeds with approximately symmetric per-seed delta distributions, the BCa bias-correction term is bounded by $O(1/\sqrt{n}) \approx 0.32$ standard errors --- smaller than seed $\sigma$ on every reported finding except Section~\ref{sec:mamba-scaffold}'s Mamba$\times$SCAFFOLD. Full justification in App.~C.5.
 
   \item \textbf{L14 (threats contribution 2): FedAdam hyperparameter sensitivity untested.} $\beta_1 = 0.9$, $\beta_2 = 0.99$, $\eta_{\mathrm{server}} = 0.01$ follow Reddi et al.~2021~\cite{Reddi2021_FedAdam} preregistered values; $(\beta_1, \beta_2, \eta_{\mathrm{server}})$ sensitivity sweep deferred. Full discussion in App.~C.6.
+
+  \item \textbf{L15 (added 2026-05-06 per reviewer MC5; threats contribution 5 reproducibility).} Standard 10-seed paired-bootstrap CI$_{95}$ captures init-RNG noise but not external uncertainty across test traffic configurations. We ran a leave-one-traffic-config-out (LOTO) cluster bootstrap on the LSTM/Mamba/Spiking $\times$ FedAvg $\times$ natural-by-BS Phase~5 cells (10 seeds $\times$ 3 test \lstinline|tr| configs each, inference-only, \lstinline|experiments/run_p2_loto_cluster_bootstrap.py|): see Table~\ref{tab:loto-variance}.
+
+\begin{table}[t]
+\caption{LOTO cluster-bootstrap variance decomposition (LSTM/Mamba/Spiking $\times$ FedAvg $\times$ natural-by-BS, 10 seeds $\times$ 3 test \lstinline|tr| configs). External uncertainty $\sigma_{\mathrm{tr}}$ exceeds internal $\sigma_{\mathrm{init}}$ by 2--18$\times$; cluster CI$_{95}$ widths exceed standard seed-paired CI$_{95}$ widths by 4--28$\times$.}
+\label{tab:loto-variance}
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+arch & $\sigma_{\mathrm{init}}$ & $\sigma_{\mathrm{tr}}$ & ratio $\sigma_{\mathrm{tr}}/\sigma_{\mathrm{init}}$ & CI95 width ratio \\
+\midrule
+LSTM        & $4.2\mathrm{e}{-}4$ & $7.5\mathrm{e}{-}3$ & $17.8\times$ & $28\times$ \\
+Mamba       & $5.6\mathrm{e}{-}4$ & $7.3\mathrm{e}{-}3$ & $13.0\times$ & $20\times$ \\
+Spiking-SSM & $5.1\mathrm{e}{-}3$ & $1.2\mathrm{e}{-}2$ & $2.3\times$  & $3.7\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{For absolute test-AUC claims} (per-cell numbers in Section~\ref{sec:results} tables), the standard CI$_{95}$ is 4--28$\times$ too tight --- though the qualitative conclusions survive because the inverted-$\alphadir$ gap ($\sim 0.17$ AUC, Section~\ref{sec:inverted-alpha}) and the architecture-band separation ($\sim 0.06$--$0.07$ AUC, Section~\ref{sec:arch-leverage}) dwarf even the cluster-CI$_{95}$ widths ($\leq 0.023$ AUC). \textbf{For paired-delta claims} (Section~\ref{sec:fedadam-ceiling} FedAdam-vs-FedAvg, Section~\ref{sec:mamba-scaffold} Mamba$\times$SCAFFOLD, the 270 paired-bootstrap distributions), the per-test-config noise cancels per-pair (both algorithms in a contrast see the same \lstinline|tr|) and the existing paired-bootstrap CI$_{95}$ remains valid. The headline Section~\ref{sec:mamba-scaffold} Mamba$\times$SCAFFOLD finding (paired $\Delta = -0.0915$, CI$_{95}$ $[-0.1288, -0.0544]$, 10/10 seeds same direction) is robust under the cluster framework. Per-arch LOTO data in \lstinline|artifacts/p2_loto/results*.json|.
 \end{itemize}
 
 

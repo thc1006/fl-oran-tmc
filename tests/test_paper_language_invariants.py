@@ -131,6 +131,25 @@ def test_p15_fedbn_reduction_proof_in_l2() -> None:
     )
 
 
+def test_p2_loto_section_in_paper() -> None:
+    """P2.1 LOTO cluster bootstrap result must be in §8 L15 (markdown + LaTeX).
+    Reviewer MC5 answer: external uncertainty exceeds internal by 2-18×."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    # σ ratio per arch (the headline finding)
+    for ratio in ("17.8", "13.0", "2.3"):
+        assert ratio in md, f"§8 L15 markdown must report ratio {ratio} per-arch"
+    assert "LOTO" in md or "leave-one-traffic-config-out" in md, (
+        "§8 L15 markdown must name the LOTO methodology"
+    )
+    assert "tab:loto-variance" in tex, (
+        "main.tex must contain the LOTO variance-decomposition table"
+    )
+    assert "results*.json" in md or "results*.json" in tex, (
+        "§8 L15 must reference artifacts/p2_loto/results*.json"
+    )
+
+
 def test_implementation_specific_caveat_in_c4() -> None:
     """RED: §1 contribution 4 (architecture-leverage claim) must contain
     an 'on this implementation' caveat. Mamba uses pure-PyTorch sequential
