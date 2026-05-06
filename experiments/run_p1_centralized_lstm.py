@@ -32,6 +32,11 @@ def main() -> int:
     )
     ap.add_argument("--epochs", type=int, nargs="+", default=[1, 3],
                     help="Epoch counts to run (default: 1 wall-match + 3 convergence)")
+    ap.add_argument("--max-steps", type=int, default=None,
+                    help="If set, truncate training at exactly this many "
+                         "gradient steps regardless of --epochs (R2 C1 use "
+                         "case: max-steps=25000 = FL budget for the same-"
+                         "step centralized comparison; supersedes --epochs).")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--lr", type=float, default=5e-4,
                     help="Match Phase 5 FL LSTM lr (5e-4)")
@@ -119,8 +124,16 @@ def main() -> int:
     n_train = len(y_tr)
     results_per_epoch_count = {}
 
-    # Train fresh model per epoch_count to keep cells independent
-    for n_epochs in args.epochs:
+    # When --max-steps is set, override --epochs with a single "run" that
+    # tracks max_steps. This is the R2 C1 path. The cell label in the JSON
+    # output becomes "{max_steps}_steps" instead of "{n_epochs}_epoch".
+    if args.max_steps is not None:
+        run_specs = [("max_steps", args.max_steps)]
+    else:
+        run_specs = [("epoch", n) for n in args.epochs]
+
+    # Train fresh model per run-spec to keep cells independent
+    for spec_kind, spec_n in run_specs:
         seed_everything(args.seed, deterministic=True)
         model = ForecasterV2(schema=schema, task="classification", seq_len=5).to(device)
         opt = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -129,14 +142,26 @@ def main() -> int:
         )
 
         steps_per_epoch = (n_train + args.batch_size - 1) // args.batch_size
-        total_steps = n_epochs * steps_per_epoch
-
-        print(f"\n=== Centralized LSTM, {n_epochs} epoch(s), {total_steps:,} total steps ===")
+        if spec_kind == "max_steps":
+            max_steps = spec_n
+            total_steps = max_steps
+            n_epochs_iter = (max_steps + steps_per_epoch - 1) // steps_per_epoch
+            print(f"\n=== Centralized LSTM, max_steps={max_steps:,} "
+                  f"(~{max_steps / steps_per_epoch:.3f} epochs) ===")
+        else:
+            n_epochs_iter = spec_n
+            max_steps = None  # no cap; run full epochs
+            total_steps = n_epochs_iter * steps_per_epoch
+            print(f"\n=== Centralized LSTM, {n_epochs_iter} epoch(s), "
+                  f"{total_steps:,} total steps ===")
 
         # Index permutation for shuffling
         rng = np.random.default_rng(args.seed)
         step = 0
-        for epoch in range(n_epochs):
+        stop = False
+        for epoch in range(n_epochs_iter):
+            if stop:
+                break
             perm = rng.permutation(n_train)
             for batch_start in range(0, n_train, args.batch_size):
                 idx = perm[batch_start:batch_start + args.batch_size]
@@ -153,6 +178,9 @@ def main() -> int:
                 step += 1
                 if step % 5000 == 0:
                     print(f"  step {step:,}/{total_steps:,} loss={float(loss):.4f}")
+                if max_steps is not None and step >= max_steps:
+                    stop = True
+                    break
 
         # Eval
         model.eval()
@@ -165,12 +193,20 @@ def main() -> int:
         test_auc = float(roc_auc_score(y_te, logits))
         test_f1 = float(f1_score(y_te, (logits > 0).astype(np.int32)))
 
-        results_per_epoch_count[f"{n_epochs}_epoch"] = {
+        # Cell label: "{n}_epoch" for legacy --epochs path,
+        # "{n}_steps" for the R2 C1 --max-steps path.
+        if spec_kind == "max_steps":
+            cell_key = f"{spec_n}_steps"
+        else:
+            cell_key = f"{spec_n}_epoch"
+        results_per_epoch_count[cell_key] = {
             "test_auc": test_auc,
             "test_f1": test_f1,
-            "n_total_steps": total_steps,
+            "n_total_steps": step,  # actual steps run (may be < total_steps if max_steps short-circuited)
             "n_train_seqs": int(n_train),
             "n_test_seqs": int(len(y_te)),
+            "spec_kind": spec_kind,
+            "spec_n": spec_n,
         }
         print(f"  test_auc = {test_auc:.4f}; test_f1 = {test_f1:.4f}")
 
