@@ -91,18 +91,22 @@ def test_p15_naive_baselines_section_in_paper() -> None:
 
 
 def test_p15_tr_embedding_quantification_section_in_paper() -> None:
-    """P1.5 integration guard: §7.1.6 must report the 9% gap-shrinkage
-    quantification from the P1.2 GREEN run."""
+    """P1.5 integration guard: §7.1.6 must report the cross-arch P1.2
+    quantification (LSTM 9.2%, Mamba 10.2%, Spiking 2.3%, all ≤10%)."""
     md = _read(PAPER_DRAFT)
     tex = _read(MAIN_TEX)
-    assert "9.2%" in md or "0.0921" in md or "gap_shrinkage_fraction" in md, (
-        "§7.1.6 markdown must quote the 9.2% / 0.0921 gap-shrinkage finding"
-    )
-    assert "91% is structural" in md, (
-        "§7.1.6 markdown must state '91% is structural' substantive conclusion"
+    # 3-arch cross-arch result (R3.1)
+    for pct in ("9.2%", "10.2%", "2.3%"):
+        assert pct in md, f"§7.1.6 markdown must report {pct} per-arch shrinkage"
+    assert "10%" in md and "90%" in md, (
+        "§7.1.6 markdown must state the ≤10% bug / ≥90% structural conclusion"
     )
     assert "tr-embedding" in tex.lower() or "tr embedding" in tex.lower(), (
         "main.tex must mirror the tr-embedding-bug-confound subsection"
+    )
+    # The 3-arch table must be in main.tex too
+    assert "tab:tr-embedding-shrinkage" in tex, (
+        "main.tex must contain the per-arch shrinkage table"
     )
 
 

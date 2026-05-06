@@ -309,9 +309,17 @@ The residual gap between Phase 6 α=0.05 and the Phase 5 natural-by-BS baseline 
 
 A code-level audit identified that the test traffic-config index `tr ∈ {25, 26, 27}` is encoded via `nn.Embedding(30, 8)`, but the train set only ever indexes rows {0..21}. Rows 22-29 therefore stay at PyTorch's default N(0, 1) initialisation and are bit-identical to a fresh seed-0 init at test time (verified across all 3 architectures in `tests/test_audit_invariants.py::test_tr_embedding_rows_22_to_29_byte_identical_to_fresh_init`). The reviewer's concern: this random-vector test-time confound might artificially inflate natural-by-BS dominance if the Dirichlet partition relies more on the tr feature.
 
-We quantify the impact via inference-only re-evaluation on the 9 LSTM × FedAvg × seed checkpoints from Phase 5 (`experiments/run_p1_tr_embedding_check.py`): load each, replace tr-embedding rows 22-29 with the mean of trained rows 0-21, re-compute test AUC. The natural-by-BS partition AUC moves from 0.9159 to 0.9165 (Δ = +0.0006); Dirichlet α=0.05 moves from 0.8618 to 0.8674 (Δ = +0.0056). The natural-vs-Dirichlet gap therefore shrinks from 0.0540 to 0.0491 (`gap_shrinkage_fraction` = 9.2%); the residual gap (0.0491) matches the paper's headline α=0.05 finding within rounding (§6.2 reports 0.0554). **The bug confound explains ~9% of natural-by-BS dominance; the remaining 91% is structural**, consistent with the §7.1.1 random_split + §7.1.5 per-BS Dirichlet ablations.
+We quantify the impact via inference-only re-evaluation on 54 cells (3 archs × FedAvg × {natural-by-BS, Dirichlet α=0.05} × 9 seeds) — load each Phase 5 checkpoint, replace tr-embedding rows 22-29 with the mean of trained rows 0-21, re-compute test AUC. Per-architecture summary (`experiments/run_p1_tr_embedding_check.py --archs lstm mamba spiking_expand2`):
 
-LSTM-only quantification; extending to Mamba and Spiking-SSM (which would need separate model-class dispatch) is left as a follow-up. The reviewer's bug confound is real but immaterial to C1's substantive claim. The bug is a fixable artefact of the embedding-table sizing convention; the recommended fix is discussed in `artifacts/audit/tr_embedding_audit.md`.
+| Arch | gap_normal | gap_meanfix | shrinkage | residual |
+|---|---|---|---|---|
+| LSTM | +0.0540 | +0.0491 | 9.2% | 0.0491 |
+| Mamba | +0.0477 | +0.0428 | 10.2% | 0.0428 |
+| Spiking-SSM | +0.1580 | +0.1545 | 2.3% | 0.1545 |
+
+All 3 architectures confirm the same direction: the tr-embedding bug shrinks the natural-vs-Dirichlet gap by **at most 10.2%**; the residual gap is 0.04--0.15 AUC, which is the paper's substantive headline finding. **The bug explains ≤10% of natural-by-BS dominance across all 3 backbones; the remaining ≥90% is structural**, consistent with the §7.1.1 random_split + §7.1.5 per-BS Dirichlet ablations.
+
+The Spiking-SSM result is particularly informative: it has the largest absolute natural-by-BS gap (0.16 AUC) but the smallest relative bug contribution (2.3%) — i.e., on the architecture where C1's effect is strongest, the bug confound is weakest. This rules out the alternative reading "natural-by-BS dominance is mostly a tr-embedding artefact". The reviewer Minor#4 confound is real but immaterial to C1's substantive claim. The bug is a fixable artefact of the embedding-table sizing convention; the recommended fix is discussed in `artifacts/audit/tr_embedding_audit.md`.
 
 ### 7.2 Algorithmic flatness implies FedAdam is the ceiling, not the start
 
