@@ -467,3 +467,38 @@ def test_rem2_logreg_with_categorical_artifact():
     assert n_feat == 52, (
         f"REM-2 expected 52 features (17 continuous + 35 OHE), got {n_feat}"
     )
+
+
+# ---------------------------------------------------------------------
+# REM-1 — local-only per-BS LSTM baseline (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_rem1_local_only_per_bs_present():
+    """§6.7 must include the local-only per-BS LSTM row (0.9209 per-BS-mean)
+    + footnote 4 explaining the per-BS-only-eval caveat. Prevents regression
+    where someone adds the row without the methodological caveat."""
+    md = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    for s in ("0.9209", "Local-only per-BS LSTM", "−0.0050"):
+        assert s in md, f"REM-1 §6.7 markdown must contain '{s}'"
+    for s in ("0.9209", "Local-only per-BS LSTM", "-0.0050"):
+        assert s in tex, f"REM-1 §6.7 LaTeX must contain '{s}'"
+    # Caveat must be present (substring "strictly apples-to-apples" survives
+    # any **bold** / \emph{} markup around the preceding "not")
+    assert "strictly apples-to-apples" in md and "strictly apples-to-apples" in tex, (
+        "REM-1 footnote must explicitly note the per-BS-only-eval caveat — "
+        "without this, reader may misread the +0.0050 'FL loses' headline."
+    )
+
+
+def test_rem1_aggregate_artifact():
+    p = REPO / "artifacts" / "r2_local_only_per_bs_lstm" / "results.json"
+    if not p.exists():
+        pytest.skip("REM-1 not yet run")
+    import json
+    d = json.loads(p.read_text())
+    assert d["n_bs"] == 7
+    assert d["n_seeds"] == 5
+    assert d["max_steps_per_cell"] == 25_000, "must match FL/C1 budget"
+    auc = d["cross_bs"]["test_auc_mean_of_means"]
+    assert 0.90 < auc < 0.94, f"REM-1 cross-BS mean AUC out of envelope: {auc}"
