@@ -328,3 +328,105 @@ class TestHookFixturesValid:
         if STEP2.exists():
             s = json.loads(STEP2.read_text())
             assert "C1_per_feature_pairwise_bs_KL" in s
+
+
+# ---------------------------------------------------------------------
+# R2 C1 — same-step centralized invariants (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_r2_c1_same_step_centralized_present_in_paper():
+    """§6.7 §F1 must report C1 same-step centralized result (0.9243)
+    + the same-budget federation cost (+0.0084 AUC). Prevents regression
+    where the §6.7 "federation cost = +0.0152" framing is silently
+    re-introduced (the original A1 reasoning error)."""
+    md_text = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex_text = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    # Same-budget centralized AUC
+    for s in ("0.9243", "+0.0084"):
+        assert s in md_text, (
+            f"R2 C1 §6.7 markdown must report '{s}' (same-budget centralized "
+            f"or paired Δ). Source: artifacts/r2_same_step_centralized/aggregated.json"
+        )
+        assert s in tex_text, (
+            f"R2 C1 §6.7 LaTeX must report '{s}'"
+        )
+
+
+def test_r2_c1_aggregate_artifact_exists():
+    """R2 C1 aggregate artifact must exist for §6.7 traceability."""
+    p = REPO / "artifacts" / "r2_same_step_centralized" / "aggregated.json"
+    if not p.exists():
+        pytest.skip("R2 C1 not yet aggregated (run experiments/specs/r2_same_step_centralized.yaml + aggregator)")
+    import json
+    d = json.loads(p.read_text())
+    assert d["max_steps_per_seed"] == 25_000, (
+        f"R2 C1 spec must use max_steps=25000; got {d['max_steps_per_seed']}"
+    )
+    assert d["aggregate"]["n"] == 5
+
+
+# ---------------------------------------------------------------------
+# R2 C3 — post-hoc per-BS fine-tune invariants (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_r2_c3_post_hoc_per_bs_finetune_present_in_paper():
+    """§8 L2 must report C3 result (mean Δ -0.0025, 0/15 cells positive)
+    and per-arch breakdown to substantiate the FedBN-spirit refutation."""
+    md_text = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex_text = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    for s in ("−0.0025", "0/15 cells"):
+        assert s in md_text, (
+            f"R2 C3 §8 L2 markdown must report '{s}' (per-BS fine-tune Δ "
+            f"or cell count). Source: artifacts/r2_post_hoc_per_bs_finetune/aggregated.json"
+        )
+    for s in ("-0.0025", "0/15 cells"):
+        assert s in tex_text, f"R2 C3 §8 L2 LaTeX must report '{s}'"
+
+
+def test_r2_c3_aggregate_artifact_exists():
+    """R2 C3 aggregate artifact must exist for §8 L2 traceability."""
+    p = REPO / "artifacts" / "r2_post_hoc_per_bs_finetune" / "aggregated.json"
+    if not p.exists():
+        pytest.skip("R2 C3 not yet aggregated")
+    import json
+    d = json.loads(p.read_text())
+    assert d["n_cells"] == 15
+    assert d["n_per_bs_observations"] == 105
+    # Must show mean Δ is negative (refutation of personalisation hypothesis)
+    assert d["summary_all_observations"]["mean_delta_personalised_minus_global"] < 0, (
+        "R2 C3 aggregate must show negative mean Δ to substantiate the "
+        "§8 L2 'personalisation hurts' claim"
+    )
+
+
+# ---------------------------------------------------------------------
+# R2 C4 — no-tr ablation invariants (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_r2_c4_no_tr_ablation_present_in_paper():
+    """§7.1.6 must report C4 result (mean Δ +0.0006, CI95 excludes 0
+    positive direction). Substantiates 'C1 mechanism survives without
+    tr embedding' empirical confirmation."""
+    md_text = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex_text = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    for s in ("+0.0006", "+0.0003, +0.0010"):
+        assert s in md_text, (
+            f"R2 C4 §7.1.6 markdown must report '{s}' (no-tr Δ or CI95). "
+            f"Source: artifacts/r2_no_tr_ablation/aggregated.json"
+        )
+        assert s in tex_text, f"R2 C4 §7.1.6 LaTeX must report '{s}'"
+
+
+def test_r2_c4_aggregate_artifact_exists():
+    """R2 C4 aggregate must exist; mean Δ must exclude 0 in positive
+    direction (no-tr ≥ Phase 5)."""
+    p = REPO / "artifacts" / "r2_no_tr_ablation" / "aggregated.json"
+    if not p.exists():
+        pytest.skip("R2 C4 not yet aggregated")
+    import json
+    d = json.loads(p.read_text())
+    assert d["n_paired_seeds"] == 10
+    assert d["summary"]["ci95_lo"] > 0, (
+        "R2 C4 paired CI95 lower bound must be > 0 (no-tr ≥ Phase 5) for "
+        "the §7.1.6 'C1 mechanism survives without tr embedding' claim"
+    )

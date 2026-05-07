@@ -1,0 +1,67 @@
+{
+  "arch": "lstm",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s42/best.pt",
+  "computed_at": "2026-05-07T01:03:46.635215+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.0009087038501663924,
+      "global_auc": 0.8966694719755636,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8957607681253972
+    },
+    "2": {
+      "delta_personalised_minus_global": 0.0006080147350084886,
+      "global_auc": 0.9121038498152088,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.9127118645502172
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.0013984083465632402,
+      "global_auc": 0.9017743598288475,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.9003759514822842
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.0008569338612037791,
+      "global_auc": 0.9247084243557041,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.9238514904945003
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.001245639131528531,
+      "global_auc": 0.9274485990800514,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.9262029599485229
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.0007124939278005948,
+      "global_auc": 0.9301354468312562,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.9294229529034556
+    },
+    "7": {
+      "delta_personalised_minus_global": 7.213657484017588e-05,
+      "global_auc": 0.9137699173911294,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.9138420539659696
+    }
+  },
+  "seed": 42,
+  "summary": {
+    "mean_delta": -0.0006345754010591247,
+    "n_bs": 7,
+    "std_delta": 0.0007223771755671367
+  },
+  "wall_time_s": 120.2107093334198
+}

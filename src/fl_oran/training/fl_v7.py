@@ -119,6 +119,14 @@ class V7Config:
     arch: str = "lstm"
     arch_kwargs: dict[str, Any] = field(default_factory=dict)
 
+    # R2 C4 (no-tr ablation, 2026-05-07): list of categorical column
+    # names to drop from the encoder. ForecasterV2 supports
+    # drop_categorical=List[str] via its __init__; v7 propagates this
+    # through _build_model via cfg.drop_categorical. Empty list = no-op
+    # (matches Phase 5 behaviour). Only respected by ForecasterV2 today;
+    # Mamba/Spiking constructors silently ignore it.
+    drop_categorical: list[str] = field(default_factory=list)
+
     # Algorithm.
     algorithm: str = "fedavg"
     algo_kwargs: dict[str, Any] = field(default_factory=dict)
@@ -233,6 +241,12 @@ def _build_model(cfg: V7Config, schema: FeatureSchema) -> nn.Module:
     ctor = arch_cfg["ctor"]
     kwargs = dict(arch_cfg.get("kwargs", {}))
     kwargs.update(cfg.arch_kwargs)
+    # R2 C4: propagate drop_categorical to ForecasterV2 (LSTM). Other
+    # archs (Mamba, Spiking) currently don't support this kwarg, so we
+    # only forward it for LSTM (cfg.arch == "lstm"). Future-arch addition
+    # of drop_categorical can extend this allowlist.
+    if cfg.drop_categorical and cfg.arch == "lstm":
+        kwargs["drop_categorical"] = list(cfg.drop_categorical)
     return ctor(
         schema=schema, task="classification", seq_len=cfg.seq_len, **kwargs,
     )

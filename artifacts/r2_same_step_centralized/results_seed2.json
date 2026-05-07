@@ -1,0 +1,24 @@
+{
+  "centralized_lstm_results": {
+    "25000_steps": {
+      "n_test_seqs": 1927016,
+      "n_total_steps": 25000,
+      "n_train_seqs": 14507705,
+      "spec_kind": "max_steps",
+      "spec_n": 25000,
+      "test_auc": 0.9246175223918726,
+      "test_f1": 0.7784863441511035
+    }
+  },
+  "computed_at": "2026-05-07T00:46:32.642927+00:00",
+  "config": {
+    "batch_size": 64,
+    "feature_count": 17,
+    "lr": 0.0005,
+    "seed": 2
+  },
+  "phase5_fl_reference": {
+    "comment": "FL reference for ML-lift / federation-cost decomposition",
+    "lstm_fedavg_natural_test_auc": 0.9159
+  }
+}

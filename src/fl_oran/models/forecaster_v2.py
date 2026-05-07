@@ -31,12 +31,34 @@ class ForecasterV2(nn.Module):
         fc_hidden: int = 64,
         dropout: float = 0.1,
         persistence_feature: str | None = None,
+        drop_categorical: list[str] | None = None,
     ):
         super().__init__()
         self.schema = schema
         self.task = task
         self.seq_len = seq_len
         self.persistence_feature = persistence_feature
+
+        # R2 C4 (no-tr ablation): allow callers to drop selected categorical
+        # features from the embedding lookup entirely. The corresponding
+        # column in x_cat is ignored at forward time; no embedding is built.
+        # Used by experiments/specs/r2_no_tr_ablation.yaml to test whether
+        # the natural-by-BS dominance survives without the tr embedding
+        # (whose test-time rows 22-29 are random init per §7.1.6).
+        self.drop_categorical: tuple[str, ...] = tuple(drop_categorical or ())
+        for col in self.drop_categorical:
+            if col not in schema.categorical:
+                raise ValueError(
+                    f"drop_categorical={col!r} not in schema.categorical"
+                    f"={schema.categorical}"
+                )
+        self._kept_cat_indices = tuple(
+            i for i, col in enumerate(schema.categorical)
+            if col not in self.drop_categorical
+        )
+        self._kept_cat_names = tuple(
+            col for col in schema.categorical if col not in self.drop_categorical
+        )
 
         # Validate persistence configuration.
         if persistence_feature is not None:
@@ -49,12 +71,13 @@ class ForecasterV2(nn.Module):
         else:
             self._persistence_idx = None
 
-        # One embedding table per categorical column.
+        # One embedding table per kept categorical column. Dropped columns
+        # contribute neither an embedding nor an input dim.
         self.embeddings = nn.ModuleDict({
             col: nn.Embedding(schema.categorical_sizes[col] + 1, cat_embed_dim)
-            for col in schema.categorical
+            for col in self._kept_cat_names
         })
-        input_dim = cat_embed_dim * schema.n_categorical + schema.n_continuous
+        input_dim = cat_embed_dim * len(self._kept_cat_names) + schema.n_continuous
 
         self.lstm1 = nn.LSTM(input_dim, lstm_hidden1, batch_first=True)
         self.lstm2 = nn.LSTM(lstm_hidden1, lstm_hidden2, batch_first=True)
@@ -78,6 +101,8 @@ class ForecasterV2(nn.Module):
         """
         cats = []
         for i, col in enumerate(self.schema.categorical):
+            if col in self.drop_categorical:
+                continue   # R2 C4: skip dropped categorical entirely
             emb = self.embeddings[col](x_cat[..., i])  # (B, L, embed_dim)
             cats.append(emb)
         x = torch.cat(cats + [x_cont], dim=-1) if cats else x_cont

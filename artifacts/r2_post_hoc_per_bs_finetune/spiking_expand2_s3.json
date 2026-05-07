@@ -1,0 +1,67 @@
+{
+  "arch": "spiking_expand2",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_spiking_expand2_fedavg_iid_n7_s3/best.pt",
+  "computed_at": "2026-05-07T01:08:05.581379+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.007139734615946747,
+      "global_auc": 0.8323357639224531,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8251960293065064
+    },
+    "2": {
+      "delta_personalised_minus_global": 0.006223214888089301,
+      "global_auc": 0.849419772899231,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.8556429877873203
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.003654767681928406,
+      "global_auc": 0.8347584788143854,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.831103711132457
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.003488245692399028,
+      "global_auc": 0.8597275349327493,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.8562392892403503
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.0017908134865021186,
+      "global_auc": 0.8715160964968274,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.8697252830103253
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.007835503693224166,
+      "global_auc": 0.8795336944243225,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.8716981907310983
+    },
+    "7": {
+      "delta_personalised_minus_global": -0.006616787151194847,
+      "global_auc": 0.8597539650370274,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.8531371778858325
+    }
+  },
+  "seed": 3,
+  "summary": {
+    "mean_delta": -0.003471805347586573,
+    "n_bs": 7,
+    "std_delta": 0.004817319023107542
+  },
+  "wall_time_s": 130.1834900379181
+}

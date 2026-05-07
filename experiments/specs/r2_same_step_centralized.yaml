@@ -1,0 +1,48 @@
+# R2 / C1 — Same-step centralized LSTM (addresses reviewer R2 #14 / A1 root)
+#
+# Goal: run centralized LSTM at the SAME gradient-step budget as FL
+#   FL = 100 rounds × 50 max_steps × 5 sampled clients = 25,000 gradient steps
+# so the §6.7 "centralized-reference gap" can be replaced with a true
+# same-budget comparison ("federation cost" iff this AUC > FL AUC; "FL is
+# more compute-efficient" if this AUC <= FL AUC).
+#
+# Hardware: RTX 4080 (sm_89, BF16 native, 16 GiB).
+#   N_cells = 5 (5 seeds), per-cell ~6 min → ~30 min wall sequential.
+#   See artifacts/audit/r2_gpu_design.md for V100 vs RTX 4080 trade-off
+#   (V100 4-way parallel: ~24 min wall but +SSH overhead → not worth).
+#
+# Output: artifacts/r2_same_step_centralized/results_seed<N>.json
+#   aggregated to artifacts/r2_same_step_centralized/aggregated.json
+#
+# Launch (after user confirms): for s in 0 1 2 3 42; do
+#   python experiments/run_p1_centralized_lstm.py \
+#     --max-steps 25000 --seed $s \
+#     --out artifacts/r2_same_step_centralized/results_seed${s}.json
+# done
+
+description: R2 C1 same-step centralized LSTM (5 seeds × 25k gradient steps)
+
+arch: lstm
+mode: centralized
+
+# Seeds matching Phase 5 LSTM × FedAvg × natural-by-BS for paired comparison.
+seeds: [0, 1, 2, 3, 42]
+
+# Critical: total gradient-step budget MUST match FL exactly.
+# FL: 100 rounds × 50 max_steps_per_round × 5 clients_per_round = 25_000 steps
+max_steps: 25000
+
+# Match Phase 5 FL hyperparameters exactly so this is a budget-only delta.
+batch_size: 64
+lr: 5.0e-4
+seq_len: 5
+threshold: 0.10
+pos_weight_split: train
+
+# Hardware — RTX 4080 sequential.
+device: cuda
+mixed_precision: bf16
+cudnn_deterministic: true
+
+# Output layout.
+out_dir: artifacts/r2_same_step_centralized

@@ -1,0 +1,67 @@
+{
+  "arch": "mamba",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_mamba_fedavg_iid_n7_s3/best.pt",
+  "computed_at": "2026-05-07T01:05:45.019169+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.002192385859568602,
+      "global_auc": 0.8972296297482204,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8950372438886518
+    },
+    "2": {
+      "delta_personalised_minus_global": -0.0030210272911778135,
+      "global_auc": 0.9122774453322773,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.9092564180410995
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.0032668491146842227,
+      "global_auc": 0.9018848607695656,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.8986180116548814
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.000769341562739112,
+      "global_auc": 0.9246827164500953,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.9239133748873561
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.0016760816029188774,
+      "global_auc": 0.9274965147368123,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.9258204331338934
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.0013291862056542536,
+      "global_auc": 0.9314022142606968,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.9300730280550425
+    },
+    "7": {
+      "delta_personalised_minus_global": 0.0009050491571029884,
+      "global_auc": 0.9144082896619972,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.9153133388191002
+    }
+  },
+  "seed": 3,
+  "summary": {
+    "mean_delta": -0.0016214032113771276,
+    "n_bs": 7,
+    "std_delta": 0.0014253544645816774
+  },
+  "wall_time_s": 118.36862874031067
+}

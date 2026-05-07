@@ -277,6 +277,7 @@ def aggregate(df: pd.DataFrame) -> pd.DataFrame:
         auc_mean=("best_val_auc", "mean"),
         auc_std=("best_val_auc", "std"),
         test_auc_mean=("test_auc", "mean"),
+        test_auc_std=("test_auc", "std"),
         energy_total_J_mean=("energy_total_J", "mean"),
         energy_total_J_std=("energy_total_J", "std"),
         energy_model_J_mean=("energy_model_J", "mean"),
@@ -290,9 +291,19 @@ def aggregate(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_pareto(agg: pd.DataFrame, out_path: Path) -> None:
-    """Scatter: x=model-attributable energy (J), y=mean best_val_auc.
-    One marker per (arch, algo, partition) group; error bars = std
-    across seeds. Solid markers = full 10 seeds, hollow = partial."""
+    """Scatter: x=model-attributable energy (J), y=mean test AUC.
+    One marker per (arch, algo, partition) group from the main Phase 5
+    sweep (full 10 seeds only — partial probes / V100 ablations are
+    excluded for visual consistency with the main-text 90 groups / 900
+    cells claim per reviewer R2 #12). Error bars = std across seeds.
+
+    Switched from best_val_auc to test_auc per reviewer Minor#2 / R2 #12
+    (P1.4b-GREEN switched §6.3 prose; R2 deep review aligned the figure)."""
+    # Filter to main-sweep groups only (full 10 seeds). Partial probes
+    # like V100 random_split / FedSWA cells are excluded from the Pareto
+    # visualisation to match the main-text 90/900 framing — they are
+    # discussed in §7.1 (random_split) and §7.5 (FedSWA) respectively.
+    agg = agg[agg["n_seeds"] >= 10].copy()
     fig, ax = plt.subplots(figsize=(10, 6.5))
     if agg.empty:
         ax.text(0.5, 0.5, "no completed cells yet",
@@ -307,13 +318,12 @@ def plot_pareto(agg: pd.DataFrame, out_path: Path) -> None:
         arch = row["arch"]; algo = row["algo"]
         if arch not in ARCH_COLORS or algo not in ALGO_MARKERS:
             continue
-        full = row["n_seeds"] >= 10
         ax.errorbar(
-            row["energy_model_J_mean"], row["auc_mean"],
-            xerr=row["energy_model_J_std"], yerr=row["auc_std"],
+            row["energy_model_J_mean"], row["test_auc_mean"],
+            xerr=row["energy_model_J_std"], yerr=row["test_auc_std"],
             fmt=ALGO_MARKERS[algo], color=ARCH_COLORS[arch],
-            markersize=9 if full else 6,
-            markerfacecolor=ARCH_COLORS[arch] if full else "white",
+            markersize=9,
+            markerfacecolor=ARCH_COLORS[arch],
             markeredgewidth=1.4,
             capsize=2.5, elinewidth=0.6, alpha=0.85,
         )
@@ -338,24 +348,24 @@ def plot_pareto(agg: pd.DataFrame, out_path: Path) -> None:
               title="Algorithm", fontsize=9, framealpha=0.85)
 
     ax.set_xlabel("Model-attributable energy per cell  [J]")
-    ax.set_ylabel(r"$\overline{\mathrm{best\_val\_auc}}$ (mean across seeds)")
+    ax.set_ylabel(r"$\overline{\mathrm{test\_auc}}$ (mean across seeds)")
     ax.set_title(
-        "Phase 5 — Pareto: AUC vs model-attributable energy "
-        f"({len(agg)} groups, {int(agg['n_seeds'].sum())} cells)"
+        "Phase 5 — Pareto: test AUC vs model-attributable energy "
+        f"({len(agg)} groups, {int(agg['n_seeds'].sum())} cells; "
+        "Mamba uses pure-PyTorch sequential scan, not Triton kernel)"
     )
     ax.grid(alpha=0.3)
-    ax.text(0.99, 0.02,
-            "solid marker = full 10 seeds   hollow = partial",
-            transform=ax.transAxes, ha="right", fontsize=8,
-            color="gray", style="italic")
     fig.tight_layout()
     fig.savefig(out_path, dpi=120, bbox_inches="tight")
     plt.close(fig)
 
 
 def plot_interaction_heatmap(agg: pd.DataFrame, out_path: Path) -> None:
-    """3-row heatmap (one per arch). Each cell = mean AUC for the
-    (algo, partition) group, annotated with mean and n_seeds."""
+    """3-row heatmap (one per arch). Each cell = mean test AUC for the
+    (algo, partition) group, annotated with mean ± seed-std.
+
+    Switched from best_val_auc to test_auc per reviewer Minor#2 / R2 #11
+    (P1.4b-GREEN aligned the script + R2 deep review aligned annotation)."""
     archs = list(ARCH_COLORS.keys())
     algos = list(ALGO_MARKERS.keys())
     parts = PARTITION_ORDER
@@ -368,15 +378,16 @@ def plot_interaction_heatmap(agg: pd.DataFrame, out_path: Path) -> None:
         axes = [axes]
 
     # Compute global vmin/vmax for shared colormap (only over real data)
-    valid = agg[agg["auc_mean"].notna()]
+    valid = agg[agg["test_auc_mean"].notna()]
     if len(valid):
-        vmin = max(0.50, float(valid["auc_mean"].min()) - 0.02)
-        vmax = min(1.00, float(valid["auc_mean"].max()) + 0.02)
+        vmin = max(0.50, float(valid["test_auc_mean"].min()) - 0.02)
+        vmax = min(1.00, float(valid["test_auc_mean"].max()) + 0.02)
     else:
         vmin, vmax = 0.50, 1.00
 
     for ax, arch in zip(axes, archs):
-        Z = np.full((len(algos), len(parts)), np.nan)
+        Z = np.full((len(algos), len(parts)), np.nan)   # mean test_auc
+        S = np.full((len(algos), len(parts)), np.nan)   # std test_auc across seeds
         N = np.zeros((len(algos), len(parts)), dtype=int)
         for i, algo in enumerate(algos):
             for j, (pmode, alpha) in enumerate(parts):
@@ -391,7 +402,8 @@ def plot_interaction_heatmap(agg: pd.DataFrame, out_path: Path) -> None:
                     m = m & (agg["alpha"].isna())
                 row = agg[m]
                 if len(row):
-                    Z[i, j] = float(row["auc_mean"].iloc[0])
+                    Z[i, j] = float(row["test_auc_mean"].iloc[0])
+                    S[i, j] = float(row["test_auc_std"].iloc[0])
                     N[i, j] = int(row["n_seeds"].iloc[0])
 
         im = ax.imshow(
@@ -405,21 +417,24 @@ def plot_interaction_heatmap(agg: pd.DataFrame, out_path: Path) -> None:
         ax.set_title(ARCH_LABELS[arch], fontsize=11,
                      loc="left", color=ARCH_COLORS[arch], fontweight="bold")
 
-        # annotate cells
+        # annotate cells: mean test AUC + ±seed-std (n in caption)
         for i in range(len(algos)):
             for j in range(len(parts)):
                 if np.isnan(Z[i, j]):
                     ax.text(j, i, "—", ha="center", va="center",
                             color="gray", fontsize=9)
                 else:
-                    txt = f"{Z[i,j]:.3f}\nn={N[i,j]}"
+                    if not np.isnan(S[i, j]):
+                        txt = f"{Z[i,j]:.3f}\n±{S[i,j]:.3f}"
+                    else:
+                        txt = f"{Z[i,j]:.3f}"
                     color = "white" if (Z[i, j] - vmin) / (vmax - vmin) < 0.4 else "black"
                     ax.text(j, i, txt, ha="center", va="center",
                             color=color, fontsize=8)
 
     # Single shared colorbar
     cbar = fig.colorbar(im, ax=axes, fraction=0.025, pad=0.02)
-    cbar.set_label("mean best_val_auc", fontsize=9)
+    cbar.set_label("mean test AUC", fontsize=9)
 
     fig.suptitle(
         "Phase 5 — algorithm × partition heatmap, per architecture\n"

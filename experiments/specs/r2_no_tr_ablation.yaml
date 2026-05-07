@@ -1,0 +1,63 @@
+# R2 / C4 — No-`tr` ablation (addresses reviewer R2 #7 / A3 long-version)
+#
+# Goal: prove that the §6.2 natural-by-BS dominance and the §6.7 FL AUC
+# survive when the `tr` categorical embedding is removed entirely. The
+# §7.1.6 quantification already shows the embedding-bug confound is
+# ≤10.2 % across all 3 archs (rows 22-29 stay at fresh init at test
+# time = effectively random input). C4 is the upper-bound check: if the
+# AUC still ~0.91 without `tr`, the C1 finding is robust to either
+# (a) keeping the buggy embedding, or (b) switching to a numeric vector
+# replacement (the recommended fix in §7.1.6 / Appendix D future work).
+#
+# Hardware: V100 cluster (4 cards × 3 cells/card max for full FL run)
+# wall ~10 min, OR RTX 4080 sequential ~60 min. Per
+# artifacts/audit/r2_gpu_design.md C4 section.
+#
+# Output: artifacts/r2_no_tr_ablation/<cell_dir>/best.pt + summary.json
+# Aggregator (later): artifacts/r2_no_tr_ablation/aggregated.json
+#
+# Compare to: Phase 5 LSTM × FedAvg × natural-by-BS × seed=<S>
+#   = artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s<S>/
+
+description: R2 C4 LSTM × FedAvg × natural-by-BS × no-tr-embedding × 10 seeds
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedavg
+    kwargs: {}
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+# Match Phase 5 seed coverage so the comparison is paired across seeds.
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 42]
+
+shared:
+  num_rounds: 100               # match Phase 5 exactly
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  # Hardware-aware precision: bf16 for RTX 4080 (native), fp16 for V100
+  # (BF16 is software-emulated on Volta sm_70). Override at launch with
+  # --mixed-precision fp16 if running on V100.
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+    # R2 C4 differentiator: drop `tr` from the categorical embedding.
+    # The model construction path (forecaster_v2.py drop_categorical
+    # arg) excludes both the embedding table AND the corresponding x_cat
+    # column at forward time. All other features (bs_id, slice_id, sched,
+    # 17 continuous) are unchanged.
+    drop_categorical: ["tr"]

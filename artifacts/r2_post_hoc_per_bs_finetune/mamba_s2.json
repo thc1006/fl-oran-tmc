@@ -1,0 +1,67 @@
+{
+  "arch": "mamba",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_mamba_fedavg_iid_n7_s2/best.pt",
+  "computed_at": "2026-05-07T01:03:55.955610+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.00018364664743875103,
+      "global_auc": 0.8977794111821782,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8975957645347394
+    },
+    "2": {
+      "delta_personalised_minus_global": -0.00026549087114413616,
+      "global_auc": 0.912416485638809,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.9121509947676648
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.0033828557687651806,
+      "global_auc": 0.9033845850526057,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.9000017292838405
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.0014226800784548077,
+      "global_auc": 0.9252815696106192,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.9238588895321644
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.0019501802116456135,
+      "global_auc": 0.9282403790189487,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.9262901988073031
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.0011357434209163797,
+      "global_auc": 0.9325377441577881,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.9314020007368717
+    },
+    "7": {
+      "delta_personalised_minus_global": -0.0012402319252630134,
+      "global_auc": 0.9155631067015259,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.9143228747762628
+    }
+  },
+  "seed": 2,
+  "summary": {
+    "mean_delta": -0.0013686898462325545,
+    "n_bs": 7,
+    "std_delta": 0.0010870488481745976
+  },
+  "wall_time_s": 130.23743152618408
+}
