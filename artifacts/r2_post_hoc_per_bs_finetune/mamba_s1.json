@@ -1,0 +1,67 @@
+{
+  "arch": "mamba",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_mamba_fedavg_iid_n7_s1/best.pt",
+  "computed_at": "2026-05-07T01:03:56.056446+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": 0.0008043842816994884,
+      "global_auc": 0.8951385297727896,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8959429140544891
+    },
+    "2": {
+      "delta_personalised_minus_global": -0.001468478784941496,
+      "global_auc": 0.9115523878970322,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.9100839091120907
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.002142030008055462,
+      "global_auc": 0.9014081622368774,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.8992661322288219
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.0006509268086868358,
+      "global_auc": 0.9223089508355403,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.9216580240268535
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.0044750935710816675,
+      "global_auc": 0.9268573420685423,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.9223822484974606
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.00262798894500893,
+      "global_auc": 0.9313241224655368,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.9286961335205278
+    },
+    "7": {
+      "delta_personalised_minus_global": -0.00032133679604529064,
+      "global_auc": 0.9144635606476796,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.9141422238516344
+    }
+  },
+  "seed": 1,
+  "summary": {
+    "mean_delta": -0.001554495804588599,
+    "n_bs": 7,
+    "std_delta": 0.0017289836868460784
+  },
+  "wall_time_s": 131.00638961791992
+}

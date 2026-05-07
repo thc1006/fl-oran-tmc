@@ -1,0 +1,67 @@
+{
+  "arch": "spiking_expand2",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_spiking_expand2_fedavg_iid_n7_s2/best.pt",
+  "computed_at": "2026-05-07T01:07:44.536401+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.010638977856219367,
+      "global_auc": 0.8307417808400217,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8201028029838023
+    },
+    "2": {
+      "delta_personalised_minus_global": -0.004068090245106903,
+      "global_auc": 0.8539487065547677,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.8498806163096608
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.012492300851672855,
+      "global_auc": 0.8368018923137786,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.8243095914621057
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.01296852404872928,
+      "global_auc": 0.8684299664807046,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.8554614424319753
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.018169939806599977,
+      "global_auc": 0.8745333611481754,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.8563634213415754
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.008896049193393929,
+      "global_auc": 0.8842178543880534,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.8753218051946595
+    },
+    "7": {
+      "delta_personalised_minus_global": -0.0012663494635500872,
+      "global_auc": 0.8595516511580013,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.8582853016944512
+    }
+  },
+  "seed": 2,
+  "summary": {
+    "mean_delta": -0.00978574735218177,
+    "n_bs": 7,
+    "std_delta": 0.0056941708606857025
+  },
+  "wall_time_s": 119.49245476722717
+}

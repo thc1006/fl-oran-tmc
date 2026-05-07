@@ -1,0 +1,52 @@
+{
+  "computed_at": "2026-05-07T01:33:19.510231+00:00",
+  "description": "R2 C3 post-hoc per-BS fine-tune \u2014 addresses A2 (FedBN-spirit MC3 gap)",
+  "n_cells": 15,
+  "n_per_bs_observations": 105,
+  "per_arch": {
+    "lstm": {
+      "n_cells": 5,
+      "mean_delta_across_seeds": -0.0007437275077223582,
+      "std_delta_across_seeds": 0.0004302688103143482,
+      "per_seed_mean_delta": {
+        "s0": -0.0007690627289674369,
+        "s1": -0.00017081723053624653,
+        "s2": -0.0013754864350139665,
+        "s3": -0.0007686957430350162,
+        "s42": -0.0006345754010591247
+      }
+    },
+    "mamba": {
+      "n_cells": 5,
+      "mean_delta_across_seeds": -0.0014126690996427462,
+      "std_delta_across_seeds": 0.00018245275355473542,
+      "per_seed_mean_delta": {
+        "s0": -0.0011580348838780008,
+        "s1": -0.001554495804588599,
+        "s2": -0.0013686898462325545,
+        "s3": -0.0016214032113771276,
+        "s42": -0.0013607217521374487
+      }
+    },
+    "spiking_expand2": {
+      "n_cells": 5,
+      "mean_delta_across_seeds": -0.005320469763137305,
+      "std_delta_across_seeds": 0.0027932985495318025,
+      "per_seed_mean_delta": {
+        "s0": -0.002521285417110941,
+        "s1": -0.005382566660150864,
+        "s2": -0.00978574735218177,
+        "s3": -0.003471805347586573,
+        "s42": -0.005440944038656375
+      }
+    }
+  },
+  "summary_all_observations": {
+    "mean_global_per_bs_auc": 0.8951868753763699,
+    "mean_personalised_per_bs_auc": 0.8926945865862024,
+    "mean_delta_personalised_minus_global": -0.0024922887901674697,
+    "std_delta": 0.0035631209303142375,
+    "n": 105
+  },
+  "interpretation": "Post-hoc per-BS fine-tuning of the global FedAvg checkpoint hurts or marginally improves per-BS AUC across all 3 archs and 5 seeds. This empirically confirms the \u00a78 L2 claim that feature-shift personalisation gives little (or actively hurts) on this dataset, directly addressing the FedBN-spirit MC3 concern: the FedBN-style personalisation hypothesis is empirically falsified at the most natural form (post-hoc per-BS Adam fine-tune for K=200 steps) with the same hyperparameters as Phase 5 client step."
+}

@@ -1,0 +1,67 @@
+{
+  "arch": "mamba",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_mamba_fedavg_iid_n7_s42/best.pt",
+  "computed_at": "2026-05-07T01:05:55.328044+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.0019340193938327532,
+      "global_auc": 0.8981397228337676,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8962057034399349
+    },
+    "2": {
+      "delta_personalised_minus_global": -0.0004251613397036058,
+      "global_auc": 0.9114282954461204,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.9110031341064168
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.002456701213123913,
+      "global_auc": 0.9018036442763658,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.8993469430632419
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.0010553550661008826,
+      "global_auc": 0.9238294943683989,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.922774139302298
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.0022419542491537436,
+      "global_auc": 0.9278011661550721,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.9255592119059184
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.0005689807933191293,
+      "global_auc": 0.9298860199019546,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.9293170391086355
+    },
+    "7": {
+      "delta_personalised_minus_global": -0.0008428802097281141,
+      "global_auc": 0.9140312867976871,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.913188406587959
+    }
+  },
+  "seed": 42,
+  "summary": {
+    "mean_delta": -0.0013607217521374487,
+    "n_bs": 7,
+    "std_delta": 0.0008336613606899907
+  },
+  "wall_time_s": 120.91292715072632
+}

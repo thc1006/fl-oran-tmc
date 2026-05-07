@@ -1,0 +1,67 @@
+{
+  "arch": "lstm",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_lstm_fedavg_iid_n7_s1/best.pt",
+  "computed_at": "2026-05-07T01:01:45.230437+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.0006473100774325724,
+      "global_auc": 0.8939792115539572,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8933319014765246
+    },
+    "2": {
+      "delta_personalised_minus_global": 0.0004763162639359608,
+      "global_auc": 0.9110994354464044,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.9115757517103403
+    },
+    "3": {
+      "delta_personalised_minus_global": 0.00019226339246036783,
+      "global_auc": 0.9001988977684992,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.9003911611609595
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.0010273627406391928,
+      "global_auc": 0.9235870923749454,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.9225597296343062
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.0002928969635136447,
+      "global_auc": 0.9264206257322598,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.9261277287687462
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.0003295504930175275,
+      "global_auc": 0.9296016566577163,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.9292721061646988
+    },
+    "7": {
+      "delta_personalised_minus_global": 0.00043282000445288293,
+      "global_auc": 0.9136140729872336,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.9140468929916865
+    }
+  },
+  "seed": 1,
+  "summary": {
+    "mean_delta": -0.00017081723053624653,
+    "n_bs": 7,
+    "std_delta": 0.0005650667458763032
+  },
+  "wall_time_s": 131.78342056274414
+}

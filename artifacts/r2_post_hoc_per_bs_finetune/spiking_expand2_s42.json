@@ -1,0 +1,67 @@
+{
+  "arch": "spiking_expand2",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_spiking_expand2_fedavg_iid_n7_s42/best.pt",
+  "computed_at": "2026-05-07T01:08:12.126483+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.009403209095682374,
+      "global_auc": 0.8293596689078316,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8199564598121493
+    },
+    "2": {
+      "delta_personalised_minus_global": 0.0022465485722780176,
+      "global_auc": 0.8517430917333013,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.8539896403055793
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.0034491830694016734,
+      "global_auc": 0.8324736483811292,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.8290244653117276
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.009371823374375254,
+      "global_auc": 0.8627986680124581,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.8534268446380828
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.009680770816362871,
+      "global_auc": 0.8665430264402187,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.8568622556238559
+    },
+    "6": {
+      "delta_personalised_minus_global": -2.6613042751755245e-05,
+      "global_auc": 0.8756076624684701,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.8755810494257183
+    },
+    "7": {
+      "delta_personalised_minus_global": -0.008401557444298713,
+      "global_auc": 0.8561926975183614,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.8477911400740626
+    }
+  },
+  "seed": 42,
+  "summary": {
+    "mean_delta": -0.005440944038656375,
+    "n_bs": 7,
+    "std_delta": 0.005004537176598984
+  },
+  "wall_time_s": 123.54281520843506
+}

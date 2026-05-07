@@ -363,3 +363,37 @@ def test_r2_c1_aggregate_artifact_exists():
         f"R2 C1 spec must use max_steps=25000; got {d['max_steps_per_seed']}"
     )
     assert d["aggregate"]["n"] == 5
+
+
+# ---------------------------------------------------------------------
+# R2 C3 — post-hoc per-BS fine-tune invariants (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_r2_c3_post_hoc_per_bs_finetune_present_in_paper():
+    """§8 L2 must report C3 result (mean Δ -0.0025, 0/15 cells positive)
+    and per-arch breakdown to substantiate the FedBN-spirit refutation."""
+    md_text = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex_text = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    for s in ("−0.0025", "0/15 cells"):
+        assert s in md_text, (
+            f"R2 C3 §8 L2 markdown must report '{s}' (per-BS fine-tune Δ "
+            f"or cell count). Source: artifacts/r2_post_hoc_per_bs_finetune/aggregated.json"
+        )
+    for s in ("-0.0025", "0/15 cells"):
+        assert s in tex_text, f"R2 C3 §8 L2 LaTeX must report '{s}'"
+
+
+def test_r2_c3_aggregate_artifact_exists():
+    """R2 C3 aggregate artifact must exist for §8 L2 traceability."""
+    p = REPO / "artifacts" / "r2_post_hoc_per_bs_finetune" / "aggregated.json"
+    if not p.exists():
+        pytest.skip("R2 C3 not yet aggregated")
+    import json
+    d = json.loads(p.read_text())
+    assert d["n_cells"] == 15
+    assert d["n_per_bs_observations"] == 105
+    # Must show mean Δ is negative (refutation of personalisation hypothesis)
+    assert d["summary_all_observations"]["mean_delta_personalised_minus_global"] < 0, (
+        "R2 C3 aggregate must show negative mean Δ to substantiate the "
+        "§8 L2 'personalisation hurts' claim"
+    )

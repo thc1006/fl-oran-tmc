@@ -1,0 +1,67 @@
+{
+  "arch": "mamba",
+  "batch_size": 64,
+  "ckpt": "/home/leo07010/fl-oran-tmc/artifacts/v7_stage2_full/v7_mamba_fedavg_iid_n7_s0/best.pt",
+  "computed_at": "2026-05-07T01:03:54.400379+00:00",
+  "finetune_steps": 200,
+  "lr": 0.0005,
+  "mixed_precision": "fp16",
+  "per_bs": {
+    "1": {
+      "delta_personalised_minus_global": -0.0005061057410590264,
+      "global_auc": 0.8964704054531307,
+      "n_test": 271572,
+      "n_train": 2070265,
+      "personalised_auc": 0.8959642997120717
+    },
+    "2": {
+      "delta_personalised_minus_global": -0.0008626994898800477,
+      "global_auc": 0.912217471476666,
+      "n_test": 275403,
+      "n_train": 2036386,
+      "personalised_auc": 0.9113547719867859
+    },
+    "3": {
+      "delta_personalised_minus_global": -0.0008181098332586956,
+      "global_auc": 0.9015424539299801,
+      "n_test": 276250,
+      "n_train": 2074149,
+      "personalised_auc": 0.9007243440967214
+    },
+    "4": {
+      "delta_personalised_minus_global": -0.0026478585535252286,
+      "global_auc": 0.9253368095315133,
+      "n_test": 269915,
+      "n_train": 2096310,
+      "personalised_auc": 0.9226889509779881
+    },
+    "5": {
+      "delta_personalised_minus_global": -0.0026494724971770633,
+      "global_auc": 0.9284680919135824,
+      "n_test": 275455,
+      "n_train": 2077950,
+      "personalised_auc": 0.9258186194164053
+    },
+    "6": {
+      "delta_personalised_minus_global": -0.0005560160101955036,
+      "global_auc": 0.931763581411833,
+      "n_test": 280107,
+      "n_train": 2112057,
+      "personalised_auc": 0.9312075654016375
+    },
+    "7": {
+      "delta_personalised_minus_global": -6.598206205044033e-05,
+      "global_auc": 0.9145387699430557,
+      "n_test": 278314,
+      "n_train": 2040588,
+      "personalised_auc": 0.9144727878810053
+    }
+  },
+  "seed": 0,
+  "summary": {
+    "mean_delta": -0.0011580348838780008,
+    "n_bs": 7,
+    "std_delta": 0.0010509321618749521
+  },
+  "wall_time_s": 129.15365982055664
+}
