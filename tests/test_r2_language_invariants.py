@@ -57,24 +57,36 @@ def test_no_equivalent_training_budget_phrase() -> None:
 
 
 def test_centralized_reference_gap_present() -> None:
-    """A1: after R2 fix, §6.7 must use 'centralized-reference gap' or an
-    equivalent budget-non-equivalence acknowledgement."""
+    """A1: after R2 fix, §6.7 must use a budget-non-equivalence-aware
+    framing for the federation-cost discussion. Round 2 deep-review
+    upgraded the canonical phrasing from 'centralized-reference gap'
+    (which was ambiguous after C1) to 'matched-budget federation cost'
+    (the C1 same-step result, +0.0084 AUC). Both frames are accepted
+    so legacy commits still parse."""
     md = _read(PAPER_DRAFT)
     tex = _read(MAIN_TEX)
-    acceptable = ("centralized-reference gap", "centralized reference gap",
-                  "different optimization budgets",
-                  "different optimisation budgets",
-                  "not be interpreted as a pure federation cost",
-                  "not be interpreted as pure federation cost")
+    acceptable = (
+        # Round 2 deep-review canonical (post-C1)
+        "matched-budget federation cost",
+        "matched compute budget",
+        "matched 25k-step budget",
+        # Phase 3a interim
+        "centralized-reference gap", "centralized reference gap",
+        "different optimization budgets",
+        "different optimisation budgets",
+        # Phase 1 interim
+        "not be interpreted as a pure federation cost",
+        "not be interpreted as pure federation cost",
+    )
     found_md = any(p in md for p in acceptable)
     found_tex = any(p in tex for p in acceptable)
     assert found_md, (
-        f"R2-A1 §6.7 markdown must use centralized-reference framing. "
-        f"Acceptable phrasings: {acceptable}"
+        f"R2-A1 §6.7 markdown must use a budget-non-equivalence-aware "
+        f"framing. Acceptable phrasings: {acceptable}"
     )
     assert found_tex, (
-        f"R2-A1 §6.7 LaTeX must use centralized-reference framing. "
-        f"Acceptable phrasings: {acceptable}"
+        f"R2-A1 §6.7 LaTeX must use a budget-non-equivalence-aware "
+        f"framing. Acceptable phrasings: {acceptable}"
     )
 
 
@@ -169,4 +181,109 @@ def test_magnitude_survived_direction_did_not_present() -> None:
     assert found_tex, (
         f"R2-B4 §6.3/§7.5 LaTeX must use 'magnitude survived' framing. "
         f"Acceptable phrasings: {acceptable}"
+    )
+
+
+# ---------- R2 Round-2 deep-review additions (2026-05-07) ----------
+
+
+def test_no_stale_0_0152_behind_phrasing() -> None:
+    """R2-RA: §6.7 Statistical caveat must NOT call FL '0.0152 AUC behind
+    centralized at 1 epoch' as if it were the federation cost — that
+    contradicts the Phase 3a reframe (+0.0084 is the matched-budget true
+    cost). The 0.0152 number can still appear (in the table + as the
+    historical 1-epoch reference) but not framed as the federation cost."""
+    forbidden = (
+        "FL at ≈0.1 epoch is only 0.0152 AUC behind",
+        "FL at $\\approx 0.1$ epoch is only $0.0152$ AUC behind",
+    )
+    for path in (PAPER_DRAFT, MAIN_TEX):
+        text = _read(path)
+        for phrase in forbidden:
+            assert phrase not in text, (
+                f"R2-RA forbidden phrase {phrase!r} in {path.name}: §6.7 must "
+                f"not frame the 0.0152 number as 'the' gap; the matched-budget "
+                f"+0.0084 number is the true federation cost (R2 C1)."
+            )
+
+
+def test_centralized_25k_steps_table_row_present() -> None:
+    """R2-RB: §6.7 table must include the C1 same-step centralized row
+    (0.9243 / -0.0084) so the table's interpretive load matches the
+    prose's matched-budget framing."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    # Markdown table row
+    assert ("Centralized LSTM, 25k steps" in md
+            and "0.9243" in md and "−0.0084" in md), (
+        "R2-RB §6.7 markdown table must contain a row for 'Centralized LSTM, "
+        "25k steps' with 0.9243 / −0.0084 alongside the 1-epoch row."
+    )
+    # LaTeX table row
+    assert ("Centralized LSTM, 25k steps" in tex and "0.9243" in tex), (
+        "R2-RB §6.7 LaTeX table must contain the 25k-steps row."
+    )
+
+
+def test_matched_budget_cluster_ci_present() -> None:
+    """R2-RC: §6.7 statistical caveat must report cluster CI for BOTH
+    the matched-budget federation cost AND the historical 1-epoch
+    reference gap, with explicit labelling. Prevents reverting to the
+    ambiguous 'centralized-reference gap' singular."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    for phrase in ("matched-budget federation cost", "[+0.001, +0.015]"):
+        assert phrase in md, (
+            f"R2-RC §6.7 markdown must contain '{phrase}' so the matched-"
+            f"budget cluster CI is distinguished from the 1-epoch reference."
+        )
+        assert phrase in tex, (
+            f"R2-RC §6.7 LaTeX must contain '{phrase}'."
+        )
+
+
+def test_c3_within_arch_std_clarification_present() -> None:
+    """R2-RD: §8 L2 must clarify that 0.0036 is cross-OBSERVATION std
+    inflated by per-arch mean spread, with within-arch stds reported
+    separately. Prevents regression to the misleading 'std 0.0036'
+    parenthetical that implied per-cell noise was 0.4pp when actually
+    it's 0.05-0.3pp depending on arch."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    for phrase in ("within-arch", "order of magnitude tighter"):
+        assert phrase in md, (
+            f"R2-RD §8 L2 markdown must contain '{phrase}' to clarify the "
+            f"0.0036 cross-observation std vs the much tighter per-arch stds."
+        )
+        assert phrase in tex, (
+            f"R2-RD §8 L2 LaTeX must contain '{phrase}'."
+        )
+
+
+def test_c4_robustness_scoped_to_lstm() -> None:
+    """R2-RE: §7.1.6 must scope the 'C1 mechanism finding is robust to
+    the embedding choice' claim to the LSTM × FedAvg × natural-by-BS
+    configuration that C4 actually re-trained. Mamba/Spiking weren't
+    re-tested with no-tr; their ≥90% structural claim still rests on
+    the meanfix proxy, not the no-tr ablation."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    # The bare claim must be gone; scoped claim must be present
+    bare = "C1 mechanism finding is robust to the embedding choice."
+    assert bare not in md, (
+        "R2-RE §7.1.6 markdown must SCOPE the 'robust to embedding' claim "
+        "to LSTM (C4 didn't re-test Mamba/Spiking)."
+    )
+    bare_tex = "C1 mechanism finding is robust to the embedding choice."
+    assert bare_tex not in tex, (
+        "R2-RE §7.1.6 LaTeX must SCOPE the 'robust to embedding' claim."
+    )
+    # Scoped phrasing must be present
+    scoped_phrase = "the meanfix proxy above remains the basis"
+    assert scoped_phrase in md, (
+        f"R2-RE §7.1.6 markdown must explicitly note '{scoped_phrase}' "
+        f"for Mamba/Spiking (no no-tr ablation on those archs)."
+    )
+    assert scoped_phrase in tex, (
+        f"R2-RE §7.1.6 LaTeX must explicitly note '{scoped_phrase}'."
     )
