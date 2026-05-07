@@ -260,7 +260,7 @@ class TestInternalConsistency:
 
     def test_has_author_block(self, paper_text: str) -> None:
         """T-M P0 #3: TMC requires author + affiliation + ORCID."""
-        assert "Hao-Chun Tsai" in paper_text or "thc1006" in paper_text
+        assert "Hsiu-Chi Tsai" in paper_text or "thc1006" in paper_text
         assert "ORCID" in paper_text, "paper must include ORCID identifier"
 
     def test_has_references_section(self, paper_text: str) -> None:
