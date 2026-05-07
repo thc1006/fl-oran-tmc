@@ -2,7 +2,7 @@
 
 **Hsiu-Chi Tsai** (thc1006)
 *Department of Computer Science, National Yang Ming Chiao Tung University*
-ORCID: 0009-0009-7115-0149 ·  hctsai1006@cs.nctu.edu.tw
+ORCID: 0000-0001-7421-8027 ·  hctsai1006@cs.nctu.edu.tw
 
 ---
 
