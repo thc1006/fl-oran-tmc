@@ -397,3 +397,36 @@ def test_r2_c3_aggregate_artifact_exists():
         "R2 C3 aggregate must show negative mean Δ to substantiate the "
         "§8 L2 'personalisation hurts' claim"
     )
+
+
+# ---------------------------------------------------------------------
+# R2 C4 — no-tr ablation invariants (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_r2_c4_no_tr_ablation_present_in_paper():
+    """§7.1.6 must report C4 result (mean Δ +0.0006, CI95 excludes 0
+    positive direction). Substantiates 'C1 mechanism survives without
+    tr embedding' empirical confirmation."""
+    md_text = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex_text = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    for s in ("+0.0006", "+0.0003, +0.0010"):
+        assert s in md_text, (
+            f"R2 C4 §7.1.6 markdown must report '{s}' (no-tr Δ or CI95). "
+            f"Source: artifacts/r2_no_tr_ablation/aggregated.json"
+        )
+        assert s in tex_text, f"R2 C4 §7.1.6 LaTeX must report '{s}'"
+
+
+def test_r2_c4_aggregate_artifact_exists():
+    """R2 C4 aggregate must exist; mean Δ must exclude 0 in positive
+    direction (no-tr ≥ Phase 5)."""
+    p = REPO / "artifacts" / "r2_no_tr_ablation" / "aggregated.json"
+    if not p.exists():
+        pytest.skip("R2 C4 not yet aggregated")
+    import json
+    d = json.loads(p.read_text())
+    assert d["n_paired_seeds"] == 10
+    assert d["summary"]["ci95_lo"] > 0, (
+        "R2 C4 paired CI95 lower bound must be > 0 (no-tr ≥ Phase 5) for "
+        "the §7.1.6 'C1 mechanism survives without tr embedding' claim"
+    )

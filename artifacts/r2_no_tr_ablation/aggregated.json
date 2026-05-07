@@ -1,0 +1,77 @@
+{
+  "computed_at": "2026-05-07T01:39:57.553612+00:00",
+  "description": "R2 C4 no-tr ablation vs Phase 5 LSTM \u00d7 FedAvg \u00d7 natural-by-BS",
+  "n_paired_seeds": 10,
+  "per_seed": [
+    {
+      "seed": 0,
+      "no_tr": 0.9163866129597118,
+      "with_tr_phase5": 0.9164104275145549,
+      "delta": -2.381455484312678e-05
+    },
+    {
+      "seed": 1,
+      "no_tr": 0.9169479825327733,
+      "with_tr_phase5": 0.9149700351068929,
+      "delta": 0.001977947425880422
+    },
+    {
+      "seed": 2,
+      "no_tr": 0.9169821276867685,
+      "with_tr_phase5": 0.9156521688036081,
+      "delta": 0.0013299588831603426
+    },
+    {
+      "seed": 3,
+      "no_tr": 0.9163958067267329,
+      "with_tr_phase5": 0.9157104467955532,
+      "delta": 0.0006853599311796854
+    },
+    {
+      "seed": 4,
+      "no_tr": 0.9167094201477332,
+      "with_tr_phase5": 0.916012294710011,
+      "delta": 0.000697125437722157
+    },
+    {
+      "seed": 5,
+      "no_tr": 0.9161011893036188,
+      "with_tr_phase5": 0.9156773353866667,
+      "delta": 0.0004238539169520994
+    },
+    {
+      "seed": 6,
+      "no_tr": 0.9163229204586683,
+      "with_tr_phase5": 0.9162511821793881,
+      "delta": 7.173827928019794e-05
+    },
+    {
+      "seed": 7,
+      "no_tr": 0.9164624706642508,
+      "with_tr_phase5": 0.9162834740530691,
+      "delta": 0.00017899661118170318
+    },
+    {
+      "seed": 8,
+      "no_tr": 0.9158788468472353,
+      "with_tr_phase5": 0.9159272338614873,
+      "delta": -4.838701425202707e-05
+    },
+    {
+      "seed": 42,
+      "no_tr": 0.9171920350358505,
+      "with_tr_phase5": 0.9161524843636635,
+      "delta": 0.001039550672186973
+    }
+  ],
+  "summary": {
+    "mean_delta_no_tr_minus_phase5": 0.0006332329588448427,
+    "std_delta": 0.0006605840266692739,
+    "ci95_lo": 0.00026758198437999367,
+    "ci95_hi": 0.0010377026377042403,
+    "ci95_excludes_zero": true,
+    "abs_mean_delta": 0.0006332329588448427
+  },
+  "verdict": "tr is mostly cosmetic \u2192 C1 mechanism robust; \u00a77.1.6 strengthened",
+  "interpretation": "\u00a77.1.6 quantified the test-time tr-embedding bug (rows 22-29 stay at fresh init = random input at test time) as contributing \u226410% of the natural-by-BS gap across all 3 archs. C4 removes the tr embedding entirely. If |\u0394| ~ 0, the with-tr Phase 5 model was essentially using random-input tr at test time anyway \u2192 C4 result EMPIRICALLY confirms \u00a77.1.6's quantification."
+}
