@@ -328,3 +328,38 @@ class TestHookFixturesValid:
         if STEP2.exists():
             s = json.loads(STEP2.read_text())
             assert "C1_per_feature_pairwise_bs_KL" in s
+
+
+# ---------------------------------------------------------------------
+# R2 C1 — same-step centralized invariants (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_r2_c1_same_step_centralized_present_in_paper():
+    """§6.7 §F1 must report C1 same-step centralized result (0.9243)
+    + the same-budget federation cost (+0.0084 AUC). Prevents regression
+    where the §6.7 "federation cost = +0.0152" framing is silently
+    re-introduced (the original A1 reasoning error)."""
+    md_text = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex_text = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    # Same-budget centralized AUC
+    for s in ("0.9243", "+0.0084"):
+        assert s in md_text, (
+            f"R2 C1 §6.7 markdown must report '{s}' (same-budget centralized "
+            f"or paired Δ). Source: artifacts/r2_same_step_centralized/aggregated.json"
+        )
+        assert s in tex_text, (
+            f"R2 C1 §6.7 LaTeX must report '{s}'"
+        )
+
+
+def test_r2_c1_aggregate_artifact_exists():
+    """R2 C1 aggregate artifact must exist for §6.7 traceability."""
+    p = REPO / "artifacts" / "r2_same_step_centralized" / "aggregated.json"
+    if not p.exists():
+        pytest.skip("R2 C1 not yet aggregated (run experiments/specs/r2_same_step_centralized.yaml + aggregator)")
+    import json
+    d = json.loads(p.read_text())
+    assert d["max_steps_per_seed"] == 25_000, (
+        f"R2 C1 spec must use max_steps=25000; got {d['max_steps_per_seed']}"
+    )
+    assert d["aggregate"]["n"] == 5

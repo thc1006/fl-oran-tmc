@@ -107,8 +107,8 @@ def _build_per_bs_tensors(
     """Load the unified parquet, engineer features, build sequences,
     return per-BS train+test tensors as a dict keyed by bs_id.
 
-    Reuses the same data pipeline as Phase 5 / centralized_v3 so the
-    train/test split + standardisation are identical."""
+    Reuses the same data pipeline as run_p1_centralized_lstm.py so the
+    train/test split + standardisation are identical to Phase 5."""
     sys.path.insert(0, str(REPO_ROOT / "src"))
     from fl_oran.data_v2.features import engineer_features
     from fl_oran.data_v2.split import ood_split_by_tr
@@ -118,28 +118,40 @@ def _build_per_bs_tensors(
 
     df = pd.read_parquet(parquet_path)
     df = engineer_features(df)
-    train_df, val_df, test_df = ood_split_by_tr(df)
-    scaler = fit_continuous_scaler(train_df, schema.continuous)
+    split = ood_split_by_tr(df)
+
+    feat_cols = list(schema.categorical) + list(schema.continuous)
+    train_arr = split.train[feat_cols].to_numpy(dtype=np.float32)
+    scaler = fit_continuous_scaler({0: train_arr}, schema)
+    n_cat = schema.n_categorical
 
     per_bs: dict[int, dict] = {}
-    for bs_id in sorted(train_df["bs_id"].unique()):
-        tr_bs = train_df[train_df["bs_id"] == bs_id]
-        te_bs = test_df[test_df["bs_id"] == bs_id]
+    for bs_id in sorted(split.train["bs_id"].unique()):
+        tr_bs = split.train[split.train["bs_id"] == bs_id]
+        te_bs = split.test[split.test["bs_id"] == bs_id]
         if len(tr_bs) == 0 or len(te_bs) == 0:
             continue
-        cat_tr, cont_tr, y_tr, _ = build_run_sequences(
-            tr_bs, schema, scaler, seq_len=5, threshold=0.10,
+        Xtr, Ytr = build_run_sequences(
+            tr_bs, feat_cols, ["y_sla_violation_next"], seq_len=5,
         )
-        cat_te, cont_te, y_te, _ = build_run_sequences(
-            te_bs, schema, scaler, seq_len=5, threshold=0.10,
+        Xte, Yte = build_run_sequences(
+            te_bs, feat_cols, ["y_sla_violation_next"], seq_len=5,
         )
+        if len(Ytr) == 0 or len(Yte) == 0:
+            continue
+        cat_tr = Xtr[..., :n_cat].astype(np.int64)
+        cont_tr = (Xtr[..., n_cat:].astype(np.float32) - scaler.mean) / scaler.std
+        y_tr = Ytr.squeeze(-1).astype(np.float32)
+        cat_te = Xte[..., :n_cat].astype(np.int64)
+        cont_te = (Xte[..., n_cat:].astype(np.float32) - scaler.mean) / scaler.std
+        y_te = Yte.squeeze(-1).astype(np.float32)
         per_bs[int(bs_id)] = dict(
             cat_tr=torch.from_numpy(cat_tr).to(device),
             cont_tr=torch.from_numpy(cont_tr).to(device),
-            y_tr=torch.from_numpy(y_tr).to(device).float().unsqueeze(-1),
+            y_tr=torch.from_numpy(y_tr).to(device).unsqueeze(-1),
             cat_te=torch.from_numpy(cat_te).to(device),
             cont_te=torch.from_numpy(cont_te).to(device),
-            y_te=torch.from_numpy(y_te).to(device).float().unsqueeze(-1),
+            y_te=torch.from_numpy(y_te).to(device).unsqueeze(-1),
         )
     return per_bs
 
