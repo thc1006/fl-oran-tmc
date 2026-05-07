@@ -430,3 +430,40 @@ def test_r2_c4_aggregate_artifact_exists():
         "R2 C4 paired CI95 lower bound must be > 0 (no-tr ≥ Phase 5) for "
         "the §7.1.6 'C1 mechanism survives without tr embedding' claim"
     )
+
+
+# ---------------------------------------------------------------------
+# REM-2 — logreg + categorical baseline (added 2026-05-07)
+# ---------------------------------------------------------------------
+
+def test_rem2_logreg_with_categorical_present():
+    """§6.7 table must include the logreg+categorical baseline row
+    (52 features, 0.6565 AUC) per R2 reviewer #13. Δ vs continuous-
+    only logreg (0.6523) is +0.0042 — confirms §7.1.6 categorical-
+    minimal-signal finding."""
+    md = (REPO / "docs" / "PAPER_DRAFT.md").read_text(encoding="utf-8")
+    tex = (REPO / "paper" / "main.tex").read_text(encoding="utf-8")
+    for s in ("0.6565", "52 features"):
+        assert s in md, f"REM-2 §6.7 markdown must contain '{s}'"
+    assert "0.6565" in tex and "52 features" in tex, (
+        "REM-2 §6.7 LaTeX must contain logreg+categorical row"
+    )
+
+
+def test_rem2_logreg_with_categorical_artifact():
+    """REM-2 result must be persisted in artifacts/baselines/naive_results.json."""
+    p = REPO / "artifacts" / "baselines" / "naive_results.json"
+    if not p.exists():
+        pytest.skip("naive_results.json missing")
+    import json
+    d = json.loads(p.read_text())
+    if "logreg_plus_cat_test_auc" not in d:
+        pytest.skip("logreg+cat not yet run")
+    auc = d["logreg_plus_cat_test_auc"]
+    assert 0.65 < auc < 0.70, (
+        f"REM-2 logreg_plus_cat_test_auc out of expected envelope: {auc}"
+    )
+    n_feat = d["logreg_plus_cat_n_features"]
+    assert n_feat == 52, (
+        f"REM-2 expected 52 features (17 continuous + 35 OHE), got {n_feat}"
+    )

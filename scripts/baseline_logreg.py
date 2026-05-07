@@ -62,6 +62,13 @@ def main() -> int:
     )
     ap.add_argument("--max-iter", type=int, default=1000)
     ap.add_argument(
+        "--include-categorical",
+        action="store_true",
+        help="Also one-hot encode V3_CATEGORICAL (slice_id, sched, tr) and "
+             "concat with V3_CONTINUOUS (R2 reviewer #13 suggestion: report "
+             "logreg-with-categorical alongside logreg-continuous-only).",
+    )
+    ap.add_argument(
         "--out",
         type=Path,
         default=Path("artifacts/baselines/naive_results.json"),
@@ -77,7 +84,7 @@ def main() -> int:
     from sklearn.metrics import f1_score, roc_auc_score
     from fl_oran.data_v2.features import engineer_features
     from fl_oran.data_v2.split import ood_split_by_tr
-    from fl_oran.training.centralized_v3 import V3_CONTINUOUS
+    from fl_oran.training.centralized_v3 import V3_CATEGORICAL, V3_CONTINUOUS
 
     print(f"Loading parquet: {args.parquet}")
     df = pd.read_parquet(args.parquet)
@@ -95,8 +102,32 @@ def main() -> int:
     X_test = split.test[feature_cols].values.astype(np.float32)
     y_test = split.test["y_sla_violation_next"].values.astype(np.int32)
 
+    if args.include_categorical:
+        # R2 reviewer #13 suggestion. One-hot encode V3_CATEGORICAL using
+        # train-set categories only; test-time categories not in train fall
+        # to all-zero (OOD-safe). For tr ∈ {25..27}, all 3 test-tr OHE
+        # columns are all-zero — matches the nn.Embedding(30, 8) random-init
+        # behaviour at test time documented in §7.1.6.
+        cat_cols = [c for c in V3_CATEGORICAL if c in split.train.columns]
+        train_cats: dict[str, np.ndarray] = {}
+        for c in cat_cols:
+            train_cats[c] = np.sort(split.train[c].dropna().unique())
+        def _ohe(df_split, c, cats):
+            arr = df_split[c].to_numpy()
+            out = np.zeros((len(arr), len(cats)), dtype=np.float32)
+            for j, v in enumerate(cats):
+                out[:, j] = (arr == v).astype(np.float32)
+            return out
+        ohe_train = [_ohe(split.train, c, train_cats[c]) for c in cat_cols]
+        ohe_test  = [_ohe(split.test,  c, train_cats[c]) for c in cat_cols]
+        X_train = np.hstack([X_train] + ohe_train).astype(np.float32)
+        X_test  = np.hstack([X_test]  + ohe_test ).astype(np.float32)
+        n_cat_dims = sum(len(train_cats[c]) for c in cat_cols)
+        print(f"+categorical OHE: {len(cat_cols)} cat cols → {n_cat_dims} dims; "
+              f"total feature_dim = {X_train.shape[1]}")
+
     print(f"Train rows: {len(X_train):,}; test rows: {len(X_test):,}")
-    print(f"Feature count: {len(feature_cols)} (V3_CONTINUOUS expected 17)")
+    print(f"Feature count: {X_train.shape[1]} (V3_CONTINUOUS expected 17{'+ V3_CATEGORICAL OHE' if args.include_categorical else ''})")
 
     print("\nFitting LogisticRegression …")
     est = fit_logreg(X_train, y_train, max_iter=args.max_iter)
@@ -112,12 +143,21 @@ def main() -> int:
     print(f"  ROC-AUC:                     {test_auc:.4f}")
     print(f"  F1:                          {test_f1:.4f}")
 
-    payload = {
-        "logreg_test_auc": test_auc,
-        "logreg_test_f1": test_f1,
-        "logreg_n_features": int(len(feature_cols)),
-        "logreg_computed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
-    }
+    if args.include_categorical:
+        payload = {
+            "logreg_plus_cat_test_auc": test_auc,
+            "logreg_plus_cat_test_f1": test_f1,
+            "logreg_plus_cat_n_features": int(X_train.shape[1]),
+            "logreg_plus_cat_n_continuous": int(len(feature_cols)),
+            "logreg_plus_cat_computed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
+    else:
+        payload = {
+            "logreg_test_auc": test_auc,
+            "logreg_test_f1": test_f1,
+            "logreg_n_features": int(len(feature_cols)),
+            "logreg_computed_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
     # Reuse positive_rate/n_test_rows if last_bler script already populated them
     merged = _merge_results_json(args.out, payload)
     print(f"\nWrote {args.out} (keys: {sorted(merged.keys())})")
