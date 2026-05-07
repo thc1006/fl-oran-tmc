@@ -301,10 +301,10 @@ def test_rem_a_l16_privacy_caveat_present() -> None:
     md = _read(PAPER_DRAFT)
     tex = _read(MAIN_TEX)
     # L16 must exist in §8
-    assert "L16 (added 2026-05-07 per reviewer R2 #4" in md, (
+    assert "L16 (FL is not formal privacy)" in md, (
         "REM-A §8 L16 markdown header missing"
     )
-    assert "L16 (added 2026-05-07 per reviewer R2 \\#4" in tex, (
+    assert "L16 (FL is not formal privacy)" in tex, (
         "REM-A §8 L16 LaTeX header missing"
     )
     # FL ≠ formal privacy phrasing

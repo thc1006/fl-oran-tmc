@@ -69,14 +69,19 @@
 
 % --- Cellular FL on real telemetry (§1 paragraph 4) ---
 
-@misc{FedLSTM2022,
-    author    = {{(authors)}},
-    title     = {{Fed-LSTM}: {LSTM} Forecaster for Slice-level Traffic in Cellular {FL}},
-    year      = {2022}
+@inproceedings{FedLSTM2022,
+    author    = {Pu, Liyuan and Cui, Qimei and Li, Xiangjun and Zhao, Borui
+                 and Ni, Wei and Ai, Ming and Tao, Xiaofeng},
+    title     = {Federated Learning-based Heterogeneous Load Prediction and
+                 Slicing for {5G} Systems and Beyond},
+    booktitle = {IEEE GLOBECOM},
+    pages     = {166--172},
+    year      = {2022},
+    doi       = {10.1109/GLOBECOM48099.2022.10000870}
 }
 
 @misc{arXiv2508_08479,
-    author    = {{(authors)}},
+    author    = {Dutta, Yuvraj and Chatterjee, Soumyajit and Chakraborty, Sandip and Palit, Basabdatta},
     title     = {{FedAvg/FedProx/FedBN} benchmark on five throughput-prediction datasets},
     note      = {arXiv:2508.08479},
     year      = {2025}
@@ -121,14 +126,14 @@
 }
 
 @misc{ProFed2025,
-    author    = {{(authors)}},
-    title     = {{ProFed}: Proximity-partition Framing for {FL}},
+    author    = {Domini, Davide and Aguzzi, Gianluca and Viroli, Mirko},
+    title     = {{ProFed}: a Benchmark for Proximity-based non-{IID} Federated Learning},
     note      = {arXiv:2503.20618},
     year      = {2025}
 }
 
 @misc{arXiv2504_16185,
-    author    = {{(authors)}},
+    author    = {Minus, Emily and Coley, R. Yates and Shortreed, Susan M. and Williamson, Brian D.},
     title     = {Rare-event Metric Stability Under Threshold Perturbation},
     note      = {arXiv:2504.16185},
     year      = {2025}
@@ -155,29 +160,36 @@
 }
 
 @misc{FedSynSAM2026,
-    author    = {{(authors)}},
-    title     = {{FedSynSAM}: Trajectory-matched Sharpness-aware Federated Learning},
-    note      = {arXiv:2602.11584},
+    author    = {Gu, Yujie and Jin, Richeng and Zhang, Zhaoyang and Dai, Huaiyu},
+    title     = {Gradient Compression May Hurt Generalization: A Remedy by
+                 Synthetic Data Guided Sharpness Aware Minimization},
+    note      = {arXiv:2602.11584; introduces the {FedSynSAM} method},
     year      = {2026}
 }
 
 @misc{arXiv2510_23463,
-    author    = {{(authors)}},
-    title     = {Differential Privacy via Over-the-air Channel Noise in Federated Learning},
+    author    = {Liang, Hao and Wen, Haifeng and Wu, Kaishun and Xing, Hong},
+    title     = {Differential Privacy as a Perk: Federated Learning over
+                 Multiple-Access Fading Channels with a Multi-Antenna Base Station},
     note      = {arXiv:2510.23463},
     year      = {2026}
 }
 
-@misc{arXiv2502_01330,
-    author    = {{(authors)}},
-    title     = {Neuromorphic {FL} Deployment on {Loihi 2} with Sparse {RNN} Kernels},
+@inproceedings{arXiv2502_01330,
+    author    = {Pierro, Alessandro and Abreu, Steven and Timcheck, Jonathan
+                 and Stratmann, Philipp and Wild, Andreas and Shrestha, Sumit Bam},
+    title     = {Accelerating Linear Recurrent Neural Networks for the Edge
+                 with Unstructured Sparsity},
+    booktitle = {ICML},
     note      = {arXiv:2502.01330},
     year      = {2025}
 }
 
 @misc{arXiv2604_27004,
-    author    = {{(authors)}},
-    title     = {Sparse {RNN} Kernels for Neuromorphic Inference},
+    author    = {Lundstrom-Imanov, Gustav Olaf Yunus Laitinen-Fredriksson
+                 and Yilmaz, Taner},
+    title     = {{EdgeSpike}: Spiking Neural Networks for Low-Power Autonomous
+                 Sensing in Edge {IoT} Architectures},
     note      = {arXiv:2604.27004},
     year      = {2026}
 }
@@ -209,23 +221,23 @@
 % --- §2.2 FL on cellular and wireless ---
 
 @article{Statistical2021_B5G,
-    author    = {{(authors)}},
-    title     = {Statistical Federated Learning for Beyond-5G {SLA}-Constrained
+    author    = {Chergui, Hatim and Blanco, Luis and Verikoukis, Christos},
+    title     = {Statistical Federated Learning for Beyond-{5G} {SLA}-Constrained
                  {RAN} Slicing},
-    journal   = {IEEE},
-    note      = {Source markdown lists no arXiv ID; specific paper requires
-                 external lookup at camera-ready},
-    year      = {2021}
+    journal   = {IEEE Transactions on Wireless Communications},
+    volume    = {21},
+    number    = {3},
+    pages     = {2066--2076},
+    year      = {2022}
 }
 
-@article{CDFaware2021,
-    author    = {{(authors)}},
-    title     = {{CDF}-Aware Federated Learning for {RAN} Slicing under
-                 Long-Term {SLA} Constraints},
-    journal   = {IEEE},
-    note      = {Source markdown lists no arXiv ID; specific paper requires
-                 external lookup at camera-ready},
-    year      = {2021}
+@inproceedings{CDFaware2021,
+    author    = {Chergui, Hatim and Blanco, Luis and Verikoukis, Christos},
+    title     = {{CDF}-Aware Federated Learning for Low {SLA} Violations in
+                 Beyond {5G} Network Slicing},
+    booktitle = {IEEE ICC},
+    year      = {2021},
+    doi       = {10.1109/ICC42927.2021.9501058}
 }
 
 @misc{Groen2023_TRACTOR,
@@ -280,18 +292,22 @@
 }
 
 @inproceedings{SpikingPointMamba2025,
-    author    = {{(authors)}},
-    title     = {Spiking Point {Mamba} for {3D} Point Cloud Processing},
+    author    = {Wu, Peixi and others},
+    title     = {Efficient Spiking Point {Mamba} for Point Cloud Analysis},
     booktitle = {ICCV},
-    note      = {Author list TBD at camera-ready},
+    note      = {arXiv:2504.14371},
     year      = {2025}
 }
 
 @inproceedings{SpikingSSMs2025,
-    author    = {{(authors)}},
+    author    = {Shen, Shuaijie and Wang, Chao and Huang, Renzhuo and Zhong, Yan
+                 and Guo, Qinghai and Lu, Zhichao and Zhang, Jianguo and Leng, Luziwei},
     title     = {{SpikingSSMs}: Sparse-Parallel Spiking State-Space Models},
     booktitle = {AAAI},
-    note      = {Author list TBD at camera-ready},
+    volume    = {39},
+    number    = {19},
+    pages     = {20380--20388},
+    note      = {arXiv:2408.14909},
     year      = {2025}
 }
 
@@ -328,7 +344,7 @@
 }
 
 @inproceedings{arXiv2412_17305_FedLEC,
-    author    = {{(authors)}},
+    author    = {Yu, Di and Du, Xin and Jiang, Linshan and Zhang, Huijing and Deng, Shuiguang},
     title     = {{FedLEC}: Federated Learning with Spiking Neural Networks
                  under Label-skew Non-IID},
     booktitle = {IJCAI},
@@ -364,7 +380,7 @@
 }
 
 @inproceedings{arXiv2602_12009_DPSNNFL,
-    author    = {{(authors)}},
+    author    = {Pereira, Luiz and Perkusich, Mirko and Valadares, Dalton and Gorg{\^o}nio, Kyller},
     title     = {Firing-rate Sensitivity to Differential Privacy in Federated
                  Spiking Neural Networks},
     booktitle = {ICASSP},
