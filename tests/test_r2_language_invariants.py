@@ -287,3 +287,55 @@ def test_c4_robustness_scoped_to_lstm() -> None:
     assert scoped_phrase in tex, (
         f"R2-RE §7.1.6 LaTeX must explicitly note '{scoped_phrase}'."
     )
+
+
+# ---------- REM-A — §8 L16 privacy caveat (added 2026-05-07) ----------
+
+
+def test_rem_a_l16_privacy_caveat_present() -> None:
+    """REM-A: §8 L16 must exist with FL ≠ formal privacy framing + DLG
+    cite (Zhu et al. 2019). Prevents regression where someone removes
+    L16 leaving the abstract's 'see §8 L16' as a dangling forward-ref
+    (which is what created REM-A in the first place when the abstract
+    said L17 but §8 stopped at L15)."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    # L16 must exist in §8
+    assert "L16 (added 2026-05-07 per reviewer R2 #4" in md, (
+        "REM-A §8 L16 markdown header missing"
+    )
+    assert "L16 (added 2026-05-07 per reviewer R2 \\#4" in tex, (
+        "REM-A §8 L16 LaTeX header missing"
+    )
+    # FL ≠ formal privacy phrasing
+    for path, text in [(PAPER_DRAFT, md), (MAIN_TEX, tex)]:
+        has_fl_neq = ("FL ≠ formal privacy" in text or
+                      "FL $\\neq$ formal privacy" in text)
+        assert has_fl_neq, (
+            f"REM-A §8 L16 in {path.name} must explicitly say "
+            f"'FL ≠ formal privacy' (or LaTeX equivalent)"
+        )
+    # DLG citation (Zhu et al. 2019, arXiv:1906.08935)
+    assert "1906.08935" in md, "REM-A §8 L16 must cite arXiv:1906.08935 (DLG)"
+    assert "Zhu2019_DLG" in tex, "REM-A §8 L16 LaTeX must cite Zhu2019_DLG"
+
+
+def test_rem_a_abstract_forward_ref_to_l16_not_l17() -> None:
+    """REM-A: abstract forward-ref must say 'see §8 L16' (or LaTeX
+    equivalent), NOT L17 — L17 doesn't exist; that was the dangling
+    ref I created in B1 abstract fix and corrected here."""
+    md = _read(PAPER_DRAFT)
+    tex = _read(MAIN_TEX)
+    assert "see §8 L16" in md, (
+        "REM-A abstract markdown must forward-ref §8 L16"
+    )
+    assert "Section~\\ref{sec:limits} L16" in tex, (
+        "REM-A abstract LaTeX must forward-ref Section~\\ref{sec:limits} L16"
+    )
+    # Forbidden: dangling L17 ref must NOT be reintroduced
+    assert "see §8 L17" not in md, (
+        "REM-A REGRESSION: 'see §8 L17' is dangling (L17 doesn't exist)"
+    )
+    assert "Section~\\ref{sec:limits} L17" not in tex, (
+        "REM-A REGRESSION: 'Section ref L17' is dangling"
+    )
