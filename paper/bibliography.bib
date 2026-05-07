@@ -14,12 +14,19 @@
 }
 
 @article{Bonati2024,
-    author    = {Bonati, Leonardo and others},
-    title     = {{Colosseum}: Large-Scale Wireless Experimentation Through
-                 Hardware-in-the-Loop Network Emulation},
+    author    = {Polese, Michele and Bonati, Leonardo and D'Oro, Salvatore
+                 and Johari, Pedram and Villa, Davide and Velumani, Sakthivel
+                 and Gangula, Rajeev and Tsampazi, Maria and
+                 Robinson, Clifton Paul and Gemmi, Gabriele and
+                 Lacava, Andrea and Maxenti, Stefano and Cheng, Hai
+                 and Melodia, Tommaso},
+    title     = {{Colosseum}: The Open {RAN} Digital Twin},
     journal   = {IEEE Open Journal of the Communications Society},
+    volume    = {5},
+    pages     = {5452--5466},
     year      = {2024},
-    month     = aug
+    month     = aug,
+    note      = {arXiv:2404.17317}
 }
 
 % --- FL benchmarks (S11-C / §1 paragraph 3 + §2.1) ---
@@ -43,15 +50,18 @@
 }
 
 @misc{Song2022_FLAIR,
-    author    = {Song, others},
+    author    = {Song, Congzheng and Granqvist, Filip and Talwar, Kunal},
     title     = {{FLAIR}: Federated Learning Annotated Image Repository},
     year      = {2022}
 }
 
 @inproceedings{Granqvist2024_pflresearch,
-    author    = {Granqvist, Filip and others},
+    author    = {Granqvist, Filip and Song, Congzheng and Cahill, {\'A}ine
+                 and van Dalen, Rogier and Pelikan, Martin and
+                 Chan, Yi Sheng and Feng, Xiaojun and
+                 Krishnaswami, Natarajan and Jina, Vojta and Chitnis, Mona},
     title     = {{pfl-research}: Simulation Framework for Accelerating
-                 Federated Learning Research},
+                 Research in Private Federated Learning},
     booktitle = {NeurIPS Datasets and Benchmarks},
     note      = {arXiv:2404.06430},
     year      = {2024}
@@ -59,11 +69,14 @@
 
 % --- Spiking benchmarks (§2.3) ---
 
-@article{Shen2025_STEP,
-    author    = {Shen, others},
+@inproceedings{Shen2025_STEP,
+    author    = {Shen, Sicheng and Zhao, Dongcheng and Feng, Linghao
+                 and Yue, Zeyang and Li, Jindong and Li, Tenglong
+                 and Shen, Guobin and Zeng, Yi},
     title     = {{STEP}: A Unified Spiking Transformer Evaluation Platform for
                  Fair and Reproducible Benchmarking},
-    journal   = {arXiv:2505.11151},
+    booktitle = {NeurIPS},
+    note      = {arXiv:2505.11151},
     year      = {2025}
 }
 
@@ -87,17 +100,23 @@
     year      = {2025}
 }
 
-@misc{Mangi2026,
-    author    = {Mangi and others},
-    title     = {{When Clients Drift}: Regime-aware Aggregation in {6G} {RAN} Telemetry},
-    year      = {2026}
+@article{Mangi2026,
+    author    = {Mangi, Paras and Bibi, Sadaf and Nawaz, Ali and Bibi, Sadia},
+    title     = {{When Clients Drift}: Federated {SLA}-Risk Forecasting Across
+                 Unseen {6G} {RAN} Regimes},
+    journal   = {Spectrum of Engineering Sciences},
+    year      = {2026},
+    note      = {no arXiv preprint located 2026-05-08}
 }
 
 % --- Algorithms cited from §1 contribution 2 (mechanism dismissal) ---
 
 @inproceedings{Liu2025_FedSWA,
-    author    = {Liu, Junwei and others},
-    title     = {{FedSWA}: Federated Stochastic Weight Averaging},
+    author    = {Liu, Junkang and Liu, Yuanyuan and Shang, Fanhua and
+                 Liu, Hongying and Liu, Jin and Feng, Wei},
+    title     = {{FedSWA}: Improving Generalization in Federated Learning
+                 with Highly Heterogeneous Data via Stochastic Controlled
+                 Weight Averaging},
     booktitle = {ICML},
     year      = {2025},
     note      = {arXiv:2507.20016}
@@ -118,9 +137,12 @@
 % main.tex or supplementary.tex must have a BibTeX entry. These will be
 % wired in once §9.1 / App. D are migrated (S11-G / S11-H).
 
-@misc{Borges2025,
-    author    = {Borges and others},
-    title     = {Per-axis Isolation Methodology for {FL} Heterogeneity Studies},
+@misc{JimenezGutierrez2025_NonIID,
+    author    = {Jimenez-Gutierrez, Daniel M. and Hassanzadeh, Mehrdad
+                 and Anagnostopoulos, Aris and Chatzigiannakis, Ioannis
+                 and Vitaletti, Andrea},
+    title     = {A Thorough Assessment of the Non-{IID} Data Impact in
+                 Federated Learning},
     note      = {arXiv:2503.17070},
     year      = {2025}
 }
@@ -140,15 +162,18 @@
 }
 
 @misc{Chiarani2025,
-    author    = {Chiarani and others},
-    title     = {{FL} at the 100-client Regime},
+    author    = {Chiarani, Martino and Roy, Swastika and
+                 Verikoukis, Christos and Granelli, Fabrizio},
+    title     = {{XAI}-Driven Client Selection for {FL} in Scalable
+                 {6G} Network Slicing},
     note      = {arXiv:2503.12435},
     year      = {2025}
 }
 
 @misc{Sezgin2025,
-    author    = {Sezgin and others},
-    title     = {Cross-device {FL} Scaling Study},
+    author    = {Sezgin, Yusuf Emir and {\"O}zdem, Mehmet and Bilen, Tu{\u{g}}{\c{c}}e},
+    title     = {Federated Edge Learning for Predictive Maintenance in
+                 {6G} Small Cell Networks},
     note      = {arXiv:2509.11421},
     year      = {2025}
 }
@@ -212,7 +237,7 @@
 }
 
 @misc{Shchur2025_fevbench,
-    author    = {Shchur, Oleksandr and others},
+    author    = {Shchur, Oleksandr and Ansari, Abdul Fatir and Turkmen, Caner and Stella, Lorenzo and Erickson, Nick and Guerron, Pablo and Bohlke-Schneider, Michael and Wang, Yuyang},
     title     = {{fev-bench}: A Realistic Benchmark for Time Series Forecasting},
     note      = {arXiv:2509.26468},
     year      = {2025}
@@ -262,9 +287,10 @@
 }
 
 @misc{Hayek2025,
-    author    = {Hayek and others},
-    title     = {Empirical Evaluation of Federated Learning Convergence over
-                 Heterogeneous {COTS} Networks},
+    author    = {Hayek, Robert J. and Comer, Kayla and Chung, Joaquin
+                 and Murthy, Chandra R. and Kettimuthu, Rajkumar and Kadota, Igor},
+    title     = {Beyond Assumptions: Measuring Federated Learning over Real
+                 {5G} Networks},
     note      = {arXiv:2504.04678},
     year      = {2025}
 }
@@ -292,7 +318,7 @@
 }
 
 @inproceedings{SpikingPointMamba2025,
-    author    = {Wu, Peixi and others},
+    author    = {Wu, Peixi and Chai, Bosong and Zheng, Menghua and Li, Wei and Hu, Zhangchi and Chen, Jie and Zhang, Zheyu and Li, Hebei and Sun, Xiaoyan},
     title     = {Efficient Spiking Point {Mamba} for Point Cloud Analysis},
     booktitle = {ICCV},
     note      = {arXiv:2504.14371},
@@ -400,7 +426,7 @@
 % --- §2.4 GPU energy measurement methodology ---
 
 @inproceedings{Shen2023_BitBudget,
-    author    = {Shen and others},
+    author    = {Shen, Guobin and Zhao, Dongcheng and Li, Tenglong and Li, Jindong and Zeng, Yi},
     title     = {Is Conventional {SNN} Really Efficient? A Perspective from
                  Network Quantization},
     booktitle = {CVPR},
@@ -418,23 +444,33 @@
 }
 
 @article{Yik2025_NeuroBench,
-    author    = {Yik, Jason and others},
+    author    = {Yik, Jason and Van den Berghe, Korneel and den Blanken, Douwe
+                 and Bouhadjar, Younes and Fabre, Maxime and Hueber, Paul
+                 and Ke, Weijie and Khoei, Mina A. and Kleyko, Denis
+                 and Pacik-Nelson, Noah and Pierro, Alessandro
+                 and Stratmann, Philipp and Sun, Pao-Sheng Vincent
+                 and Tang, Guangzhi and Wang, Shenqi and Zhou, Biyan
+                 and Reddi, Vijay Janapa and Frenkel, Charlotte and others},
     title     = {{NeuroBench}: A Framework for Benchmarking Neuromorphic
                  Computing Algorithms and Systems},
     journal   = {Nature Communications},
-    year      = {2025}
+    year      = {2025},
+    note      = {arXiv:2304.04640; published Feb. 11, 2025}
 }
 
-@misc{Chung2025_MLEnergy,
-    author    = {Chung, Jae-Won and others},
-    title     = {The {ML.ENERGY} Benchmark: Measuring Inference Energy of
-                 Generative {AI} Models},
+@inproceedings{Chung2025_MLEnergy,
+    author    = {Chung, Jae-Won and Ma, Jeff J. and Wu, Ruofan and
+                 Liu, Jiachen and Kweon, Oh Jun and Xia, Yuxuan and
+                 Wu, Zhiyu and Chowdhury, Mosharaf},
+    title     = {The {ML.ENERGY} Benchmark: Toward Automated Inference
+                 Energy Measurement and Optimization},
+    booktitle = {NeurIPS Datasets and Benchmarks (Spotlight)},
     note      = {arXiv:2505.06371},
     year      = {2025}
 }
 
 @misc{Chung2026_Joules,
-    author    = {Chung, Jae-Won and others},
+    author    = {Chung, Jae-Won and Wu, Ruofan and Ma, Jeff J. and Chowdhury, Mosharaf},
     title     = {Where Do the Joules Go? Diagnosing Inference Energy
                  Consumption},
     note      = {arXiv:2601.22076},
@@ -469,12 +505,15 @@
     year      = {2024}
 }
 
-@misc{Borazjani2025,
-    author    = {Borazjani and others},
-    title     = {Embedding-based Heterogeneity Definitions for Federated
-                 Learning beyond Label-skew},
+@article{Borazjani2025,
+    author    = {Borazjani, Kasra and Abdisarabshali, Payam
+                 and Khosravan, Naji and Hosseinalipour, Seyyedali},
+    title     = {Redefining non-{IID} Data in Federated Learning for
+                 Computer Vision Tasks: Migrating from Labels to Embeddings
+                 for Task-Specific Data Distributions},
+    journal   = {IEEE Transactions on Artificial Intelligence},
     note      = {arXiv:2503.14553},
-    year      = {2025}
+    year      = {2026}
 }
 
 % --- §2.6 Sharpness-aware federated learning ---
@@ -603,7 +642,8 @@
 % =====================================================================
 
 @inproceedings{FedMoSWA2025,
-    author    = {Liu, Junwei and others},
+    author    = {Liu, Junkang and Liu, Yuanyuan and Shang, Fanhua and
+                 Liu, Hongying and Liu, Jin and Feng, Wei},
     title     = {Improving Generalization in Federated Learning with Highly
                  Heterogeneous Data via Momentum-Based Stochastic Controlled
                  Weight Averaging ({FedMoSWA})},
