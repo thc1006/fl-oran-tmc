@@ -1,17 +1,33 @@
 # fl_oran — Project context for Claude
 
-Local PyTorch pipeline for ColO-RAN O-RAN slice SLA forecasting. Started as FL benchmark; pivoted 2026-04-25 to two-stage Spiking-SSM benchmark (Path B per ADR-001 D-19/D-20/D-21).
+Local PyTorch pipeline for ColO-RAN O-RAN slice SLA forecasting. Started as FL benchmark; pivoted 2026-04-25 to two-stage Spiking-SSM benchmark (Path B per ADR-001 D-19/D-20/D-21); Stage 2 GO Spiking-led; pivoted again 2026-04-27 to "test the separability assumption" framing; venue switched 2026-05-05 to **IEEE JSAC** (was TMC).
 
-**Current state**:
-- M5 (FL benchmark, 150 cells, 6 algos × 5 seeds × 5 alphas, 2 h 53 min) — complete; numbers preserved as Stage 2 ablation baseline.
-- **Active workstream: Path B Stage 1 — centralized 3-architecture (LSTM / Mamba / Spiking-SSM) benchmark on ColO-RAN.**
-- Stage 2 (FL × 3-architecture × 7-algorithm including FedBN) is **conditional on Stage 1 GO/NO-GO** at S1-W4 per ADR-001 D-21.
+**Revision History (top-level project state)**:
 
-**Why pivoted**: FL-on-ColO-RAN angle was preempted by FL-DRAM (Springer 2026-03) and SliceFed (arxiv 2603.11390, 2026-03). Three-path Fermi analysis (2026-04-25) gave p(TMC) ≈ 8% for the original FL-only pitch vs ~9% with much lower variance for the centralized Spiking-SSM pitch. Stage 1 deliverables become Stage 2 ablation baselines, so no work is wasted on either branch.
+| Date | Change | Reason |
+|------|--------|--------|
+| 2026-04-25 | M5 done (150 FL cells, 2h53min, 6 algos × 5 seeds × 5 alphas) | TMC baseline |
+| 2026-04-25→26 | Stage 1 done; D-21 GO Spiking-led after `spiking_expand2` audit at matched-25k sparsity-aware | Tier B.2 audit pass |
+| 2026-04-27 | Venue locked IEEE TMC primary / OJ-COMS fallback (later switched to JSAC); narrative locked "separability assumption test"; Phase 5 = 900-cell FULL sweep planned | 3-round lit-review reconfirmed niche |
+| 2026-04-28 | Stage A: lr-1e-4 spiking bug fixed (5e-4), num_rounds 20→100, FedDyn default `option_ii` (canonical diverges under Adam at 100r), B2 NVML integration | C1/C2/C4 control audit revealed undertraining |
+| 2026-04-30→05-01 | Phase 5 v2 launched (900 cells = 3 archs × 5 algos × 6 partitions × 10 seeds), ADR-002 v3 REJECTED Phase 6 (FedSWA) | 6-layer mechanism-based rejection |
+| 2026-05-02 | Step 1+2 measurement: dataset has **3 slices** (not 4), **3 schedulers** (not 4), **17 features** (not 29), **30.9% pos rate** (not 8-12%), bs↔slice KL=0; original §7.1 mechanism narrative invalidated | Fact-finding before paper writing |
+| 2026-05-04→07 | Paper SPLIT to main (11,892w) + supplementary (1,757w); S11 LaTeX migration A→I complete; PR #1 merged | JSAC submission prep |
+| 2026-05-05 | **Venue switched IEEE TMC → IEEE JSAC** (commit `18640f4`) — fallback OJ-COMS | Reviewer-fit for FL × O-RAN slicing |
+| 2026-05-07→08 | R1/R2 reviewer-feedback rounds (PR #11-#17): ORCID corrected `0009-…7115-0149` → `0000-0001-7421-8027`, author name `Hao-Chun` → `Hsiu-Chi`, REM-1..4 + R34 fixes, v0.9.2 submission-ready tag, Zenodo deposit DOI **10.5281/zenodo.20075433** | Post-submission polish |
+| 2026-05-16 | Project rsync'd 19 GB colosseum + 425 MB fl-oran-tmc + 96 MB .claude state to `4060-dev` (Tailscale 100.119.71.41); current machine | Capacity offload for future training |
 
-Plan: `docs/ADR-001-v5-tmc-paper-plan.md` (read D-19 onwards for the pivot; D-1 to D-18 are M1-M5 history).
-M5 paper-grade results (preserved, used as Stage 2 ablation): `docs/RESULTS_V5_FINAL.md`.
-Stage 1 results destination (not yet created): `docs/RESULTS_V6_STAGE1.md`.
+**Current state (2026-05-16, this machine = `4060-dev`)**:
+- Stage 1 + Stage 2 (Phase 5 900-cell sweep) + Phase 6 (per-BS Dirichlet ablation, R2 §7.1.5) + R2 reviewer polish (PRs #11-#17) all merged into `main`. Paper at v0.9.2-submission-ready, PDFs deposited to Zenodo.
+- **No active long sweep.** Local `artifacts/v7_stage2_full/` has the 900 raw cells (195 MB, gitignored). Aggregator output is committed at `docs/RESULTS_V7_PHASE5.md`.
+- Likely next-task surface: (a) reviewer responses if JSAC returns comments, (b) Stage 1 standalone short paper `docs/PAPER_V6_STAGE1.md` (currently in-prep), (c) follow-up research per `docs/FUTURE_WORK_RESEARCH.md`.
+
+Plan + decision log: `docs/ADR-001-v5-tmc-paper-plan.md` (read D-19/D-20/D-21/D-22; the "tmc-paper-plan" in the filename is historical — venue is now JSAC).
+M5 FL-benchmark results (Stage 2 ablation Table 3): `docs/RESULTS_V5_FINAL.md`.
+Stage 1 centralized 3-arch results: `docs/RESULTS_V6_STAGE1.md` + `docs/RESULTS_V6_STAGE1_ANALYSIS.md` (paper-grade ≈420 lines).
+Stage 2 FL × arch sweep results: `docs/RESULTS_V7_PHASE5.md` (paper Table 4 source).
+Phase 6 FedSWA rejection rationale: `docs/ADR-002-phase6-fedswa.md`.
+JSAC paper artifacts: `paper/main.tex` (130 KB, 21 pp) + `paper/supplementary.tex` (15.9 KB, 3 pp) + `paper/bibliography.bib` (61 entries).
 
 ## Build / test commands
 
@@ -28,28 +44,41 @@ python experiments/run_moon_hpo.py --seed 42 --alpha 0.5 --mus 0.1 0.5 1.0 5.0 1
 python scripts/aggregate_v5_results.py     # rebuilds RESULTS_V5.md from cells
 ./scripts/run_full_sweep.sh                # 150 cells, ~2 h 53 min — DONE, do not re-run
 
-# Stage 1 (S1-W2 main sweep, per ADR-001 D-20):
-python experiments/run_v6_arch_sweep.py --arch lstm,mamba,spiking \
-  --seeds 42,0,1,2,3,7,11,13,17,23 --total-steps 5000 \
-  --val-every 250 --sample-ratio 1.0
-# Stage 1 (S1-W3 D-21 recovery if Spiking C1 fails — T_inner=5):
-python experiments/run_v6_arch_sweep.py --arch spiking \
-  --seeds 42,0,1,2,3,7,11,13,17,23 --total-steps 5000 \
-  --spiking-t-inner 5 --output-suffix _t5
-# Stage 1 aggregator + paper-grade markdown:
-python scripts/aggregate_v6_results.py    # → docs/RESULTS_V6_STAGE1.md + aggregated.json
-pytest tests/test_v6_*.py --no-cov         # 35 v6 tests; see ADR-001 D-20 TDD plan
+# Stage 1 (DONE; 30 cells × 10 seeds; aggregator already ran):
+python experiments/run_v6_arch_sweep.py --arch lstm,mamba,spiking_expand2 ...
+python scripts/aggregate_v6_results.py    # → docs/RESULTS_V6_STAGE1.md
+pytest tests/test_v6_*.py --no-cov         # 90 v6 tests after Phase 0 latency/EDP
+
+# Stage 2 (DONE; Phase 5 900-cell sweep; aggregator already ran):
+python experiments/run_v7_phase_sweep.py --spec experiments/specs/stage2_full.yaml \
+  --skip-completed   # primary spec-driven launcher (Phase 1.5f)
+python scripts/aggregate_v7_results.py --sweep-dir artifacts/v7_stage2_full \
+  --output docs/RESULTS_V7_PHASE5.md
+pytest tests/test_v7_*.py --no-cov         # 162+ v7 tests after Phase 1.5g
+
+# Full test suite (605+ tests post-R2; ~9 s with --no-cov):
+pytest --no-cov
+
+# Paper claim-source regeneration (gated by `tests/test_paper_claims_sources.py` skip-or-run):
+python scripts/step1_fact_finding.py        # → artifacts/step1_factfinding.json
+python scripts/step2_mechanism_search.py    # → artifacts/step2_mechanism_search.json
+python scripts/phase5_paper_figures.py      # regenerates artifacts/figures/*.{pdf,svg}
+python scripts/phase5_dashboard.py          # artifacts/phase5_dashboard.{html,png}
+
+# Paper LaTeX build (paper/ dir; needs texlive-full):
+cd paper && pdflatex main && bibtex main && pdflatex main && pdflatex main
+cd paper && pdflatex supplementary && bibtex supplementary && pdflatex supplementary && pdflatex supplementary
 ```
 
-Hardware: single RTX 4080, 16 GiB VRAM, Ubuntu 24.04, Python 3.12.3, PyTorch 2.10 + CUDA 12.8.
+Hardware: **single RTX 4060 Ti, 16 GiB VRAM** (was RTX 4080 16 GiB until 2026-05-16 migration), Ubuntu 26.04, kernel 7.0.0-15, 20 CPU cores, ~30 GB RAM (was 32 cores / 128 GB on 4080-0), driver 595.58.03, CUDA 13.2 runtime. Python 3.12 + PyTorch 2.10 (`.venv/` is a symlink to the upstream colosseum-oran-federated-slicing venv and must be rebuilt against the local PyTorch+CUDA on this machine if it was created on the old box).
 Data: `data/coloran_raw_unified.parquet` (18M rows, symlinked from `raw/colosseum-oran-coloran-dataset-master/`).
-Repo: `fl-oran-tmc` (this repo); v1-v4 history in `colosseum-oran-federated-slicing` (upstream).
+Repo: `fl-oran-tmc` (this repo); v1-v4 history in `colosseum-oran-federated-slicing` (upstream; the upstream repo is ALSO present on this machine at `/home/thc1006/dev/colosseum-oran-federated-slicing/` — symlinks resolve).
 
-**Stage 1 dependencies (dep-sanity verified 2026-04-25, see ADR D-20)**:
+**Stage 1 dependencies (dep-sanity verified 2026-04-25, see ADR D-20; same applies on 4060-dev)**:
 ```bash
-VIRTUAL_ENV=/home/thc1006/dev/fl-oran-tmc/.venv uv pip install 'snntorch>=0.9' 'fvcore>=0.1.5' wheel ninja packaging
+VIRTUAL_ENV=/home/thc1006/dev/fl-oran-tmc/.venv uv pip install 'snntorch>=0.9' 'fvcore>=0.1.5' 'nvidia-ml-py' wheel ninja packaging
 ```
-Outcome: `snntorch==0.9.4` + `fvcore==0.1.5.post20221221` work. `mamba-ssm` NOT installed (system has CUDA runtime via PyTorch but no `nvcc`; no pre-built cu128 wheel). **Active fallback**: implement `MambaS6Block` in pure PyTorch in-tree at `models/mamba_forecaster.py` (~150 LoC). No external Mamba dependency.
+Outcome: `snntorch==0.9.4` + `fvcore==0.1.5.post20221221` + `nvidia-ml-py` (replaces deprecated `pynvml`) work. `mamba-ssm` NOT installed. **Active fallback**: pure-PyTorch `MambaS6Block` in `models/mamba_forecaster.py`. No external Mamba dep.
 
 ## Naming conventions (existing, keep consistent)
 
@@ -102,68 +131,94 @@ src/fl_oran/
 ├── evaluation/, utils/          # metrics, seed, gpu helpers (FLOPs/spike-count adders in S1-W3)
 ├── cli.py, logging_utils.py, config.py
 experiments/
-├── run_v3_centralized.py, run_v3_fl_iid.py, run_v3_fl_noniid.py  (v3 baselines)
-├── run_v4_all_seeds.py                  (v4 multi-seed)
-├── run_v5_algorithm_sweep.py            (v5 single-cell CLI; FL benchmark)
-├── run_v5_sweep_matrix.py               (v5 multi-cell driver, shares data prep)
-├── run_moon_hpo.py                      (v5 MOON hyperparameter grid)
-├── run_v6_arch_sweep.py                 (Stage 1: 3-arch centralized; S1-W2 deliverable)
-└── run_v7_fl_arch_sweep.py              (Stage 2 conditional: 3-arch × 7-algo FL; S2 deliverable)
+├── run_v3_*.py / run_v4_all_seeds.py     (v3/v4 baselines; do not modify per D-9)
+├── run_v5_algorithm_sweep.py / run_v5_sweep_matrix.py / run_moon_hpo.py  (M5 FL benchmark)
+├── run_v6_arch_sweep.py                  (Stage 1: 3-arch centralized; DONE)
+├── run_v7_fl_arch_sweep.py               (Stage 2 single-cell CLI)
+├── run_v7_fl_arch_sweep_matrix.py        (Stage 2 multi-cell driver, joblib + SharedSplits)
+├── run_v7_phase_sweep.py                 (Stage 2 spec-driven launcher; PRIMARY entry; Phase 1.5f)
+├── run_p1_centralized_lstm.py            (P1.5 centralized LSTM 5-seed CI95 for §6.7)
+├── run_p1_tr_embedding_check.py          (P0 tr embedding audit)
+├── run_p2_inference_latency.py / run_p2_loto_cluster_bootstrap.py  (R2 reviewer adds)
+├── run_r2_post_hoc_per_bs_finetune.py / run_rem1_local_only_per_bs_lstm.py  (R2 follow-ups)
+├── preregistered/                         (P1 prereg YAMLs: naive_baselines, tr_embedding, fedbn)
+└── specs/                                 (Phase 1.5g spec YAMLs: phase2_min, phase3a/c/e, stage2_full, r2_*, r34_fedswa_*, r2_no_tr_ablation, p1_*, ablation_random_split)
 scripts/
-├── run_pilot.sh, run_seed_checkpoint.sh, run_full_sweep.sh, run_moon_hpo.sh
-├── aggregate_v5_results.py              (v5 FL post-sweep paper Markdown generator; preserved)
-└── aggregate_v6_results.py              (Stage 1 post-sweep generator; S1-W3 deliverable)
-tests/  131 passing (89 v1-v4 baseline + 42 v5 TDD); Stage 1 adds 8 v6_*.py tests per D-20
+├── aggregate_v5_results.py / aggregate_v6_results.py / aggregate_v7_results.py  (paper Markdown gens)
+├── _v6_cell_metadata.py / _v7_cell_metadata.py / _v7_spec_loader.py             (canonical name builders + spec loader)
+├── measure_v6_gpu_energy.py / recompute_v6_energy.py                            (NVML + idempotent re-aggregation)
+├── phase5_dashboard.py / phase5_paper_figures.py                                (paper Fig 1-3 generators)
+├── step1_fact_finding.py / step2_mechanism_search.py                            (paper claim-source generators)
+├── baseline_last_bler.py / baseline_logreg.py                                   (naive baselines for §6/§7 contrasts)
+├── check_preregistered.py / oom_watchdog.py                                     (preregistered-YAML auditor + nvidia-smi-aware OOM guard)
+└── v100_*.sh                                                                    (V100 cluster launchers; cluster is at colosseum-oran-federated-slicing peer)
+tests/  605+ passing (89 v1-v4 + 42 v5 + 90 v6 + 162+ v7 + R1/R2/P0/P1 audit invariants + paper-claim sources)
 docs/
-├── ADR-001-v5-tmc-paper-plan.md         ← read D-19/D-20/D-21 for current direction
-├── RESULTS_V5_PRELIM.md                 ← preserved (5-seed × α=0.5 + s42 α-curve snapshot)
-├── RESULTS_V5_FINAL.md                  ← preserved (150-cell M5 result; Stage 2 ablation source)
-└── RESULTS_V6_STAGE1.md                 ← Stage 1 paper-grade table (S1-W4 deliverable)
+├── ADR-001-v5-tmc-paper-plan.md         ← decision log; read D-19/D-20/D-21/D-22 (note: "tmc-paper-plan" is historical filename — venue is JSAC since 2026-05-05)
+├── ADR-002-phase6-fedswa.md             ← REJECTED v3 (do not implement FedSWA; mechanism-based dismissal in §related-work + §threats)
+├── RESULTS_V5_FINAL.md                  ← M5 paper-grade FL-benchmark table (Stage 2 paper Table 3 legacy ablation)
+├── RESULTS_V6_STAGE1.md                 ← Stage 1 centralized 3-arch paper table
+├── RESULTS_V6_STAGE1_ANALYSIS.md        ← Stage 1 paper-grade analysis ≈420 lines
+├── RESULTS_V7_PHASE5.md                 ← Stage 2 FL × arch 900-cell sweep paper Table 4
+├── PAPER_DRAFT.md                       ← Markdown source of truth (now mirrored to paper/main.tex)
+├── PAPER_SUPPLEMENTARY.md               ← Supplementary App. A-D (mirrored to paper/supplementary.tex)
+├── PAPER_V6_STAGE1.md                   ← Stage 1 standalone short paper (in-prep)
+├── PAPER_CONTRIBUTION_CLAIM.md          ← §1 contribution audit log
+├── FUTURE_WORK_RESEARCH.md / FUTURE_STUDY.md   ← candidate next-paper directions
+└── archive/                             ← superseded notes with `status: superseded` frontmatter
+paper/
+├── main.tex (130 KB, 21 pp) / supplementary.tex (15.9 KB, 3 pp) / bibliography.bib (61 entries)
+└── main.pdf / supplementary.pdf         ← v0.9.2-submission-ready; deposited at Zenodo DOI 10.5281/zenodo.20075433
 artifacts/
-├── RESULTS_V4.md                        ← v3/v4 baseline numbers (do not compare to v5/v6 directly)
-├── v5_sweep/                            ← M5 outputs preserved
-└── v6_arch_sweep/                       ← Stage 1 outputs (created S1-W2)
+├── RESULTS_V4.md                        ← v3/v4 baseline numbers
+├── v5_sweep/                            ← M5 outputs (gitignored)
+├── v6_arch_sweep/                       ← Stage 1 outputs (gitignored)
+├── v6_arch_sweep_audit/                 ← Stage 1 audit/recompute outputs (gitignored)
+├── v7_stage2_full/                      ← Phase 5 900-cell Stage 2 main sweep (gitignored; 195 MB)
+├── v7_phase2_min/, v7_phase3a_stress/, v7_phase3e_envelope/   ← scoped FL sweeps (gitignored)
+├── v7_phase6_per_bs_dirichlet/, v7_phase6_threshold/          ← Phase 6 ablations (gitignored)
+├── v7_ablation_random_split/, v7_arch_smoke/, v7_control_extended/  ← R2 + control experiments (gitignored)
+├── audit/                               ← AUDIT_PLAYBOOK + invariant artifacts
+├── baselines/                           ← naive baselines outputs
+├── figures/                             ← paper Fig PDFs + SVGs (algo_ranking, interaction_heatmap, pareto, results_table.csv)
+├── p1_*/, p2_*/                         ← P0+P1+P2 audit + inference latency + LOTO bootstrap
+├── r2_*, r34_*                          ← R2 reviewer-feedback follow-ups
+├── step1_factfinding.{json,md} / step2_mechanism_search.{json,md}   ← paper-claim sources
+└── phase5_dashboard.{html,png}          ← interactive Phase 5 dashboard
 ```
 
-## Current workstream — Path B Stage 1 (active as of 2026-04-25 post-Fermi-pivot)
+## Past workstreams (DONE — not active)
 
-M1-M5 (FL benchmark) done; pivoted to two-stage Spiking-SSM benchmark per ADR-001 D-19/D-20/D-21.
+M1-M5 FL benchmark → Stage 1 centralized 3-arch → Stage 2 FL × arch 900-cell sweep → Phase 6 ablations → R1/R2 reviewer-feedback polish → v0.9.2 submission tag → Zenodo deposit. Decision history is in ADR-001 Revision History table. **No active long-running sweep on this machine.**
 
-**Stage 1 — centralized 3-architecture benchmark (~5 weeks calendar, ~6 hr GPU)**:
+## Current workstream (2026-05-16 onwards) — TBD
 
-1. **S1-W1 — Scaffolding** (P0; dep-sanity already done): mamba-ssm unavailable, fallback active. Create `src/fl_oran/models/mamba_forecaster.py` with in-tree `MambaS6Block` (~150 LoC) and `src/fl_oran/models/spiking_forecaster.py` with `SpikingSSMBlock` wrapping `snntorch.Leaky` (~180 LoC) per ADR D-20 explicit block configs. **TDD per individual test** (not all 8 at once): for each of `lif_neuron` → `mamba_shape` → `spiking_shape` → `param_count` → `spike_count` → `energy_metric` → `centralized_smoke` → `arch_swap_isolation_weak`, write the failing test first, implement minimum production code to pass, then refactor; commit at end of each cycle.
+The transfer to `4060-dev` (this machine) was the last item closed. Awaiting user direction on:
+- (a) Stage 1 standalone short paper finalisation (`docs/PAPER_V6_STAGE1.md` is in-prep, IoTJ/TNSM target).
+- (b) Reviewer response handling if/when JSAC returns comments.
+- (c) Follow-up research directions per `docs/FUTURE_WORK_RESEARCH.md`.
+- (d) Any new Stage 1/2 ablations on this 4060 Ti machine.
 
-2. **S1-W2 — Centralized 3-arch sweep** (P0): Create `experiments/run_v6_arch_sweep.py` (3 archs × **10 seeds** × 5000 gradient steps, centralized only, reuse `training/centralized_v3.py::run_centralized` with the per-arch hyperparameter overrides pinned in ADR-001 D-20). Sweep wall-time ~6 hr on RTX 4080 (LSTM/Mamba ~10 min/run, Spiking ~30 min/run). Outputs to `artifacts/v6_arch_sweep/<arch>_s<seed>/{summary.json,history.csv,best_state.pt,energy.json}`.
+## Known caveats already addressed in paper
 
-3. **S1-W3 — Energy + statistics** (P0): Wire `fvcore.nn.FlopCountAnalysis` for LSTM/Mamba dense MACs. Instrument LIF layers with spike counters. Compute `sops` per arch on test set (10K random samples). Compute **paired-bootstrap CI95** (n_boot=10000) of `delta_auc(Spiking, LSTM)` and `delta_auc(Mamba, LSTM)` across 10 seeds per D-21. Generate energy-ratio Pareto + per-layer spike-rate heatmap.
-
-4. **S1-W4 — Short paper draft + GO/NO-GO** (P0): Draft `docs/RESULTS_V6_STAGE1.md`. Draft IoTJ/TNSM short paper (6-8 pages, title in ADR-001 §8). Apply ADR-001 D-21 GO/NO-GO criteria (paired-bootstrap CI95 thresholds, not Wilcoxon p-values). Emit one of {Spiking-led GO, Mamba-led GO, NO-GO}. Append decision as new D-21 Outcome row.
-
-**Stage 2 (conditional, only if S1-W4 = Spiking-led GO or Mamba-led GO)**: Add FedBN as 7th algorithm (`federated/algorithms/fedbn.py`, closes M6/D-17 gap). Integrate the chosen primary architecture and `MambaForecaster` (always retained as ablation) into the existing FL registry. Run **1050-cell sweep** (3 archs × 7 algos × 10 seeds × 5 alphas, ~14 hr GPU). M1-M5 LSTM × 6-algo numbers reused as Stage 2 paper Table 3 (legacy ablation). Submit to TMC; fallback TNSM Special Issue.
-
-## Known caveats (paper writers must address in both Stage 1 and Stage 2)
-
-**Stage 1 specific**:
-- **No neuromorphic hardware**: energy is reported as theoretical `sops × 0.9pJ` vs `flops × 4.6pJ` using Horowitz 2014 45nm CMOS coefficients. Paper Limitations section must explicitly state this is upper-bound estimate, not deployment claim.
-- **HiSTM (arxiv 2508.09184) is the closest Mamba-on-cellular precedent**: differentiate by dataset (ColO-RAN simulator, not Milan/Trentino traffic) + task (binary SLA classification, not regression) + spiking variant.
-- **SpikySpace (arxiv 2601.02411) is the closest Spiking-SSM-on-time-series precedent**: differentiate by domain (RAN telemetry, not generic time series) and the slice-aware contextual setting.
-- **Surrogate gradient + Adam stability is unverified**: S1-W1 first sanity is 1 epoch convergence on ColO-RAN val split. If divergent, escalate per ADR-001 Risk Register row.
-
-**Stage 2 specific (only if reached)**:
-- **FedBN missing from M5**: see ADR-001 D-17. Closed in Stage 2 sweep.
-- **v4 vs v5 numbers not directly comparable**: v4 uses `sample_ratio=0.2` + 50K total gradient steps; v5 uses `sample_ratio=1.0` + 5K steps. Stage 2 reuses v5 setup.
-- **MOON HPO test-leakage** (cosmetic): chosen (μ=0.1, τ=1.0) was selected by `test_auc` sort, not `best_val_auc`. Re-sorting by val gives identical winner (verified). Fix the script before Stage 2 sweep for principle.
-- **n_clients=5 chosen by NIID-Bench convention, not by ColO-RAN physical structure** (7 gNBs). Stage 2 adds n_clients=7 (`mode="iid"`, bs_id partition) as ablation.
-- **20 rounds is short for FL papers** (typical 100-1000). Stage 2 includes 100-round ablation at α=0.5 for SCAFFOLD/FedAdam to characterise convergence.
+**Closed via committed paper text** (see `docs/PAPER_DRAFT.md` + `paper/main.tex` for §-anchors):
+- **No neuromorphic hardware** → §discussion applicability-boundary; Horowitz 2014 coefficients cited explicitly; theoretical-vs-NVML-real inversion analysed (§6.8 + §8 L15 ratios).
+- **FedBN gap from M5** → closed by Phase 1 FedBN 30-cell sweep (commit `86b97b8`); FedBN bit-identical to FedAvg on our 3 archs (no BN), documented §6 contribution C1+C2+C3.
+- **n_clients = 7 gNBs** (was 5) → Phase 5 uses n=7 natural-by-BS + Dirichlet α∈{0.05..5}.
+- **20 rounds → 100 rounds** (Stage A 2026-04-28); spiking lr 1e-4 → 5e-4; FedDyn `option_ii` default (canonical diverges).
+- **Step 1+2 measurement** invalidated original §7.1 mechanism (sparse-positive + per-client pos_weight + bs↔slice correlation all false). Replaced with "bs-conditioned channel-state signal preservation" hypothesis backed by §7.1.1 random_split V100 ablation (LSTM/Mamba/Spiking all drop −0.17~0.19 AUC when bs grouping is broken).
+- **MOON deferred entirely in fl_v7 (Phase 1.5)** — `_select_algorithm` raises NotImplementedError for non-LSTM MOON.
+- **Phase 6 FedSWA** → REJECTED per ADR-002 v3; mechanism-based §related-work + §threats paragraphs already drafted.
+- **R1/R2 reviewer rounds** → all closed by PR #11-#17; v0.9.2-submission-ready.
 
 ## What's in `artifacts/`
 
-Do not delete. Contains all v1–v4 model checkpoints, logs, history CSVs, summary JSONs,
-and `RESULTS_V4.md`. v5 outputs (M1-M5 FL benchmark, gitignored, **Stage 2 ablation source**) live under
-`artifacts/v5_sweep/`. Stage 1 outputs will live under `artifacts/v6_arch_sweep/`
-(also gitignored). Both are listed in `.gitignore`. The aggregated, paper-grade tables
-(`docs/RESULTS_V5_FINAL.md`, future `docs/RESULTS_V6_STAGE1.md`) **are** committed and
-serve as the recoverable source of truth if the gitignored raw cells are lost.
+Do not delete. v1-v4 baselines preserved (`RESULTS_V4.md` is the only artifact-level
+committed README). All v5/v6/v7 raw cells are gitignored; the aggregated paper-grade
+tables (`docs/RESULTS_V5_FINAL.md`, `RESULTS_V6_STAGE1.md`, `RESULTS_V6_STAGE1_ANALYSIS.md`,
+`RESULTS_V7_PHASE5.md`) are committed and act as the recoverable source of truth if raw
+cells are lost. The 900-cell `v7_stage2_full/` (195 MB) is the largest local-only artifact;
+re-generating from scratch on RTX 4060 Ti is ~80-100 hr GPU.
 
 ## How to ask for help
 
