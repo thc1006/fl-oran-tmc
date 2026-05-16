@@ -1,0 +1,56 @@
+# FedGMT KL-ablation, gamma_kl=0 arm (4060 Ti).
+#
+# Pair with experiments/specs/fedgmt_kl_on.yaml (gamma_kl=1.0) on the
+# SAME 5 seeds × IID × sample_ratio=0.1 slice. Paired bootstrap on
+# the per-seed AUC delta gives a clean "KL adds X AUC" measurement.
+#
+# Spec loader rejects duplicate algorithm names, so the two arms are
+# kept in separate spec files with distinct output_dir flags.
+#
+# Audit fix 2026-05-17: the original plan compared 4060 gamma=0
+# (sample_ratio=0.1) against V100 gamma=1 (sample_ratio=1.0). Cross-
+# machine comparison confounded KL effect with data volume — paper
+# claim would be invalid. Re-spec: both gamma values on 4060, same
+# slice, paired by seed.
+#
+# Compute budget on 4060 Ti at sample_ratio=0.1: 5 cells × ~3 min/cell
+# = ~15 min wall per arm; 30 min total for both arms sequentially.
+
+description: FedGMT KL-ablation, gamma_kl=0 arm (4060 Ti)
+adr_reference: FUTURE_WORK_RESEARCH.md Direction 5 + paper §7 KL-ablation
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedgmt
+    kwargs:
+      alpha_ema: 0.95
+      gamma_kl: 0.0     # KL OFF — loss collapses to BCE + (1/beta)<w, h_dual>
+      tau: 3.0
+      beta: 10.0
+      n_total_clients: 7
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42, 0, 1, 2, 3]
+
+shared:
+  num_rounds: 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 0.1     # 4060 Ti 30 GB RAM constraint (see smoke v1 OOM)
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4

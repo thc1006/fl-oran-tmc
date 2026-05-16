@@ -1,0 +1,51 @@
+# FedGMT KL-ablation, gamma_kl=1.0 control arm (4060 Ti).
+#
+# Pair with experiments/specs/fedgmt_kl_ablation.yaml (gamma_kl=0)
+# on the SAME 5 seeds × IID × sample_ratio=0.1 slice. Paper-default
+# gamma_kl=1.0 (per harrylee999/FL-SAM README example command).
+#
+# This control exists because the V100 sweep's FedGMT × IID cells
+# use sample_ratio=1.0 — different data slice from the gamma=0 arm,
+# so cross-machine paired comparison would be confounded. We re-run
+# the gamma=1.0 cells on 4060 (smaller data) just for the paired-
+# bootstrap "Δ_KL" measurement; the V100 cells remain the canonical
+# absolute-AUC reference for the paper main table.
+
+description: FedGMT KL-ablation, gamma_kl=1.0 control arm (4060 Ti)
+adr_reference: FUTURE_WORK_RESEARCH.md Direction 5 + paper §7 KL-ablation
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedgmt
+    kwargs:
+      alpha_ema: 0.95
+      gamma_kl: 1.0     # KL ON — paper README example default
+      tau: 3.0
+      beta: 10.0
+      n_total_clients: 7
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42, 0, 1, 2, 3]
+
+shared:
+  num_rounds: 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 0.1
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
