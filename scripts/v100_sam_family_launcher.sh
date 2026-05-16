@@ -40,6 +40,18 @@ export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 export OPENBLAS_NUM_THREADS=4
 
+# Disable torch.compile / dynamo / inductor.
+# V100 here has torch 2.4.0+cu121 from the standard PyTorch wheel WITHOUT
+# triton bundled — `reduce-overhead` mode (fl_v7's LSTM arch-conditional
+# default) hits ``RuntimeError: Cannot find a working triton installation``
+# in the inductor scheduler ~140s into each cell (audit 2026-05-17).
+# Disabling dynamo is preferable to installing triton because:
+#   (a) Triton wheel for SM 7.0 + cu121 is not guaranteed compatible.
+#   (b) Eager-mode loss is ~20-30% wall, acceptable for a 60-cell sweep.
+#   (c) SAM 2-backward + EMA deepcopy under torch.compile have known
+#       graph-break risks anyway — eager is the safer reference.
+export TORCHDYNAMO_DISABLE=1
+
 FEDSCAM_KW='{"rho_max":0.05,"alpha_rho":1.0,"gamma":1.0,"beta_align":0.8,"kappa":1.0}'
 FEDGMT_KW='{"alpha_ema":0.95,"gamma_kl":1.0,"tau":3.0,"beta":10.0,"n_total_clients":7}'
 
