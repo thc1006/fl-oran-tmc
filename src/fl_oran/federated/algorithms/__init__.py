@@ -111,3 +111,5 @@ from . import feddyn  # noqa: E402,F401
 from . import moon  # noqa: E402,F401
 from . import fedbn  # noqa: E402,F401  (P1.3 / R3.2)
 from . import fedswa  # noqa: E402,F401  (R3.4)
+from . import fedscam  # noqa: E402,F401  (FUTURE_WORK Direction 5)
+from . import fedgmt  # noqa: E402,F401  (FUTURE_WORK Direction 5, ICML 2025)

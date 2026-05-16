@@ -83,8 +83,12 @@ class TestRegistryConsistency:
     def test_no_unexpected_extra_algorithms(self):
         # Future-proofing: if someone adds a new algorithm class to the
         # registry but forgets to update the table, this test catches it.
-        # The expected set is what Phase 1.5/2 supports per ADR D-22.
-        expected = {"fedavg", "fedprox", "fedadam", "scaffold", "feddyn", "fedbn", "fedswa"}
+        # The expected set is what Phase 1.5/2 supports per ADR D-22,
+        # extended 2026-05 with FedSCAM + FedGMT for the SAM-family ablation.
+        expected = {
+            "fedavg", "fedprox", "fedadam", "scaffold", "feddyn",
+            "fedbn", "fedswa", "fedscam", "fedgmt",
+        }
         assert set(_ALGO_REQUIRED_KWARGS.keys()) == expected, (
             "table drift — update _ALGO_REQUIRED_KWARGS and this test together"
         )

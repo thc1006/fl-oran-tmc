@@ -1,0 +1,75 @@
+# SAM-family smoke (2 cells, ~20 min wall on RTX 4060 Ti).
+#
+# Pre-V100 sanity for the two new SAM-family algorithms (FedSCAM + FedGMT).
+# Goal: verify (a) no NaN/divergence under Adam at 100 rounds, (b) end-to-end
+# pipeline plumbing works on the production parquet, (c) per-cell wall-clock
+# is sane (~10 min/cell on 4060 Ti per existing FedAvg LSTM measurements).
+#
+# Specifically NOT testing: full hyperparam grid, multi-arch transfer,
+# convergence vs Phase 5 FedAvg baseline. Those are for the 60-cell
+# phase_sam_family.yaml sweep on V100.
+#
+# Decision history (audit 2026-05-17): per `feedback_audit_before_launch.md`
+# Round 3 pattern, smoke MUST run before any multi-hour V100 commitment.
+# FedGMT's dual term is FedDyn-Option-II-like under Adam; canonical FedDyn
+# diverged at 100 rounds in our pipeline (memory `project_v5_state.md`),
+# so this smoke is the cheapest way to catch a similar pathology.
+
+description: SAM-family pre-V100 smoke (FedSCAM + FedGMT, LSTM, IID, 1 seed)
+adr_reference: FUTURE_WORK_RESEARCH.md Direction 5
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedscam
+    kwargs:
+      # Paper-pinned defaults from arXiv:2601.00853 Algorithm 1 + §4.1.3:
+      rho_max: 0.05       # paper headline
+      alpha_rho: 1.0      # task-dependent; canonical
+      gamma: 1.0          # midpoint of tested {0, 1, 5}
+      beta_align: 0.8     # midpoint of tested {0, 0.8, 2}
+      kappa: 1.0
+  - name: fedgmt
+    kwargs:
+      # Paper-pinned defaults from openreview.net/forum?id=80mK2Mqaph
+      # README example command: -ga 1.0 -al 0.95 -tau 3.0 -be 10
+      alpha_ema: 0.95
+      gamma_kl: 1.0
+      tau: 3.0
+      beta: 10.0
+      n_total_clients: 7
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 100               # 100 rounds × 5 clients × 50 steps = 25k grads.
+                                # MUST run all 100 to catch late-round NaN
+                                # (canonical FedDyn-Adam divergence pattern).
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 0.1             # 4060-dev only has ~30 GB RAM vs 4080-0's
+                                # 128 GB. At sample_ratio=1.0 the joblib
+                                # parallel sequence builder hits ~16 GB
+                                # (7 BS × 2M sequences × seq_len=5 × 21
+                                # features × 4B + COW + parquet) which
+                                # swap-thrashes and gets SIGKILL'd.
+                                # 0.1 → ~1.6 GB data, comfortable.
+                                # Smoke goal is NaN/divergence detection,
+                                # not full-data accuracy → 10% is fine.
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4

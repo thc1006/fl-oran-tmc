@@ -276,6 +276,16 @@ _ALGO_REQUIRED_KWARGS: dict[str, set[str]] = {
                               # artifacts/audit/fedbn_reduces_to_fedavg.md)
     "fedswa":   {"alpha_la"}, # R3.4: FedSWA's LookAhead extrapolation rate
                               # (Liu et al. 2025 paper uses 1.5)
+    "fedscam":  {"rho_max", "alpha_rho", "gamma", "beta_align", "kappa"},
+                              # FedSCAM (Rahil et al. 2026, arXiv:2601.00853).
+                              # Per-client SAM radius modulation +
+                              # alignment-aware aggregation. b_pilot is
+                              # optional (default 3).
+    "fedgmt":   {"alpha_ema", "gamma_kl", "tau", "beta", "n_total_clients"},
+                              # FedGMT (Lee et al. 2025, ICML; OpenReview
+                              # 80mK2Mqaph). Single-backward-pass SAM via
+                              # EMA trajectory + FedDyn-style dual.
+                              # n_total_clients matches FedDyn's convention.
 }
 
 # Partition-axis kwargs that ride on cfg.algo_kwargs for spec-yaml/CLI

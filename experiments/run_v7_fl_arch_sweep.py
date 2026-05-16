@@ -56,11 +56,19 @@ def _parse_args() -> argparse.Namespace:
         "--arch-kwargs", default="{}",
         help='JSON dict of arch-specific kwargs override, e.g. \'{"dropout": 0.1}\'',
     )
-    # Algorithm (MOON not supported in Phase 1.5; D-16 deferred).
+    # Algorithm choice. MOON not supported in Phase 1.5; D-16 deferred.
+    # 2026-05-17 fix: drop hardcoded choices list — it lagged behind the
+    # registry (added fedbn/fedswa/fedscam/fedgmt without updating here,
+    # blocking 60-cell V100 SAM-family launch on the choice-rejection
+    # argparse path). Validate against fl_oran's REGISTRY at parse time
+    # instead so future algo additions just work.
+    from fl_oran.federated.algorithms import REGISTRY as _ALGO_REGISTRY
+    _valid_algos = sorted(set(_ALGO_REGISTRY.keys()) - {"moon"})
     p.add_argument(
         "--algorithm", required=True,
-        choices=["fedavg", "fedprox", "fedadam", "scaffold", "feddyn"],
-        help="FL algorithm. MOON deferred to Phase 2 polish (D-16).",
+        choices=_valid_algos,
+        help=f"FL algorithm. MOON deferred to Phase 2 polish (D-16). "
+             f"Known: {_valid_algos}",
     )
     p.add_argument(
         "--algo-kwargs", default="{}",

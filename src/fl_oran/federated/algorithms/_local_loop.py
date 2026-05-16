@@ -13,15 +13,35 @@ clip -> Adam step). Two hook points:
   proximal / variance-reduction / dynamic-reg corrections into ``p.grad``.
 
 FedAvg passes both as ``None`` and gets the vanilla loop.
+
+NaN/Inf guard (added 2026-05-17 pre-V100 SAM-family sweep): if the
+per-step loss becomes non-finite, raise ``NonFiniteLossError`` to abort
+the client_update early with diagnostic context. The sweep launcher's
+``--continue-on-cell-failure`` flag catches this and moves to the next
+cell, preventing a single divergent cell from poisoning state for
+subsequent cells. Motivation: FedGMT's dual term ``(1/β)·⟨w, h⟩`` is
+unbounded in theory; under Adam + 100 rounds (memory
+``project_v5_state.md`` records canonical FedDyn-Adam divergence at the
+same regime), a subset of seeds may explode mid-cell.
 """
 from __future__ import annotations
 
+import math
 from typing import Callable
 
 import torch
 from torch import nn
 
 from ..client import _make_optimizer
+
+
+class NonFiniteLossError(RuntimeError):
+    """Raised when a training step produces NaN or Inf loss.
+
+    Carries diagnostic context (algorithm name optional, step index,
+    loss value) so the sweep summary's ``status`` field can identify
+    the divergent cell without re-running.
+    """
 
 
 def run_local_sgd(
@@ -78,7 +98,7 @@ def run_local_sgd(
         dtype=amp_dtype or torch.bfloat16,
         enabled=amp_enabled,
     )
-    for _ in range(max_steps):
+    for step_idx in range(max_steps):
         idx = torch.randint(0, n_local, (batch_size,), device=device)
         cb = cat_g[idx]
         ob = cont_g[idx]
@@ -94,7 +114,19 @@ def run_local_sgd(
             grad_correction(local_model)
         torch.nn.utils.clip_grad_norm_(local_model.parameters(), grad_clip)
         optimizer.step()
-        total_loss += loss.item()
+        loss_val = loss.item()
+        # NaN/Inf guard: detect divergence early, raise with diagnostic
+        # context so the sweep launcher's --continue-on-cell-failure can
+        # mark this cell as failed and move on without poisoning state.
+        if not math.isfinite(loss_val):
+            raise NonFiniteLossError(
+                f"non-finite loss at step {step_idx}/{max_steps}: "
+                f"loss={loss_val!r}. Common causes: dual-variable runaway "
+                f"(FedGMT/FedDyn), exploding SAM perturbation (FedSCAM), "
+                f"or numerical overflow in autocast. Check the algorithm's "
+                f"hyperparameters (β, γ, ρ_max, α_dyn)."
+            )
+        total_loss += loss_val
 
     # ``.detach().cpu()`` on a CPU tensor does NOT copy — it returns a view on
     # the same storage. Callers that subsequently mutate ``local_model`` (e.g.

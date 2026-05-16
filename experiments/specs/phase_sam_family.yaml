@@ -1,0 +1,96 @@
+# SAM-family Phase 6 ablation: FedSCAM + FedGMT vs Phase 5 FedSWA baseline.
+#
+# Per FUTURE_WORK_RESEARCH.md Direction 5, this sweep tests whether either
+# variance-aware sharpness method extracts additional accuracy beyond the
+# FedAdam ceiling of +0.006-0.016 AUC over FedAvg established in Phase 5.
+#
+# Cell count: 1 arch (LSTM, the Phase 5 winner) x 2 new algos x 6 partitions
+#             (IID + 5 Dirichlet alphas) x 5 seeds = 60 cells.
+# Wall-time estimate on 4x V100: 60 x 30 min / 4 = ~7.5 hr wall.
+#
+# Why only LSTM (not 3 archs as in Phase 5)?
+# - Phase 5 finding F4: architecture leverage 5-10x larger than algorithm
+#   leverage on the Pareto front. Adding a 2nd or 3rd arch dilutes the
+#   "did sharpness-aware win" signal we're testing here.
+# - Compute budget: full 3-arch matrix would be 180 cells / ~22 hr wall.
+# - LSTM is the Phase 5 Dirichlet winner per docs/RESULTS_V7_PHASE5.md.
+#
+# Hyperparameters: defaults match the paper-cited values:
+#   FedSCAM: rho_max=0.05, alpha_rho=1.0, gamma=1.0, beta_align=0.8, kappa=1.0
+#            (rho_max=0.05 is the paper headline; gamma=1.0 / beta_align=0.8
+#             are the paper's "midpoint" tested values).
+#   FedGMT:  alpha_ema=0.99, gamma_kl=1.0, tau=2.0, beta=10.0
+#            (alpha_ema=0.99 is the midpoint of paper README's {0.95, 0.995, 0.998};
+#             gamma_kl=1.0 mid of {0.5, 1.0, 2.0}; beta=10 is paper-default;
+#             tau=2.0 is the Hinton-distillation default we use elsewhere).
+#            n_total_clients pinned to 7 (ColO-RAN BS count, matches FedDyn).
+#
+# Activate by:
+#   python experiments/run_v7_phase_sweep.py \
+#       --spec experiments/specs/phase_sam_family.yaml \
+#       --skip-completed
+
+archs: [lstm]
+
+algorithms:
+  - name: fedscam
+    kwargs:
+      rho_max: 0.05
+      alpha_rho: 1.0
+      gamma: 1.0
+      beta_align: 0.8
+      kappa: 1.0
+      # b_pilot defaults to 3; do not specify here.
+  - name: fedgmt
+    kwargs:
+      # Paper README example command: -ga 1.0 -al 0.95 -tau 3.0 -be 10
+      # (audit 2026-05-17: previous spec used tau=2.0, alpha_ema=0.99 —
+      # alpha_ema=0.99 is NOT in paper-tested set {0.95, 0.995, 0.998};
+      # corrected to paper default for first ablation sweep.)
+      alpha_ema: 0.95
+      gamma_kl: 1.0
+      tau: 3.0
+      beta: 10.0
+      n_total_clients: 7
+
+partitions:
+  - mode: iid
+    n_clients: 7
+  - mode: dirichlet
+    n_clients: 7
+    alpha: 0.05
+  - mode: dirichlet
+    n_clients: 7
+    alpha: 0.10
+  - mode: dirichlet
+    n_clients: 7
+    alpha: 0.50
+  - mode: dirichlet
+    n_clients: 7
+    alpha: 1.00
+  - mode: dirichlet
+    n_clients: 7
+    alpha: 5.00
+
+seeds: [42, 0, 1, 2, 3]
+
+shared:
+  num_rounds: 100
+  max_steps_per_round: 50
+  clients_per_round: 5
+  batch_size: 64
+  lr: 5e-4
+  lr_warmup_rounds: 3
+  mixed_precision: bf16
+  cudnn_deterministic: true
+  pos_weight_split: train
+  sample_ratio: 1.0
+  # NOTE: torch.compile defaults to reduce-overhead for LSTM in fl_v7's
+  # _select_compile_mode. FedSCAM's two-backward SAM loop and FedGMT's
+  # per-step closure both contain Python-level state that may graph-break
+  # under reduce-overhead. If profiling shows compile-fallback noise,
+  # opt out per-cell with compile_model: null in arch_overrides.
+
+arch_overrides:
+  lstm:
+    lr: 5e-4
