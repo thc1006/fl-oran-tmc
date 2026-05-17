@@ -179,8 +179,11 @@ paper/
 ├── bibliography.bib                     67 BibTeX entries
 └── main.pdf                             v0.9.2-submission-ready (Zenodo)
 scripts/
-├── aggregate_v7_results.py              Phase 5 paper Table 4 generator
+├── aggregate_v7_results.py              Phase 5 / Stage 2 results aggregator
+│                                        (generates docs/RESULTS_V7_PHASE5.md
+│                                        — sourced by paper Figs 1–3)
 ├── aggregate_path_d.py                  Path D paper §7 generator
+│                                        (paired-bootstrap CI95 tables)
 ├── sweep_dashboard.py                   Live Path D sweep dashboard
 └── v100_*_launcher.sh                   V100 cluster launchers
 ```
