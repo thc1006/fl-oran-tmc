@@ -131,18 +131,23 @@ _REQUIRED_TEST_FIELDS = ("auc",)
 # (Stage 1 audit) cross-checked against the v7 build_model tests
 # (``tests/test_v7_fl_arch_agnostic.py`` pins LSTM=44553, Mamba=40489,
 # spiking_expand2=43593 with name ``test_v7_build_model_*_pins_params_*``).
-# These three are the FL-phase archs (Phase 5 + Phase 6). The other two
-# entries in ARCH_REGISTRY — ``mamba_expand2`` and ``spiking`` — are
-# Stage 1 centralised ablation archs that no FL sweep cell uses, so
-# they're intentionally absent here; if a future FL phase adds them,
-# pin their param count via a ``test_v7_build_model_*_pins_params_*``
-# test first, then add the entry here. ``.get(arch)`` returns ``None``
-# for any missing arch, which renders as "n/a" in the Markdown table
-# rather than raising — keeps the aggregator forward-compatible.
+# Path D extension (2026-05-18) added xLSTM and Mamba-3 — counts taken
+# from the 4060 v6 smoke runs against the production schema (3 cat ×
+# 17 cont, post-Step1 measurement):
+#   xlstm:  43241 params (xLSTMForecaster, hidden_size=48, n_layers=2)
+#   mamba3: 40635 params (Mamba3Forecaster, d_model=64, n_blocks=2,
+#                         d_state=16 → 8 complex pairs)
+# The other two entries in ARCH_REGISTRY — ``mamba_expand2`` and
+# ``spiking`` — are Stage 1 centralised ablation archs that no FL sweep
+# cell uses, so they're intentionally absent here. ``.get(arch)`` returns
+# ``None`` for any missing arch, which renders as "n/a" in the Markdown
+# table rather than raising — keeps the aggregator forward-compatible.
 _ARCH_PARAMS_COUNT: dict[str, int] = {
     "lstm": 44553,
     "mamba": 40489,
     "spiking_expand2": 43593,
+    "xlstm": 43241,
+    "mamba3": 40635,
 }
 
 
