@@ -95,7 +95,12 @@ def test_fedmoswa_constructor_validation(kw: dict, err: str) -> None:
 
 
 def test_fedmoswa_paper_defaults_construct() -> None:
-    """Paper §6.1: ρ=0.1, α_la=1.5, γ=0.2."""
+    """Paper §6.1 hparams (ρ=0.1, α_la=1.5, γ=0.2) construct cleanly.
+
+    Default option switched 2026-05-17: paper uses "ii" under SGD but our
+    Adam pipeline requires "i" (raw-gradient c_i scale). See module
+    docstring + artifacts/v7_fedmoswa_diag for the ablation evidence.
+    """
     algo = FedMoSWA(
         max_steps=50, batch_size=64,
         rho=0.1, alpha_la=1.5, gamma=0.2,
@@ -104,9 +109,19 @@ def test_fedmoswa_paper_defaults_construct() -> None:
     assert algo.rho == 0.1
     assert algo.alpha_la == 1.5
     assert algo.gamma == 0.2
-    assert algo.option == "ii"
+    assert algo.option == "i", "default option switched to 'i' for Adam"
     assert algo.m == {}
     assert algo.c_i == {}
+
+
+def test_fedmoswa_paper_option_ii_opt_in() -> None:
+    """Option II remains available via explicit opt-in for SGD experiments."""
+    algo = FedMoSWA(
+        max_steps=50, batch_size=64,
+        rho=0.1, alpha_la=1.5, gamma=0.2,
+        n_total_clients=7, option="ii",
+    )
+    assert algo.option == "ii"
     assert algo._state_device is None
 
 
@@ -411,6 +426,7 @@ def test_fedmoswa_c_i_magnitude_scales_with_inverse_sum_eta() -> None:
         algo = FedMoSWA(
             max_steps=5, batch_size=4, rho=1.0,  # rho=1 simplifies Σ_k η^t_k
             alpha_la=1.0, gamma=0.0, n_total_clients=2,
+            option="ii",  # this test specifically validates option II semantics
         )
         algo.client_update(
             client_id=0, local_model=wrapped,
