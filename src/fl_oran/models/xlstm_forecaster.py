@@ -31,9 +31,9 @@ sLSTM is also deferred — single head with single memory cell per layer is
 sufficient at our scale.
 
 Reference impl: https://github.com/NX-AI/xlstm
-Time-series adaptation precedent: xLSTMTime (Tabish, MDPI AI 5(3), 2024,
-arXiv:2407.10240) — their LTSF tweaks are designed for long sequences;
-we use the vanilla Beck 2024 sLSTM formulation.
+Time-series adaptation precedent: xLSTMTime (Alharthi & Mahmood,
+arXiv:2407.10240, preprint only) — their LTSF tweaks are designed for
+long sequences; we use the vanilla Beck 2024 sLSTM formulation.
 """
 from __future__ import annotations
 
