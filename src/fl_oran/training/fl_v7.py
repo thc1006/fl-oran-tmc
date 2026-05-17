@@ -241,11 +241,12 @@ def _build_model(cfg: V7Config, schema: FeatureSchema) -> nn.Module:
     ctor = arch_cfg["ctor"]
     kwargs = dict(arch_cfg.get("kwargs", {}))
     kwargs.update(cfg.arch_kwargs)
-    # R2 C4: propagate drop_categorical to ForecasterV2 (LSTM). Other
-    # archs (Mamba, Spiking) currently don't support this kwarg, so we
-    # only forward it for LSTM (cfg.arch == "lstm"). Future-arch addition
-    # of drop_categorical can extend this allowlist.
-    if cfg.drop_categorical and cfg.arch == "lstm":
+    # R2 C4: propagate drop_categorical to archs whose constructor accepts
+    # it. Currently ForecasterV2 (LSTM) and xLSTMForecaster (xlstm) ship
+    # the kwarg with identical semantics (skip embedding lookup + reduce
+    # in_proj input_dim). Mamba and Spiking don't support it; future-arch
+    # additions extend this allowlist.
+    if cfg.drop_categorical and cfg.arch in ("lstm", "xlstm"):
         kwargs["drop_categorical"] = list(cfg.drop_categorical)
     return ctor(
         schema=schema, task="classification", seq_len=cfg.seq_len, **kwargs,
