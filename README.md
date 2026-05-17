@@ -54,10 +54,10 @@ ADR-001 Revision History).
 
 | Stage | Scope | Status |
 |-----------|-------|--------|
-| M1–M5 (v5) | Algorithm registry + 150-cell FL benchmark | done (paper Table 3) |
-| Stage 1 (v6) | 3-arch centralized sweep (3 archs × 10 seeds = 30 cells) | done (paper Table 1) |
-| Stage 2 / Phase 5 (v7) | 3-arch × 5-algo × 6-partition × 10-seed FL sweep (900 cells) | done (paper Table 4) |
-| Phase 6 (v7) | Per-BS Dirichlet ablation + R2 reviewer feedback | done (paper §7.1.5) |
+| M1–M5 (v5) | Algorithm registry + 150-cell FL benchmark | done (see `docs/RESULTS_V5_FINAL.md`) |
+| Stage 1 (v6) | 3-arch centralized sweep (3 archs × 10 seeds = 30 cells) | done (see `docs/RESULTS_V6_STAGE1.md`) |
+| Stage 2 / Phase 5 (v7) | 3-arch × 5-algo × 6-partition × 10-seed FL sweep (900 cells) | done (paper Figs 1–3 + `docs/RESULTS_V7_PHASE5.md`) |
+| Phase 6 (v7) | Per-BS Dirichlet ablation + R2 reviewer feedback | done (paper Tables 4 & 6 + §7.1.5) |
 | Path D core (v7) | 3-arch × 3 SAM-family-algo × 6-partition × 10-seed (540 cells) | in progress on V100 cluster |
 | Path D extension prep | 5-arch spec + pilot launcher + paper draft (xLSTM + Mamba-3) | done (PRs #18–#23) |
 | Path D extended sweep | 2-new-arch × 3-algo × 6-partition × 10-seed (360 cells) | pending V100 release |
