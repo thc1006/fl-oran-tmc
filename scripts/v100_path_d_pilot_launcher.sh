@@ -50,7 +50,7 @@ fi
 # Required hyperparameters per paper §6.1 (FedMoSWA) and existing
 # v100_sam_family_launcher.sh defaults (FedSCAM).
 FEDSCAM_KW='{"rho_max":0.05,"alpha_rho":1.0,"gamma":1.0,"beta_align":0.8,"kappa":1.0}'
-FEDMOSWA_KW='{"rho":0.1,"alpha_la":1.5,"gamma":0.2,"n_total_clients":7}'
+FEDMOSWA_KW='{"rho":0.1,"alpha_la":1.5,"gamma":1.0,"option":"i","n_total_clients":7}'
 
 # CPU threading: 4 threads per chain × 4 chains = 16 threads.
 export OMP_NUM_THREADS=4

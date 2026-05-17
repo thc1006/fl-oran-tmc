@@ -71,7 +71,13 @@ algorithms:
     kwargs:
       rho: 0.1
       alpha_la: 1.5
-      gamma: 0.2
+      gamma: 1.0            # Adam-fix: paper default 0.2 causes c_i/m scale
+                            # mismatch under Adam (gradient cancellation).
+                            # γ=1.0 aligns m fully with c_i scale.
+      option: "i"           # Adam-fix: paper default "ii" uses weight-drift
+                            # formula (Adam-normalized scale ~100× too large).
+                            # option "i" keeps c_i in raw-gradient scale.
+                            # See artifacts/v7_fedmoswa_diag for diagnostic.
       n_total_clients: 7
 
 partitions:

@@ -161,9 +161,16 @@ class FedMoSWA:
         batch_size: int,
         rho: float,                    # cyclical-lr decay (paper: 0.1)
         alpha_la: float,               # SWA LookAhead rate (paper: 1.5)
-        gamma: float,                  # momentum learning rate (paper: 0.2)
+        gamma: float,                  # momentum learning rate (paper: 0.2 SGD)
         n_total_clients: int,
-        option: str = "ii",            # paper experiments use option II
+        option: str = "i",             # default switched 2026-05-17: paper uses
+                                       # option II under SGD, but our pipeline is
+                                       # Adam — option II's weight-drift formula
+                                       # produces Adam-scale c_i (~100× raw grad)
+                                       # which collapses training. Option I uses
+                                       # raw-gradient c_i (Adam-compatible).
+                                       # See artifacts/v7_fedmoswa_diag/ for the
+                                       # 12-variant ablation that established this.
         grad_clip: float = 1.0,
         amp_enabled: bool = False,
         amp_dtype: torch.dtype | None = None,
@@ -185,11 +192,19 @@ class FedMoSWA:
                 "{0.05, 0.1, 0.2, 0.4}, with 0.2 the best. gamma=0 freezes "
                 "server momentum at the initial value (m stays zero)."
             )
-        if option not in ("ii",):
+        if option not in ("i", "ii"):
             raise ValueError(
-                f"option must be 'ii' (paper-experimental, only supported "
-                "in this impl); got {option!r}. Option-I deferred to "
-                "follow-up — see module docstring."
+                f"option must be 'i' or 'ii'; got {option!r}. "
+                "Option I (c_i^+ = grad_at_w_t on deterministic batch) is "
+                "Adam-friendly because c_i stays in raw-gradient scale. "
+                "Option II (c_i^+ = c_i - m + (θ_prev - θ_iK)/Σ_k η_k) is "
+                "paper-experimental default but assumes SGD: under Adam, "
+                "the parameter-drift term scales as Adam-step magnitude "
+                "(~100x raw gradient), causing the grad correction "
+                "g - c_i + m to drive Adam in incorrect directions. This "
+                "parallels the canonical-FedDyn × Adam divergence "
+                "documented in ADR-001 Stage A. SCAFFOLD's docstring in "
+                "this repo explicitly warns about the same trap."
             )
         if n_total_clients < 1:
             raise ValueError(
@@ -253,6 +268,55 @@ class FedMoSWA:
                 name: torch.zeros_like(p, device=device)
                 for name, p in model.named_parameters()
             }
+
+    def _compute_gradient_at(
+        self,
+        model: nn.Module,
+        cat: torch.Tensor,
+        cont: torch.Tensor,
+        y: torch.Tensor,
+        loss_fn: Callable,
+        device: torch.device,
+    ) -> dict[str, torch.Tensor]:
+        """Compute ∇L_i(model) on a deterministic batch — Adam-friendly c_i^+.
+
+        Mirrors SCAFFOLD's ``_compute_gradient_at`` (the same SCAFFOLD-trap
+        avoidance is documented there). Used by Option I: ``c_i^+ ← g_i(x)``.
+
+        Determinism: deterministic batch indices (``arange(0, batch_size)``)
+        + train mode (cuDNN LSTM backward requirement) + CPU+CUDA RNG
+        snapshot/restore so this side-channel does not perturb the outer
+        training loop's RNG chain.
+        """
+        bs = min(self.batch_size, cat.shape[0])
+        det_idx = torch.arange(bs, device=device)
+        was_training = model.training
+        model.train()
+        cpu_rng = torch.get_rng_state()
+        cuda_rng = (torch.cuda.get_rng_state(device)
+                    if device.type == "cuda" else None)
+        model.zero_grad(set_to_none=True)
+        amp_ctx = torch.autocast(
+            device_type=device.type,
+            dtype=self.amp_dtype or torch.bfloat16,
+            enabled=self.amp_enabled,
+        )
+        with amp_ctx:
+            logits = model(cat[det_idx], cont[det_idx])
+            loss = loss_fn(logits, y[det_idx])
+        loss.backward()
+        grads = {
+            name: p.grad.detach().clone()
+            for name, p in model.named_parameters()
+            if p.grad is not None
+        }
+        model.zero_grad(set_to_none=True)
+        torch.set_rng_state(cpu_rng)
+        if cuda_rng is not None:
+            torch.cuda.set_rng_state(cuda_rng, device)
+        if not was_training:
+            model.eval()
+        return grads
 
     def client_update(
         self,
@@ -330,31 +394,51 @@ class FedMoSWA:
             lr_schedule=lr_schedule,
         )
 
-        # Paper Algorithm 1 line 13 option-II:
-        #   c_i^+ = c_i − m + (1 / Σ_k η^t_k)(θ_{t−1} − θ^t_{i,K})
-        sum_eta_k = _sum_cyclical_lr(self.max_steps, current_lr, self.rho)
-        if sum_eta_k <= 0.0:
-            # Degenerate guard: lr=0 OR max_steps=0. Should never fire in
-            # production (V7Config requires both > 0). If it does, fall
-            # back to a unit divisor so c_i^+ tracks the param diff.
-            sum_eta_k = 1.0
-
-        # Vectorised c_i^+ update via torch._foreach. Each of the three
-        # subtractions/additions/divisions is a single CUDA kernel over
-        # ALL parameters; the equivalent Python for-loop launched N
-        # kernels per op, costing ~2 ms × 3 ops × 10 params = ~60 ms on
-        # Spiking_expand2 (worst case).
-        theta_iK_list = [p.detach() for _, p in local_model.named_parameters()]
-        theta_prev_list = [global_snapshot[n] for n in param_names]
-        # Δθ = θ_{t−1} − θ^t_{i,K} (note paper sign convention).
-        delta_theta_list = torch._foreach_sub(theta_prev_list, theta_iK_list)
-        # Divide by Σ_k η^t_k in place (foreach_div_ accepts scalar).
-        torch._foreach_div_(delta_theta_list, sum_eta_k)
-        # c_i^+ = c_i − m + Δθ/Σ.
-        c_i_minus_m = torch._foreach_sub(c_i_list, m_list)
-        new_c_i_list = torch._foreach_add(c_i_minus_m, delta_theta_list)
-        # Δc_i = c_i^+ − m (paper line 14: client communicates this).
-        delta_c_i_list = torch._foreach_sub(new_c_i_list, m_list)
+        # Paper Algorithm 1 line 13 — c_i^+ update with two options.
+        if self.option == "i":
+            # Option I (Adam-friendly): c_i^+ ← ∇L_i(θ_t) on deterministic batch.
+            # Keeps c_i in raw-gradient scale; the grad-correction term
+            # ``g - c_i + m`` is consistent regardless of optimizer choice.
+            # Paper notes Option I is "more stable than II" — we adopt it
+            # by default because our v7 pipeline uses Adam, and Option II's
+            # parameter-drift formula assumes SGD.
+            cat_c, cont_c, y_c = client_tensors
+            cat_g = cat_c.to(device, non_blocking=True)
+            cont_g = cont_c.to(device, non_blocking=True)
+            y_g = y_c.to(device, non_blocking=True)
+            # Reload θ_prev (current model has θ_iK after training).
+            with torch.no_grad():
+                for name, p in local_model.named_parameters():
+                    p.data.copy_(global_snapshot[name])
+            grad_at_wt = self._compute_gradient_at(
+                local_model, cat_g, cont_g, y_g, loss_fn, device,
+            )
+            # Reload θ_iK so the returned state_dict reflects the trained model.
+            with torch.no_grad():
+                for name, p in local_model.named_parameters():
+                    if name in state:
+                        p.data.copy_(state[name].to(device, non_blocking=True))
+            # c_i^+ = grad_at_θ_t (paper line 13 option I).
+            new_c_i_list = [grad_at_wt[n] for n in param_names]
+            # Δc_i = c_i^+ - m_old (paper line 14: client communicates this).
+            delta_c_i_list = torch._foreach_sub(new_c_i_list, m_list)
+        else:
+            # Option II (paper-experimental default, SGD-only):
+            #   c_i^+ = c_i − m + (1 / Σ_k η^t_k)(θ_{t−1} − θ^t_{i,K})
+            # WARNING: under Adam, the parameter-drift term scales as
+            # Adam-step magnitude (~100× raw gradient), causing
+            # ``g - c_i + m`` to drive Adam in incorrect directions.
+            # See SCAFFOLD's docstring for the same trap analysis.
+            sum_eta_k = _sum_cyclical_lr(self.max_steps, current_lr, self.rho)
+            if sum_eta_k <= 0.0:
+                sum_eta_k = 1.0
+            theta_iK_list = [p.detach() for _, p in local_model.named_parameters()]
+            theta_prev_list = [global_snapshot[n] for n in param_names]
+            delta_theta_list = torch._foreach_sub(theta_prev_list, theta_iK_list)
+            torch._foreach_div_(delta_theta_list, sum_eta_k)
+            c_i_minus_m = torch._foreach_sub(c_i_list, m_list)
+            new_c_i_list = torch._foreach_add(c_i_minus_m, delta_theta_list)
+            delta_c_i_list = torch._foreach_sub(new_c_i_list, m_list)
 
         # In-place update of self.c_i[client_id] (same tensor refs as
         # c_i_dev, kept on device permanently).
@@ -369,10 +453,10 @@ class FedMoSWA:
         }
 
         log.debug(
-            "fedmoswa client %s: rho=%.2f alpha_la=%.2f gamma=%.2f "
-            "loss=%.4f sum_eta=%.4g",
-            client_id, self.rho, self.alpha_la, self.gamma,
-            avg_loss, sum_eta_k,
+            "fedmoswa client %s: option=%s rho=%.2f alpha_la=%.2f gamma=%.2f "
+            "loss=%.4f",
+            client_id, self.option, self.rho, self.alpha_la, self.gamma,
+            avg_loss,
         )
 
         return ClientUpdate(
