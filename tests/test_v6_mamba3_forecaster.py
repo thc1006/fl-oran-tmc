@@ -204,17 +204,10 @@ def test_lambda1_theta0_recovers_mamba2_euler_state_recurrence():
     )
     block.eval()
 
-    # Pin lambda → 1 (large positive bias → sigmoid ≈ 1.0 to machine eps)
-    # and theta → 0 (zero weight + zero bias means θ_t = 0 for any x).
-    with torch.no_grad():
-        block.lambda_proj.weight.zero_()
-        block.lambda_proj.bias.fill_(50.0)        # sigmoid(50) = 1.0 in fp32
-        block.theta_proj.weight.zero_()
-        block.theta_proj.bias.zero_()
-
     # Hand-roll the inputs to the scan (bypass conv1d / in_proj for direct
-    # state-recurrence comparison). We assemble matched arguments and run
-    # the M3 scan as well as a Mamba-2-equivalent reference.
+    # state-recurrence comparison). The scan reads lambda_seq and theta_seq
+    # from its arguments only — block.lambda_proj / block.theta_proj are
+    # bypassed entirely, so we pass ones / zeros directly.
     B, L, d_inner = 2, 5, expand * d_model
     d_state_pairs = d_state // 2
 
@@ -267,11 +260,8 @@ def test_lambda_half_halves_t0_input_and_adds_prev_term_at_t1():
     torch.manual_seed(0)
     block = Mamba3SSMBlock(d_model=16, d_state=8, expand=1, d_conv=4)
     block.eval()
-    with torch.no_grad():
-        block.lambda_proj.weight.zero_()
-        block.lambda_proj.bias.zero_()              # sigmoid(0) = 0.5 exactly
-        block.theta_proj.weight.zero_()
-        block.theta_proj.bias.zero_()
+    # Scan reads lambda_seq / theta_seq from arguments only — pass 0.5 / 0
+    # directly without touching block.lambda_proj / block.theta_proj.
 
     B, L, d_inner = 2, 5, 16
     x = torch.randn(B, L, d_inner)
@@ -334,38 +324,53 @@ def test_theta_nonzero_rotates_state_pairs():
     torch.manual_seed(0)
     block = Mamba3SSMBlock(d_model=16, d_state=4, expand=1, d_conv=4)
     block.eval()
-    # Pretend there's no decay by zeroing A_log (A = -exp(0) = -1, scaled
-    # by tiny dt → ρ ≈ 1 minus a hair).
+    # Set near-zero decay by shrinking A_log to a large negative value
+    # (A ≈ -4.5e-5 → ρ ≈ 1 under our tiny dt) so the rotation effect is
+    # not swamped by magnitude decay. The lambda_proj / theta_proj weights
+    # don't need overriding — the scan reads lambda_seq / theta_seq from
+    # arguments, which we pass explicitly below.
     import math
     with torch.no_grad():
-        block.A_log.fill_(-10.0)                  # A ≈ -4.5e-5 → ρ ≈ 1
-        block.lambda_proj.weight.zero_()
-        block.lambda_proj.bias.fill_(50.0)        # λ ≈ 1 (no β term)
-        block.theta_proj.weight.zero_()
-        block.theta_proj.bias.fill_(math.pi / 2)  # 90° rotation
+        block.A_log.fill_(-10.0)
 
     B, L, d_inner = 1, 2, 16
-    # Use very small dt so the decay magnitude doesn't dominate.
-    x = torch.randn(B, L, d_inner) * 0.0           # zero-input → state only evolves via rotation
-    x[:, 0, :] = 1.0                              # impulse at t=0 to populate state
+    # Impulse input at t=0 to populate state; subsequent steps have zero
+    # input so any state evolution must come from rotation, not new input.
+    x = torch.zeros(B, L, d_inner)
+    x[:, 0, :] = 1.0
     dt = torch.full((B, L, d_inner), 1e-4)
     A_pairs = -torch.exp(block.A_log)
-    B_param = torch.ones(B, L, 4)                 # ensure B·x has identical re/im start
+    B_param = torch.ones(B, L, 4)
     C_param = torch.ones(B, L, 4)
-    lambda_seq = torch.full((B, L, 1), 1.0)
-    theta_seq = torch.full((B, L, 2), math.pi / 2)
+    lambda_seq = torch.full((B, L, 1), 1.0)        # no β term
+    theta_seq = torch.full((B, L, 2), math.pi / 2)  # 90° rotation each step
 
-    # Direct scan call — bypass conv/in_proj entanglement.
-    block._selective_scan(
+    y_rot = block._selective_scan(
         x, dt, A_pairs, B_param, C_param, block.D, lambda_seq, theta_seq,
     )
-    # We just need to verify no crash + finite output; the rotation
-    # semantics are validated more cleanly via the λ=1+θ=0 ↔ Mamba-2
-    # equivalence test above. This test just confirms the rotation path
-    # is exercised end-to-end without numerical issues.
-    # The state-trajectory rotation invariant is implicit in
-    # test_lambda1_theta0_recovers_mamba2_euler_state_recurrence
-    # (no rotation) — any rotation drift WILL fail that test.
+    # Minimum bar: rotation path must not produce non-finite values. The
+    # full state-mixing semantics (e.g., re ↔ im swap at θ=π/2) would need
+    # state-trajectory plumbing through _selective_scan to verify directly;
+    # we settle for finiteness here and trust the
+    # test_lambda1_theta0_recovers_mamba2_euler_state_recurrence test
+    # above to catch any drift in the no-rotation (θ=0) branch.
+    assert torch.isfinite(y_rot).all(), (
+        f"rotation path produced non-finite output at θ=π/2: "
+        f"any_nan={torch.isnan(y_rot).any().item()}, "
+        f"any_inf={torch.isinf(y_rot).any().item()}"
+    )
+
+    # Also assert rotation actually changes the output vs the θ=0 baseline,
+    # so a future bug where rotation silently degrades to identity (e.g.,
+    # zeroing cos/sin) WILL fail this test.
+    theta_zero = torch.zeros(B, L, 2)
+    y_norot = block._selective_scan(
+        x, dt, A_pairs, B_param, C_param, block.D, lambda_seq, theta_zero,
+    )
+    assert not torch.allclose(y_rot, y_norot, atol=1e-4), (
+        "rotation at θ=π/2 produced output indistinguishable from θ=0 — "
+        "rotation path may be degenerate"
+    )
 
 
 # ---------------------------------------------------------------------------
