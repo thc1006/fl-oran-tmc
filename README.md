@@ -1,12 +1,17 @@
 # fl-oran-tmc
 
 Local PyTorch federated-learning pipeline for ColO-RAN O-RAN slice SLA
-forecasting. Built as the experimental substrate for an IEEE TMC submission
+forecasting. Built as the experimental substrate for an IEEE JSAC submission
 on multi-algorithm FL under realistic non-IID splits.
+(Venue switched from IEEE TMC to IEEE JSAC on 2026-05-05 — see
+`docs/ADR-001-v5-tmc-paper-plan.md` Revision History. The `tmc` in this
+repo's name is preserved for historical continuity with v1-v4 artifacts.)
 
 > **Status: private during review.** The repository is kept private until
-> camera-ready. Badges, release tags, and DOI will be added at submission
-> acceptance.
+> camera-ready. The submission-ready paper (v0.9.2) is archived on Zenodo:
+> **DOI: [10.5281/zenodo.20075433](https://doi.org/10.5281/zenodo.20075433)**
+> — this is the preprint / submission deposit; an accepted-version DOI
+> will be minted after JSAC acceptance.
 
 ## What this is
 
