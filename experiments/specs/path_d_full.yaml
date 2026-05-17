@@ -17,7 +17,7 @@
 #     60 = 1 arch (lstm) × 2 algos × 6 partitions × 5 seeds {0,1,2,3,42}
 #       (pre-PathD LSTM-only SAM-family pilot)
 #   Path D core (480 cells, in progress on V100 cluster as of 2026-05-18):
-#     30  lstm × {fedscam, fedgmt}    × 6 part × 5 seeds {4,5,6,7,8}
+#     60  lstm × {fedscam, fedgmt}    × 6 part × 5 seeds {4,5,6,7,8}
 #     60  lstm × fedmoswa             × 6 part × 10 seeds
 #     180 mamba × 3 algos             × 6 part × 10 seeds
 #     180 spiking_expand2 × 3 algos   × 6 part × 10 seeds

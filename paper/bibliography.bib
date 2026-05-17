@@ -690,7 +690,9 @@
 }
 
 @misc{Lahoti2026_Mamba3,
-    author    = {Lahoti, Manish and others},
+    author    = {Lahoti, Aakash and Li, Kevin Y. and Chen, Berlin and
+                 Wang, Caitlin and Bick, Aviv and Kolter, J. Zico and
+                 Dao, Tri and Gu, Albert},
     title     = {{Mamba-3}: Improved Sequence Modeling using State Space
                  Principles},
     howpublished = {arXiv:2603.15569},
@@ -699,24 +701,24 @@
                  complex-valued SSM via RoPE-style $2 \times 2$ rotation
                  (data-dependent $\theta_t$), (3) MIMO state updates.
                  We implement (1) + (2); (3) is an LLM-scale hardware
-                 optimization not needed at our 40K-param scale.},
+                 optimization not needed at our 40K-param scale. Authors
+                 include Tri Dao and Albert Gu, the original Mamba and
+                 Mamba-2 authors.},
     year      = {2026}
 }
 
-@article{Tabish2024_xLSTMTime,
-    author    = {Tabish, Muhammad},
-    title     = {{xLSTMTime}: Long-Term Time Series Forecasting with
-                 Extended {LSTM}},
-    journal   = {MDPI AI},
-    volume    = {5},
-    number    = {3},
-    pages     = {1418--1444},
-    note      = {arXiv:2407.10240. Adapts xLSTM (Beck et al., NeurIPS 2024)
-                 to long-term time-series forecasting. We cite as
-                 prior-of-kind for time-series xLSTM but use the vanilla
-                 Beck et al. sLSTM formulation since xLSTMTime's tweaks
-                 target LTSF (long horizons) not our seq\_len=5 short-context
-                 SLA prediction.},
+@misc{Alharthi2024_xLSTMTime,
+    author    = {Alharthi, Musleh and Mahmood, Ausif},
+    title     = {{xLSTMTime}: Long-term Time Series Forecasting With
+                 {xLSTM}},
+    howpublished = {arXiv:2407.10240},
+    note      = {Adapts xLSTM (Beck et al., NeurIPS 2024) to long-term
+                 time-series forecasting. We cite as prior-of-kind for
+                 time-series xLSTM but use the vanilla Beck et al. sLSTM
+                 formulation since xLSTMTime's tweaks target LTSF (long
+                 horizons) not our seq\_len=5 short-context SLA prediction.
+                 Preprint only --- not published in a peer-reviewed
+                 venue as of 2026-05-18.},
     year      = {2024}
 }
 
