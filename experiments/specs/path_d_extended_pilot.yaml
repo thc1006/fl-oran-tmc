@@ -27,18 +27,24 @@
 #   Total: ~45 min wall on 1 V100 (single chain, no sharding needed
 #                                   for 4 cells)
 #
-# Decision criteria (CHECKPOINT 3, task #50):
-#   GO for #40 full 360-cell extension if:
+# Decision criteria (CHECKPOINT 3, task #50). Designed to be exhaustive
+# over any wall-time outcome — no grey zone between GO and NO-GO:
+#   GO for #40 full 360-cell extension if ALL hold:
 #     - All 4 cells complete without exception
 #     - All test_auc > 0.50 (model is at least not anti-learning)
 #     - No NaN in history.csv
-#     - Wall times within 2× of placeholders (else recompute ETA before
-#       launching 360 cells)
-#   NO-GO if:
+#     - Wall times within 3× of placeholders. NOTE: if walls are in the
+#       2×-3× band, GO but MUST recompute V100 ETA before #40 launches
+#       so the 360-cell schedule absorbs the slowdown (placeholder
+#       xlstm=520s / mamba3=854s are 4060 extrapolations; some V100
+#       overhead is expected and acceptable).
+#   NO-GO if ANY of:
 #     - Any cell raises NaN / OOM / shape error → debug before #40
 #     - Any test_auc < 0.50 → suspect bf16 emulation issue or surrogate
 #       gradient instability; investigate before #40
-#     - Wall times > 3× placeholder → V100 budget recomputation required
+#     - Wall times > 3× placeholder → indicates an arch-or-algo issue
+#       worth debugging before committing 360 cells (or V100 cluster
+#       contention that compromises the wall-time signal entirely)
 
 description: Path D extended pilot (xLSTM + Mamba-3, 4 cells, smoke)
 adr_reference: ADR-001 D-22 (FUTURE_WORK Dir 5) — pilot gate before #40

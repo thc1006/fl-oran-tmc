@@ -46,8 +46,13 @@ fi
 echo ""
 
 # --- expected V100 environment ---
+# Paths are hardcoded for the V100 cluster user `leo07010` so the dry-run
+# preview shows the SAME paths regardless of which machine prints it
+# (e.g., running dry-run on 4060-dev to plan, then SSH'ing to V100 to
+# actually fire). Using `$HOME` would have resolved to /home/thc1006 on
+# 4060-dev, leading users to copy-paste wrong paths.
 EXPECTED_HOST="leo07010"
-EXPECTED_REPO="$HOME/fl-oran-tmc"
+EXPECTED_REPO="/home/leo07010/fl-oran-tmc"
 SPEC=experiments/specs/path_d_extended_pilot.yaml
 OUTDIR=artifacts/v7_path_d_extended_pilot
 LOGDIR=logs
