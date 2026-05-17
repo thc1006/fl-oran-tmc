@@ -74,9 +74,17 @@ the recurrence's mathematical output (paper eq.~15--17). We use the sLSTM
 (scalar) memory variant rather than mLSTM (matrix) because at our
 \lstinline|seq_len=5| the associative-recall advantage of mLSTM does not
 materialise and its extra parameter cost would breach the $\pm 10\%$
-parity budget. Two stacked sLSTM cells at \lstinline|hidden_size=48|; the
-input projection \lstinline|nn.Linear(input -> 48)| matches the
-ForecasterV2 / MambaForecaster pattern. Backbone exposes $b=48$.
+parity budget. Two stacked sLSTM cells at \lstinline|hidden_size=48|, fed by an input
+projection \lstinline|nn.Linear(input -> 48)| (analogous to
+MambaForecaster's \lstinline|in_proj|; ForecasterV2 omits a separate
+in-projection because its first \lstinline|nn.LSTM| absorbs the input
+projection internally). xLSTMForecaster does NOT include a Mamba-style
+\lstinline|out_proj| --- the fc-shell consumes \lstinline|hidden_size=48|
+directly, so $b=48$ here vs $b=32$ for the 3 core archs. The wider $b$
+contributes the bulk of xLSTMForecaster's parameter budget into the fc
+layer (\lstinline|Linear(48 -> 64)| instead of \lstinline|Linear(32 -> 64)|),
+which trades off against not having the closing \lstinline|out_proj|
+bottleneck. Backbone exposes $b=48$.
 
 \textbf{Mamba-3} (\lstinline|Mamba3Forecaster|, Lahoti et
 al.~\cite{Lahoti2026_Mamba3}). Selective state-space block extending
@@ -96,15 +104,18 @@ h_{2k+1})$ as one complex state $h_k^{\mathbb{C}} = h_{2k} + i \cdot
 h_{2k+1}$ and applies rotation $R(\theta_t) \cdot \rho_t$ each step, where
 $\rho_t = \exp(\Delta_t A_t)$ is the real decay (per-channel-per-pair) and
 $\theta_t = \mathit{theta\_proj}(x_t)$ is a data-dependent rotation angle
-(per complex pair, shared across the $d_\mathrm{inner}$ channels). Two
-stacked Mamba-3 blocks at $(d_\mathrm{model}=64, d_\mathrm{state}=16$
-$\Rightarrow 8$ complex pairs$, \mathit{expand}=1)$. We initialise
-$\mathit{lambda\_proj.bias} = +3.0$ so $\sigma(3) \approx 0.95$ keeps the
-block near Mamba-2 Euler at initialisation (the paper's Remark~3
-recommends not enforcing the textbook $\lambda_t = 1/2 + O(\Delta t)$
-constraint), and $\mathit{theta\_proj} = \mathbf{0}$ at init so the
-rotation is the identity until the model learns otherwise. Backbone
-exposes $b=64$.
+(per complex pair, shared across the $d_\mathrm{inner}$ channels). The
+overall block structure mirrors MambaForecaster: \lstinline|Linear(input
+-> 64)| $\rightarrow 2 \times$ stacked Mamba-3 blocks at
+$(d_\mathrm{model}=64, d_\mathrm{state}=16 \Rightarrow 8$ complex pairs$,
+\mathit{expand}=1)$ $\rightarrow$ \lstinline|Linear(64 -> 32)| (the
+closing \lstinline|out_proj|, matching the 3-arch core's $b=32$
+convention). We initialise $\mathit{lambda\_proj.bias} = +3.0$ so
+$\sigma(3) \approx 0.95$ keeps the block near Mamba-2 Euler at
+initialisation (the paper's Remark~3 recommends not enforcing the
+textbook $\lambda_t = 1/2 + O(\Delta t)$ constraint), and
+$\mathit{theta\_proj} = \mathbf{0}$ at init so the rotation is the
+identity until the model learns otherwise. Backbone exposes $b=32$.
 
 \paragraph{Parameter-count parity (\textsection{}3-arch core: pinned;
 \textsection{}5-arch extension: same constraint).}
