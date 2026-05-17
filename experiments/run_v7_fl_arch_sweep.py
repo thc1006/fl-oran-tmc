@@ -47,10 +47,19 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     # Architecture (NEW vs v5 CLI).
+    # 2026-05-18 fix: same anti-pattern as the 2026-05-17 algorithm-choices
+    # fix below — hardcoded ``choices=["lstm", "mamba", ...]`` lagged behind
+    # the registry the moment xlstm was added to ARCH_REGISTRY, blocking
+    # any v7 single-cell xlstm launch on argparse choice-rejection. Pull
+    # from the same registry the trainer uses, so future arch additions
+    # (Mamba-3, ...) just work.
+    from fl_oran.training.fl_v7 import _arch_registry
+    _valid_archs = sorted(_arch_registry().keys())
     p.add_argument(
         "--arch", required=True,
-        choices=["lstm", "mamba", "mamba_expand2", "spiking", "spiking_expand2"],
-        help="Architecture key into ARCH_REGISTRY (run_v6_arch_sweep.py).",
+        choices=_valid_archs,
+        help=f"Architecture key into ARCH_REGISTRY (run_v6_arch_sweep.py). "
+             f"Known: {_valid_archs}",
     )
     p.add_argument(
         "--arch-kwargs", default="{}",

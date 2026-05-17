@@ -40,7 +40,9 @@ from fl_oran.evaluation.energy_metrics import estimate_energy_pJ_per_inference
 from fl_oran.logging_utils import get_logger
 from fl_oran.models.forecaster_v2 import ForecasterV2
 from fl_oran.models.mamba_forecaster import MambaForecaster
+from fl_oran.models.mamba3_forecaster import Mamba3Forecaster
 from fl_oran.models.spiking_forecaster import SpikingForecaster
+from fl_oran.models.xlstm_forecaster import xLSTMForecaster
 from fl_oran.training.centralized_v3 import (
     V3Config,
     _load_and_prepare,
@@ -94,6 +96,41 @@ ARCH_REGISTRY = {
         "warmup_steps": 750,
         "weight_decay": 0.0,
         "kwargs": {"backbone_d_model": 56, "backbone_expand": 2, "t_inner": 1},
+    },
+    "xlstm": {
+        # Path D extension: Beck et al. xLSTM-sLSTM (arXiv:2405.04517,
+        # NeurIPS 2024). Single-head sLSTM (scalar memory) with
+        # exponential input gate + normalizer + stabilizer state. Wraps
+        # the same FeatureSchema encoder + fc/relu/head as ForecasterV2;
+        # only the temporal trunk differs. Targets ~42K params at
+        # hidden_size=48, n_layers=2.
+        "ctor": xLSTMForecaster,
+        "lr": 5e-4,
+        "warmup_steps": 750,
+        "weight_decay": 0.0,
+        "kwargs": {},
+    },
+    "mamba3": {
+        # Path D extension: Lahoti et al. Mamba-3 (arXiv:2603.15569,
+        # Mar 2026). Adds two innovations on top of Mamba-2's selective
+        # SSM:
+        #
+        #   1. Exponential-Trapezoidal discretization (§3.1, Proposition
+        #      1) — adds a previous-step input contribution β_t · B_{t-1}
+        #      · x_{t-1} with data-dependent trapezoidal mix λ_t.
+        #   2. Complex-valued SSM via RoPE-style 2x2 rotation (§3.2,
+        #      Proposition 2) — rotation+decay on paired (re, im) state
+        #      dims, with data-dependent rotation angle θ_t.
+        #
+        # MIMO (Innovation 3) deferred — it's a hardware-efficiency
+        # optimization for LLM-scale models and doesn't help at 40K
+        # params. Default kwargs reuse Mamba's d_model=64, expand=1,
+        # n_blocks=2; d_state=16 (8 complex pairs). Targets ~40K params.
+        "ctor": Mamba3Forecaster,
+        "lr": 5e-4,
+        "warmup_steps": 750,
+        "weight_decay": 0.0,
+        "kwargs": {},
     },
 }
 
