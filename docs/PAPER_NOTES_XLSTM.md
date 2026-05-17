@@ -192,6 +192,18 @@ Total per layer:
 
 - **Paper**: Beck et al., NeurIPS 2024, arXiv:2405.04517
 - **Reference impl**: https://github.com/NX-AI/xlstm
-- **xLSTMTime**: Tabish, arXiv:2407.10240 (MDPI AI 5(3):1418-1444, 2024) —
-  time-series adaptation, but their tweaks are for LTSF (long sequences),
-  may not transfer to our seq_len=5. We use vanilla sLSTM.
+- **xLSTMTime**: Alharthi & Mahmood, arXiv:2407.10240 (preprint only, NOT
+  published in a peer-reviewed venue) — time-series adaptation, but their
+  tweaks are for LTSF (long sequences), may not transfer to our seq_len=5.
+  We use vanilla sLSTM.
+
+  **Erratum (2026-05-18)**: an earlier version of this notes file
+  mis-attributed this paper to "Tabish, MDPI AI 5(3):1418-1444, 2024".
+  Both the author name and the journal venue were wrong. Verified
+  against the live arXiv page on 2026-05-18: title is "xLSTMTime:
+  Long-term Time Series Forecasting With xLSTM", authors are
+  Musleh Alharthi + Ausif Mahmood, preprint only. The bib entry
+  (``Alharthi2024_xLSTMTime`` in ``paper/bibliography.bib``) was
+  corrected in the same PR as this note revision; if you find any
+  other reference to "Tabish, MDPI AI" in the repo, please correct it
+  to match.
