@@ -12,8 +12,11 @@ Sweep dimensions actually emitted by fl_v7 (Phase 5 + Phase 6 ablations)::
             xlstm, mamba3}                          + Phase 6 used the first 3,
                                                    Path D extended sweep
                                                    (2026-05-18) added xlstm and
-                                                   mamba3 — see ADR-001 Revision
-                                                   History. ARCH_REGISTRY also
+                                                   mamba3 — see
+                                                   ``docs/PAPER_NOTES_XLSTM.md``
+                                                   and ``docs/PAPER_NOTES_MAMBA3.md``
+                                                   for the per-arch design
+                                                   rationale. ARCH_REGISTRY also
                                                    exposes ``mamba_expand2`` and
                                                    ``spiking`` for Stage 1
                                                    centralised ablations only,
@@ -133,16 +136,18 @@ _REQUIRED_TEST_FIELDS = ("auc",)
 
 
 # Hard-coded per-arch parameter counts. Source: docs/RESULTS_V6_STAGE1_ANALYSIS.md
-# (Stage 1 audit) cross-checked against the v7 build_model tests
-# (``tests/test_v7_fl_arch_agnostic.py`` pins LSTM=44553, Mamba=40489,
-# spiking_expand2=43593 with name ``test_v7_build_model_*_pins_params_*``).
-# Path D extension (2026-05-18) added xLSTM and Mamba-3 — counts taken
-# from the 4060 v6 smoke runs against the production schema (3 cat ×
-# 17 cont, post-Step1 measurement):
+# (Stage 1 audit) cross-checked against the v7 build_model pin tests in
+# ``tests/test_v7_fl_arch_agnostic.py`` (one per arch with name
+# ``test_v7_build_model_*_pins_params_*``). All 5 values below are
+# pin-tested against the V3 schema (V3_CATEGORICAL = [bs_id, slice_id,
+# sched, tr] with sizes {8, 4, 4, 29}; V3_CONTINUOUS has 17 features).
+# Path D extension (2026-05-18) added xLSTM and Mamba-3 with their own
+# pin tests:
 #   xlstm:  43241 params (xLSTMForecaster, hidden_size=48, n_layers=2)
 #   mamba3: 40635 params (Mamba3Forecaster, d_model=64, n_blocks=2,
 #                         d_state=16 → 8 complex pairs)
-# The other two entries in ARCH_REGISTRY — ``mamba_expand2`` and
+# Schema drift in V3_CAT_SIZES will fail ALL 5 pin tests loudly. The
+# other two entries in ARCH_REGISTRY — ``mamba_expand2`` and
 # ``spiking`` — are Stage 1 centralised ablation archs that no FL sweep
 # cell uses, so they're intentionally absent here. ``.get(arch)`` returns
 # ``None`` for any missing arch, which renders as "n/a" in the Markdown

@@ -53,8 +53,11 @@ load_cells = _agg.load_cells
 paired_bootstrap_delta = _agg.paired_bootstrap_delta
 
 
-# Path D scope
-PATH_D_ARCHS = ("lstm", "mamba", "spiking_expand2")
+# Path D scope. Extended 2026-05-18 with xlstm + mamba3 for the
+# Path D extended sweep (5 archs × 3 SAM-family algos × 6 partitions ×
+# 10 seeds). Keep in sync with ARCH_DISPLAY below — extending one
+# without the other would KeyError at render_markdown line 219/222.
+PATH_D_ARCHS = ("lstm", "mamba", "spiking_expand2", "xlstm", "mamba3")
 PATH_D_ALGOS = ("fedscam", "fedgmt", "fedmoswa")
 PATH_D_PARTITIONS = [
     ("iid", None),
@@ -77,6 +80,8 @@ ARCH_DISPLAY = {
     "lstm":             "LSTM",
     "mamba":            "Mamba",
     "spiking_expand2":  "Spiking",
+    "xlstm":            "xLSTM",
+    "mamba3":           "Mamba-3",
 }
 ALGO_DISPLAY = {
     "fedscam":  "FedSCAM",
