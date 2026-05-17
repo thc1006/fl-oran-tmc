@@ -669,4 +669,55 @@
     year      = {2025}
 }
 
+% =====================================================================
+% Path D extended sweep (2026-05-18): xLSTM + Mamba-3 + xLSTMTime.
+% Cited in §7 results (5-arch panel) and §related-work (recent SOTA).
+% =====================================================================
+
+@inproceedings{Beck2024_xLSTM,
+    author    = {Beck, Maximilian and P{\"o}ppel, Korbinian and
+                 Spanring, Markus and Auer, Andreas and
+                 Prudnikova, Oleksandra and Kopp, Michael and
+                 Klambauer, G{\"u}nter and Brandstetter, Johannes and
+                 Hochreiter, Sepp},
+    title     = {{xLSTM}: Extended Long Short-Term Memory},
+    booktitle = {NeurIPS},
+    note      = {arXiv:2405.04517. Introduces exponential input gate +
+                 normalizer state + stabilizer state. Two variants:
+                 sLSTM (scalar memory, used here) and mLSTM (matrix memory,
+                 deferred --- not needed at our seq\_len=5).},
+    year      = {2024}
+}
+
+@misc{Lahoti2026_Mamba3,
+    author    = {Lahoti, Manish and others},
+    title     = {{Mamba-3}: Improved Sequence Modeling using State Space
+                 Principles},
+    howpublished = {arXiv:2603.15569},
+    note      = {Three innovations over Mamba-2: (1) exponential-trapezoidal
+                 discretization with data-dependent $\lambda_t$, (2)
+                 complex-valued SSM via RoPE-style $2 \times 2$ rotation
+                 (data-dependent $\theta_t$), (3) MIMO state updates.
+                 We implement (1) + (2); (3) is an LLM-scale hardware
+                 optimization not needed at our 40K-param scale.},
+    year      = {2026}
+}
+
+@article{Tabish2024_xLSTMTime,
+    author    = {Tabish, Muhammad},
+    title     = {{xLSTMTime}: Long-Term Time Series Forecasting with
+                 Extended {LSTM}},
+    journal   = {MDPI AI},
+    volume    = {5},
+    number    = {3},
+    pages     = {1418--1444},
+    note      = {arXiv:2407.10240. Adapts xLSTM (Beck et al., NeurIPS 2024)
+                 to long-term time-series forecasting. We cite as
+                 prior-of-kind for time-series xLSTM but use the vanilla
+                 Beck et al. sLSTM formulation since xLSTMTime's tweaks
+                 target LTSF (long horizons) not our seq\_len=5 short-context
+                 SLA prediction.},
+    year      = {2024}
+}
+
 % Add further entries as later sections (S11-F onwards) are migrated.
