@@ -8,11 +8,16 @@ Reads each completed cell directory under ``--sweep-dir`` (default
 
 Sweep dimensions actually emitted by fl_v7 (Phase 5 + Phase 6 ablations)::
 
-    arch ∈ {lstm, mamba, spiking_expand2}        (3 values used across
-                                                   all FL phases; ARCH_REGISTRY
-                                                   also exposes ``mamba_expand2``
-                                                   and ``spiking`` for Stage 1
-                                                   centralised ablations only)
+    arch ∈ {lstm, mamba, spiking_expand2,         (5 FL-phase archs; Phase 5
+            xlstm, mamba3}                          + Phase 6 used the first 3,
+                                                   Path D extended sweep
+                                                   (2026-05-18) added xlstm and
+                                                   mamba3 — see ADR-001 Revision
+                                                   History. ARCH_REGISTRY also
+                                                   exposes ``mamba_expand2`` and
+                                                   ``spiking`` for Stage 1
+                                                   centralised ablations only,
+                                                   which no FL sweep uses.)
     algorithm ∈ {fedavg, fedprox, fedadam,        (5 values; MOON deferred
                  scaffold, feddyn}                  per ADR-001 D-22)
     partition_mode ∈ {iid, dirichlet,             (4 values: Phase 5 used
