@@ -41,8 +41,8 @@ A clean-history reboot of the v1–v4 exploratory codebase (`colosseum-oran-fede
 - **PyTorch-native**, single-machine. Stage 1 + Stage 2 core sweep
   collected on RTX 4080 (sm_89); current dev workstation is RTX 4060 Ti
   (sm_89, 16 GiB VRAM) post 2026-05-16 migration. Path D core sweep
-  runs on a separate 4× Tesla V100-SXM2-32GB cluster. Python 3.12 +
-  PyTorch 2.10 + CUDA 12.8 (4060) / CUDA 12.1 (V100). **No Flower, no TFF.**
+  runs on a separate 4× Tesla V100-SXM2-32GB cluster. Python 3.14 +
+  PyTorch 2.11 + CUDA 12.8 (4060) / CUDA 12.1 (V100). **No Flower, no TFF.**
 
 The v1–v4 code is preserved under `src/fl_oran/` untouched; v5–v7
 extensions live alongside it. See `docs/ADR-001-v5-tmc-paper-plan.md`
