@@ -57,7 +57,7 @@ ADR-001 Revision History).
 | M1–M5 (v5) | Algorithm registry + 150-cell FL benchmark | done (paper Table 3) |
 | Stage 1 (v6) | 3-arch centralized sweep (3 archs × 10 seeds = 30 cells) | done (paper Table 1) |
 | Stage 2 / Phase 5 (v7) | 3-arch × 5-algo × 6-partition × 10-seed FL sweep (900 cells) | done (paper Table 4) |
-| Phase 6 (v7) | Per-BS Dirichlet ablation + R2 reviewer feedback | done (paper §7.1) |
+| Phase 6 (v7) | Per-BS Dirichlet ablation + R2 reviewer feedback | done (paper §7.1.5) |
 | Path D core (v7) | 3-arch × 3 SAM-family-algo × 6-partition × 10-seed (540 cells) | in progress on V100 cluster |
 | Path D extension prep | 5-arch spec + pilot launcher + paper draft (xLSTM + Mamba-3) | done (PRs #18–#23) |
 | Path D extended sweep | 2-new-arch × 3-algo × 6-partition × 10-seed (360 cells) | pending V100 release |
@@ -65,7 +65,7 @@ ADR-001 Revision History).
 **334+ tests passing** across v1–v7 (89 legacy v1–v4 + 42 v5 FL + 90 v6 arch + 162+ v7 FL × arch + R1/R2 audit invariants + paper-claim sources + 5 new pin tests for xLSTM/Mamba-3). All test infrastructure is in `tests/`; CI uses `pytest --no-cov` for the canonical run.
 
 **Paper artifact**: `paper/main.tex` (21 pp) + `paper/supplementary.tex`
-(3 pp) + 61-entry `paper/bibliography.bib`. Submission-ready PDF
+(3 pp) + 67-entry `paper/bibliography.bib`. Submission-ready PDF
 deposited to Zenodo at **DOI [10.5281/zenodo.20075433](https://doi.org/10.5281/zenodo.20075433)**
 under tag `v0.9.2-submission-ready`.
 
@@ -176,7 +176,7 @@ artifacts/
 └── (all run outputs gitignored)         see `.gitignore` for the full pattern
 paper/
 ├── main.tex / supplementary.tex         JSAC submission source
-├── bibliography.bib                     64 BibTeX entries
+├── bibliography.bib                     67 BibTeX entries
 └── main.pdf                             v0.9.2-submission-ready (Zenodo)
 scripts/
 ├── aggregate_v7_results.py              Phase 5 paper Table 4 generator
