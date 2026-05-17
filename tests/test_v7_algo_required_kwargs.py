@@ -84,10 +84,12 @@ class TestRegistryConsistency:
         # Future-proofing: if someone adds a new algorithm class to the
         # registry but forgets to update the table, this test catches it.
         # The expected set is what Phase 1.5/2 supports per ADR D-22,
-        # extended 2026-05 with FedSCAM + FedGMT for the SAM-family ablation.
+        # extended 2026-05 with FedSCAM + FedGMT for the SAM-family ablation,
+        # then extended 2026-05-17 with FedMoSWA (Liu et al. arXiv:2507.20016)
+        # for the Path D 480-cell scale-up sweep.
         expected = {
             "fedavg", "fedprox", "fedadam", "scaffold", "feddyn",
-            "fedbn", "fedswa", "fedscam", "fedgmt",
+            "fedbn", "fedswa", "fedscam", "fedgmt", "fedmoswa",
         }
         assert set(_ALGO_REQUIRED_KWARGS.keys()) == expected, (
             "table drift — update _ALGO_REQUIRED_KWARGS and this test together"

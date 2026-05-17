@@ -1,0 +1,86 @@
+# Path D smoke spec — 4060 Ti local validation before V100 launch.
+#
+# Validates the NEW arch × algo combinations that the Path D V100 sweep
+# will run for the first time. Existing v7_sam_family cells already cover
+# {lstm × fedscam, lstm × fedgmt} at 5 seeds — those are skipped here.
+#
+# Cells run (7 total):
+#   1. lstm × fedmoswa × iid × seed=42       (new algo, simplest arch)
+#   2. mamba × fedscam × iid × seed=42       (existing algo, new arch)
+#   3. mamba × fedgmt × iid × seed=42        (existing algo, new arch)
+#   4. mamba × fedmoswa × iid × seed=42      (new algo, new arch)
+#   5. spiking_expand2 × fedscam × iid × seed=42   (highest binarization risk)
+#   6. spiking_expand2 × fedgmt × iid × seed=42    (P0 fix in flight)
+#   7. spiking_expand2 × fedmoswa × iid × seed=42  (new algo × spiking)
+#
+# Smoke parameters chosen for 4060 Ti hardware budget:
+#   sample_ratio=0.1 → ~1.45M training rows (avoids 30 GB host RAM ceiling
+#                     that caused the smoke v1 SIGKILL on 2026-05-17).
+#   num_rounds=10 → ~3 min per LSTM cell, ~6 min Mamba, ~15 min Spiking
+#                  → ~70 min total smoke wall.
+#   IID partition only → smoke validates code paths, not heterogeneity.
+#   seed=42 → single seed, deterministic enough to catch NaN / shape bugs.
+#
+# Hardware-specific knobs (4060 Ti sm_89):
+#   mixed_precision: bf16 (native, no GradScaler needed)
+#   cudnn_deterministic: true (matches V100 spec; reproducibility > speed)
+#   compile_model omitted → defaults disabled (fedmoswa's per-step lr
+#                           mutation breaks torch.compile graph capture)
+
+description: Path D smoke (4060 Ti) — 7 novel arch×algo combinations
+adr_reference: ADR-001 D-22 + Path D scope (FedMoSWA scale-up)
+
+archs:
+  - lstm
+  - mamba
+  - spiking_expand2
+
+algorithms:
+  - name: fedscam
+    kwargs:
+      rho_max: 0.05
+      alpha_rho: 1.0
+      gamma: 1.0
+      beta_align: 0.8
+      kappa: 1.0
+  - name: fedgmt
+    kwargs:
+      alpha_ema: 0.95
+      gamma_kl: 1.0
+      tau: 3.0
+      beta: 10.0
+      n_total_clients: 7
+  - name: fedmoswa
+    kwargs:
+      rho: 0.1
+      alpha_la: 1.5
+      gamma: 0.2
+      n_total_clients: 7
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 10                 # smoke; full sweep uses 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 0.1              # 4060 Ti 30 GB RAM ceiling
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16          # 4060 Ti sm_89 native bf16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
+  mamba:
+    lr: 5.0e-4
+  spiking_expand2:
+    lr: 5.0e-4

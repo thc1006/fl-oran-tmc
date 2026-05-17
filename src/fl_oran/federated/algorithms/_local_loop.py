@@ -3,7 +3,7 @@
 Rule-of-three trigger: FedAvg, FedProx, SCAFFOLD, FedDyn, (FedAdam inherits)
 and MOON all share the same per-step structure (sample batch -> forward
 -> optional loss modification -> backward -> optional grad correction ->
-clip -> Adam step). Two hook points:
+clip -> Adam step). Three hook points:
 
 - ``loss_modifier(model, cat_batch, cont_batch, base_loss) -> new_loss``
   runs inside the autocast context before ``backward()``. MOON uses this
@@ -11,8 +11,12 @@ clip -> Adam step). Two hook points:
 - ``grad_correction(model)`` runs after ``backward()`` and before
   ``clip_grad_norm_``. FedProx / SCAFFOLD / FedDyn use this to inject
   proximal / variance-reduction / dynamic-reg corrections into ``p.grad``.
+- ``lr_schedule(step_idx, max_steps) -> float`` runs at the top of each
+  step. FedMoSWA uses this for the cyclical local-LR schedule
+  η^t_k = η_l(1 − k/K) + (k/K)·ρ·η_l (paper Eq.~3). ``None`` keeps the
+  optimizer's initial LR for all steps (vanilla FedAvg/FedProx/SCAFFOLD).
 
-FedAvg passes both as ``None`` and gets the vanilla loop.
+FedAvg passes all three as ``None`` and gets the vanilla loop.
 
 NaN/Inf guard (added 2026-05-17 pre-V100 SAM-family sweep): if the
 per-step loss becomes non-finite, raise ``NonFiniteLossError`` to abort
@@ -60,6 +64,7 @@ def run_local_sgd(
         [nn.Module, torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor
     ] | None = None,
     grad_correction: Callable[[nn.Module], None] | None = None,
+    lr_schedule: Callable[[int, int], float] | None = None,
 ) -> tuple[dict[str, torch.Tensor], float]:
     """Run ``max_steps`` Adam steps on ``local_model`` against ``client_tensors``.
 
@@ -99,6 +104,14 @@ def run_local_sgd(
         enabled=amp_enabled,
     )
     for step_idx in range(max_steps):
+        # Per-step LR (FedMoSWA cyclical schedule). Mutates the optimizer's
+        # param-group lr in place. Adam carries momentum buffers (m, v) that
+        # are independent of the lr field, so changing lr per step is safe;
+        # only the update magnitude scales by the new lr.
+        if lr_schedule is not None:
+            lr_step = lr_schedule(step_idx, max_steps)
+            for g in optimizer.param_groups:
+                g["lr"] = lr_step
         idx = torch.randint(0, n_local, (batch_size,), device=device)
         cb = cat_g[idx]
         ob = cont_g[idx]

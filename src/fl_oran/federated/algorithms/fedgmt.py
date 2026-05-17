@@ -254,7 +254,16 @@ class FedGMT:
                 for name, p in ema_model.named_parameters():
                     if name in self.ema_state:
                         p.copy_(self.ema_state[name].to(device, non_blocking=True))
-            ema_model.eval()
+            # Do NOT call ema_model.eval(): on Spiking backbones this flips
+            # self.training=False, which activates the spike-counter buffer
+            # update in spiking_forecaster.SpikingSSMBlock._scan_emit_spikes
+            # (line 144 "if not self.training: self.spike_count += ...") for
+            # every no-grad teacher forward inside the KL closure. Wasteful
+            # (~7 LIF timesteps × 50 inner steps × per-cell allocations) and
+            # the counter is never read on the teacher anyway. LSTM and Mamba
+            # have no train/eval-mode-sensitive code (dropout=0, no BN) so
+            # leaving training=True is a no-op there. Reference impl
+            # harrylee999/FL-SAM also does not eval the EMA teacher.
             for p in ema_model.parameters():
                 p.requires_grad_(False)
         else:

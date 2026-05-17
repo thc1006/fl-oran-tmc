@@ -121,6 +121,27 @@ def _parse_args() -> argparse.Namespace:
             "in seconds rather than after each cell's CPU prep."
         ),
     )
+    p.add_argument(
+        "--shard", default="",
+        help=(
+            "Shard filter N/M (1-based): run only cells whose post-expand "
+            "index satisfies (i mod M) == N - 1. Used by V100 multi-chain "
+            "launchers to split the master spec across GPUs without writing "
+            "per-chain spec files. Stable across runs since expand_spec is "
+            "deterministic. Applied AFTER --limit and BEFORE --skip-completed."
+        ),
+    )
+    p.add_argument(
+        "--skip-existing-summary", action="store_true",
+        help=(
+            "Filesystem-based skip: drop any cell whose output dir already "
+            "contains a non-empty summary.json. Stronger than --skip-completed "
+            "for sweeps that were partially run via run_v7_fl_arch_sweep.py "
+            "(no _phase_summary CSV). Path D launcher requires this to "
+            "preserve the existing 60 LSTM cells from the original 60-cell "
+            "sweep that predate the spec-driven launcher."
+        ),
+    )
     return p.parse_args()
 
 
@@ -236,11 +257,34 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     parq = Path(args.unified_parquet)
 
-    # Order matters: limit → skip-completed → dry-run. Limit narrows the
-    # universe first; skip-completed prunes already-finished work; only
-    # then does dry-run print what WILL actually execute.
+    # Order matters: limit → shard → skip-completed → dry-run. Limit narrows
+    # the universe first; shard splits across chains by stable post-expand
+    # index; skip-completed prunes already-finished work; only then does
+    # dry-run print what WILL actually execute.
     if args.limit and args.limit > 0:
         cells = cells[: args.limit]
+
+    if args.shard:
+        try:
+            n_str, m_str = args.shard.split("/")
+            n_shard = int(n_str)
+            m_shard = int(m_str)
+        except ValueError as e:
+            raise SystemExit(
+                f"--shard must be of form N/M (e.g. 1/4); got {args.shard!r}"
+            ) from e
+        if not (1 <= n_shard <= m_shard):
+            raise SystemExit(
+                f"--shard requires 1 <= N <= M; got N={n_shard} M={m_shard}"
+            )
+        if m_shard < 1:
+            raise SystemExit(f"--shard M must be >= 1; got {m_shard}")
+        before = len(cells)
+        cells = [c for i, c in enumerate(cells) if i % m_shard == n_shard - 1]
+        log.info(
+            "--shard %d/%d: %d → %d cells",
+            n_shard, m_shard, before, len(cells),
+        )
 
     if args.skip_completed:
         skip_names = _load_skip_set(out_dir, args.summary_tag)
@@ -251,6 +295,20 @@ def main() -> None:
                 "--skip-completed: %d → %d cells after filter",
                 before, len(cells),
             )
+
+    if args.skip_existing_summary:
+        before = len(cells)
+        cells = [
+            c for c in cells
+            if not (
+                (out_dir / c["name"] / "summary.json").is_file()
+                and (out_dir / c["name"] / "summary.json").stat().st_size > 0
+            )
+        ]
+        log.info(
+            "--skip-existing-summary: %d → %d cells after filesystem check",
+            before, len(cells),
+        )
 
     log.info(
         "spec=%s description=%r n_cells=%d (limit=%d)",

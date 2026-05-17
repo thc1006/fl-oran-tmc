@@ -286,6 +286,14 @@ _ALGO_REQUIRED_KWARGS: dict[str, set[str]] = {
                               # 80mK2Mqaph). Single-backward-pass SAM via
                               # EMA trajectory + FedDyn-style dual.
                               # n_total_clients matches FedDyn's convention.
+    "fedmoswa": {"rho", "alpha_la", "gamma", "n_total_clients"},
+                              # FedMoSWA (Liu et al. 2025, ICML; arXiv:2507.20016).
+                              # Momentum-based stochastic controlled weight
+                              # averaging: SCAFFOLD-like c_i + server momentum m
+                              # + FedSWA's LookAhead-EMA aggregation. Paper §6.1
+                              # uses rho=0.1, alpha_la=1.5, gamma=0.2. `option`
+                              # is optional (defaults to "ii", paper-experimental).
+                              # n_total_clients matches FedDyn/FedGMT convention.
 }
 
 # Partition-axis kwargs that ride on cfg.algo_kwargs for spec-yaml/CLI
