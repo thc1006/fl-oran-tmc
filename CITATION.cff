@@ -20,8 +20,11 @@ abstract: >-
   multiple FL algorithms (FedAvg, FedProx, FedAdam, SCAFFOLD, FedDyn,
   FedBN, FedSWA, FedSCAM, FedGMT, FedMoSWA; MOON deferred) ×
   parametric Dirichlet heterogeneity × per-round NVML training-energy
-  measurement. Paper under review at IEEE Journal on Selected Areas
-  in Communications.
+  measurement. All five architectures share an identical encoder and a
+  structurally-identical classifier head; only the temporal trunk
+  differs (total parameter count matched within ±10% via the ADR-001
+  D-20 parity constraint). Paper under review at IEEE Journal on
+  Selected Areas in Communications.
 authors:
   - family-names: Tsai
     given-names: Hsiu-Chi

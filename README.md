@@ -24,8 +24,13 @@ A clean-history reboot of the v1–v4 exploratory codebase (`colosseum-oran-fede
   for the 3-arch core panel (Phase 5, 900 cells); xLSTM-sLSTM (Beck et al.,
   NeurIPS 2024) and Mamba-3 (Lahoti et al., arXiv 2603.15569) added in the
   Path D extended sweep (360 additional cells, 2026-05-18 prep). All five
-  share an identical encoder + classifier head; only the temporal trunk
-  differs (ADR-001 D-20 parity constraint).
+  share an identical encoder and a structurally-identical classifier head
+  (`Linear → ReLU → Linear`); only the temporal trunk differs. Total
+  parameter count is matched within ±10% across all 5 archs (ADR-001 D-20
+  parity constraint); xLSTM's head shell happens to consume `hidden_size=48`
+  directly (no Mamba-style `out_proj` bottleneck), while the 3 core archs
+  and Mamba-3 narrow to 32 before the head — this is the architecture-level
+  confounder that the param-count parity rule controls for.
 - **6 client-partition modes**: natural-by-BS (7 ColO-RAN gNBs as clients),
   Dirichlet `α ∈ {0.05, 0.10, 0.50, 1.00, 5.00}`, plus controlled
   `random_split` and `per_bs_dirichlet` ablations.
@@ -50,7 +55,7 @@ ADR-001 Revision History).
 | Stage | Scope | Status |
 |-----------|-------|--------|
 | M1–M5 (v5) | Algorithm registry + 150-cell FL benchmark | done (paper Table 3) |
-| Stage 1 (v6) | 3-arch centralized sweep (30 cells × 10 seeds) | done (paper Table 1) |
+| Stage 1 (v6) | 3-arch centralized sweep (3 archs × 10 seeds = 30 cells) | done (paper Table 1) |
 | Stage 2 / Phase 5 (v7) | 3-arch × 5-algo × 6-partition × 10-seed FL sweep (900 cells) | done (paper Table 4) |
 | Phase 6 (v7) | Per-BS Dirichlet ablation + R2 reviewer feedback | done (paper §7.1) |
 | Path D core (v7) | 3-arch × 3 SAM-family-algo × 6-partition × 10-seed (540 cells) | in progress on V100 cluster |
