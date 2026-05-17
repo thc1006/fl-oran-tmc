@@ -1,0 +1,85 @@
+# Path D extended sweep — V100 PILOT (4 cells, smoke before full launch).
+#
+# Purpose: validate xLSTM + Mamba-3 on the V100 cluster BEFORE launching
+# the full 360-cell extension (#40). Goals:
+#   1. No build error: ARCH_REGISTRY entries dispatch correctly on V100
+#      sm_70 / cu121 / torch 2.4. (4060 smoke on sm_89 / cu128 / torch 2.10
+#      passed — but V100 stack differs.)
+#   2. No NaN / OOM / kernel issue during training.
+#   3. Empirical V100 wall-time per cell — refines the placeholder
+#      ARCH_WALL_FALLBACK_S numbers in scripts/sweep_dashboard.py
+#      (xlstm=520s and mamba3=854s are educated guesses from 4060).
+#   4. FL aggregation (FedAvg + FedSCAM) correctly handles xLSTM's
+#      stabilizer state + Mamba-3's complex-rotation state under
+#      state_dict serialization across 7 clients.
+#
+# Cell budget:
+#   2 archs (xlstm, mamba3)
+#   × 2 algos (fedavg = vanilla FL baseline; fedscam = representative
+#     Path D SAM-family algo to validate algo×arch interaction)
+#   × 1 partition (iid — simplest, no Dirichlet heterogeneity to debug)
+#   × 1 seed (42, matches 4060 smoke seed for back-to-back comparability)
+#   = 4 cells total
+#
+# Expected wall (placeholder, this run REPLACES the placeholders):
+#   xlstm × {fedavg, fedscam} × IID × s42  ≈ 2 × 520s ≈ 17 min
+#   mamba3 × {fedavg, fedscam} × IID × s42 ≈ 2 × 854s ≈ 28 min
+#   Total: ~45 min wall on 1 V100 (single chain, no sharding needed
+#                                   for 4 cells)
+#
+# Decision criteria (CHECKPOINT 3, task #50):
+#   GO for #40 full 360-cell extension if:
+#     - All 4 cells complete without exception
+#     - All test_auc > 0.50 (model is at least not anti-learning)
+#     - No NaN in history.csv
+#     - Wall times within 2× of placeholders (else recompute ETA before
+#       launching 360 cells)
+#   NO-GO if:
+#     - Any cell raises NaN / OOM / shape error → debug before #40
+#     - Any test_auc < 0.50 → suspect bf16 emulation issue or surrogate
+#       gradient instability; investigate before #40
+#     - Wall times > 3× placeholder → V100 budget recomputation required
+
+description: Path D extended pilot (xLSTM + Mamba-3, 4 cells, smoke)
+adr_reference: ADR-001 D-22 (FUTURE_WORK Dir 5) — pilot gate before #40
+
+archs:
+  - xlstm
+  - mamba3
+
+algorithms:
+  - name: fedavg
+    kwargs: {}
+  - name: fedscam
+    kwargs:
+      rho_max: 0.05
+      alpha_rho: 1.0
+      gamma: 1.0
+      beta_align: 0.8
+      kappa: 1.0
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [42]
+
+shared:
+  num_rounds: 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: bf16          # V100 emulated; matches path_d_full.yaml
+  device: cuda
+
+arch_overrides:
+  xlstm:
+    lr: 5.0e-4
+  mamba3:
+    lr: 5.0e-4
