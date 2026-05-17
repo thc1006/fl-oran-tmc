@@ -55,12 +55,19 @@ PHASE5_DIR = Path("artifacts/v7_stage2_full")
 #   - LSTM (existing 60 cells):     phase_timings_s["TOTAL"] ≈ 487-520s
 #   - Mamba (pilot cells):          698 / 928s → conservative ~813s
 #   - Spiking_expand2 (pilot cells): 842 / 1220s → conservative ~1031s
+#   - xLSTM (no V100 pilot yet, 2026-05-18 4060 smoke: steady 0.3s/round
+#     after torch.compile warmup, ≈ LSTM tier; use lstm fallback)
+#   - Mamba-3 (no V100 pilot yet, 2026-05-18 4060 smoke: steady 0.4s/round,
+#     slightly slower than Mamba due to extra λ/θ projections + β term;
+#     use 1.05× mamba estimate as a conservative placeholder)
 # As more Path D cells complete on V100 the empirical mean overrides
 # this fallback per arch (see compute_eta).
 ARCH_WALL_FALLBACK_S = {
     "lstm":             520.0,
     "mamba":            813.0,
     "spiking_expand2":  1031.0,
+    "xlstm":            520.0,    # placeholder pending V100 pilot (#38)
+    "mamba3":           854.0,    # 1.05× mamba, placeholder pending #38
 }
 N_PARALLEL_CHAINS = 4
 # Cells per chain after shard 1/4 — useful for chain-progress display.
@@ -74,9 +81,11 @@ ARCH_COLOR = {
     "lstm":             "#1f77b4",   # blue
     "mamba":            "#2ca02c",   # green
     "spiking_expand2":  "#9467bd",   # purple
+    "xlstm":            "#ff7f0e",   # orange (NeurIPS 2024 extension of LSTM)
+    "mamba3":           "#d62728",   # red (Mar 2026 extension of Mamba)
 }
 ALGO_MARKER = {"fedscam": "o", "fedgmt": "^", "fedmoswa": "s"}
-KNOWN_ARCHS = ("lstm", "mamba", "spiking_expand2")
+KNOWN_ARCHS = ("lstm", "mamba", "spiking_expand2", "xlstm", "mamba3")
 KNOWN_ALGOS = ("fedscam", "fedgmt", "fedmoswa")
 PARTITION_ORDER = (
     "iid",
@@ -548,7 +557,8 @@ def _render_forest(ax, groups: list[dict]) -> None:
         # 列標籤：架構 · 演算法 · 切分 · 種子數 · 基線 AUC
         # Display-friendly arch names matched to figure legend.
         arch_disp = {"lstm": "LSTM", "mamba": "Mamba",
-                     "spiking_expand2": "Spiking"}.get(g["arch"], g["arch"])
+                     "spiking_expand2": "Spiking",
+                     "xlstm": "xLSTM", "mamba3": "Mamba-3"}.get(g["arch"], g["arch"])
         b_auc = g.get("baseline_auc_mean")
         ref_str = f"  基線 {b_auc:.3f}" if b_auc is not None else ""
         y_labels.append(
@@ -627,7 +637,8 @@ def _render_progress_matrix(ax, cells: list[dict], eta: dict) -> None:
                 ha="center", va="center")
     # Display-friendly arch names — truncate spiking_expand2 to "spiking"
     arch_display = {"lstm": "LSTM", "mamba": "Mamba",
-                    "spiking_expand2": "Spiking"}
+                    "spiking_expand2": "Spiking",
+                    "xlstm": "xLSTM", "mamba3": "Mamba-3"}
     # 列標題（架構）— 自己的 column 在 x=-0.55，更寬避免被切掉
     for i, arch in enumerate(KNOWN_ARCHS):
         y = 2 - i

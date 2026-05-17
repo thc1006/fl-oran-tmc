@@ -8,11 +8,19 @@ Reads each completed cell directory under ``--sweep-dir`` (default
 
 Sweep dimensions actually emitted by fl_v7 (Phase 5 + Phase 6 ablations)::
 
-    arch ∈ {lstm, mamba, spiking_expand2}        (3 values used across
-                                                   all FL phases; ARCH_REGISTRY
-                                                   also exposes ``mamba_expand2``
-                                                   and ``spiking`` for Stage 1
-                                                   centralised ablations only)
+    arch ∈ {lstm, mamba, spiking_expand2,         (5 FL-phase archs; Phase 5
+            xlstm, mamba3}                          + Phase 6 used the first 3,
+                                                   Path D extended sweep
+                                                   (2026-05-18) added xlstm and
+                                                   mamba3 — see
+                                                   ``docs/PAPER_NOTES_XLSTM.md``
+                                                   and ``docs/PAPER_NOTES_MAMBA3.md``
+                                                   for the per-arch design
+                                                   rationale. ARCH_REGISTRY also
+                                                   exposes ``mamba_expand2`` and
+                                                   ``spiking`` for Stage 1
+                                                   centralised ablations only,
+                                                   which no FL sweep uses.)
     algorithm ∈ {fedavg, fedprox, fedadam,        (5 values; MOON deferred
                  scaffold, feddyn}                  per ADR-001 D-22)
     partition_mode ∈ {iid, dirichlet,             (4 values: Phase 5 used
@@ -128,21 +136,28 @@ _REQUIRED_TEST_FIELDS = ("auc",)
 
 
 # Hard-coded per-arch parameter counts. Source: docs/RESULTS_V6_STAGE1_ANALYSIS.md
-# (Stage 1 audit) cross-checked against the v7 build_model tests
-# (``tests/test_v7_fl_arch_agnostic.py`` pins LSTM=44553, Mamba=40489,
-# spiking_expand2=43593 with name ``test_v7_build_model_*_pins_params_*``).
-# These three are the FL-phase archs (Phase 5 + Phase 6). The other two
-# entries in ARCH_REGISTRY — ``mamba_expand2`` and ``spiking`` — are
-# Stage 1 centralised ablation archs that no FL sweep cell uses, so
-# they're intentionally absent here; if a future FL phase adds them,
-# pin their param count via a ``test_v7_build_model_*_pins_params_*``
-# test first, then add the entry here. ``.get(arch)`` returns ``None``
-# for any missing arch, which renders as "n/a" in the Markdown table
-# rather than raising — keeps the aggregator forward-compatible.
+# (Stage 1 audit) cross-checked against the v7 build_model pin tests in
+# ``tests/test_v7_fl_arch_agnostic.py`` (one per arch with name
+# ``test_v7_build_model_*_pins_params_*``). All 5 values below are
+# pin-tested against the V3 schema (V3_CATEGORICAL = [bs_id, slice_id,
+# sched, tr] with sizes {8, 4, 4, 29}; V3_CONTINUOUS has 17 features).
+# Path D extension (2026-05-18) added xLSTM and Mamba-3 with their own
+# pin tests:
+#   xlstm:  43241 params (xLSTMForecaster, hidden_size=48, n_layers=2)
+#   mamba3: 40635 params (Mamba3Forecaster, d_model=64, n_blocks=2,
+#                         d_state=16 → 8 complex pairs)
+# Schema drift in V3_CAT_SIZES will fail ALL 5 pin tests loudly. The
+# other two entries in ARCH_REGISTRY — ``mamba_expand2`` and
+# ``spiking`` — are Stage 1 centralised ablation archs that no FL sweep
+# cell uses, so they're intentionally absent here. ``.get(arch)`` returns
+# ``None`` for any missing arch, which renders as "n/a" in the Markdown
+# table rather than raising — keeps the aggregator forward-compatible.
 _ARCH_PARAMS_COUNT: dict[str, int] = {
     "lstm": 44553,
     "mamba": 40489,
     "spiking_expand2": 43593,
+    "xlstm": 43241,
+    "mamba3": 40635,
 }
 
 

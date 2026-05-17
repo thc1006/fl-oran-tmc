@@ -215,6 +215,35 @@ def test_v7_build_model_spiking_expand2_pins_kwargs_AND_params_43593(schema):
     assert n_params == 43593, f"spiking_expand2 params drifted: {n_params}"
 
 
+def test_v7_build_model_xlstm_pins_params_43241(schema):
+    """Path D pin (2026-05-18): xLSTMForecaster defaults — single-head
+    sLSTM, hidden_size=48, n_layers=2. Catches BOTH V3_CAT_SIZES schema
+    drift AND xLSTMForecaster kwargs drift (e.g., a future change to
+    hidden_size or n_layers that would silently corrupt the param-count
+    column in docs/RESULTS_V7_PHASE5.md paper Table 4)."""
+    fl_v7 = _import_fl_v7()
+    from fl_oran.models.xlstm_forecaster import xLSTMForecaster
+    cfg = fl_v7.V7Config(arch="xlstm")
+    model = fl_v7._build_model(cfg, schema)
+    assert isinstance(model, xLSTMForecaster)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 43241, f"xlstm params drifted: {n_params}"
+
+
+def test_v7_build_model_mamba3_pins_params_40635(schema):
+    """Path D pin (2026-05-18): Mamba3Forecaster defaults —
+    backbone_d_model=64, n_blocks=2, d_state=16 (= 8 complex pairs),
+    expand=1. Catches schema drift + the Innovation 1/2 param adds
+    (lambda_proj + theta_proj − A_log halving)."""
+    fl_v7 = _import_fl_v7()
+    from fl_oran.models.mamba3_forecaster import Mamba3Forecaster
+    cfg = fl_v7.V7Config(arch="mamba3")
+    model = fl_v7._build_model(cfg, schema)
+    assert isinstance(model, Mamba3Forecaster)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 40635, f"mamba3 params drifted: {n_params}"
+
+
 def test_spiking_state_dict_excludes_buffers_AND_attributes_exist_AND_are_scalar(schema):
     """Round 4 B2 + Round 5 D18: spiking blocks expose ``spike_count``
     and ``forward_inferences`` as non-persistent **scalar** tensor
