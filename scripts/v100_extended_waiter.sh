@@ -157,6 +157,8 @@ log() {
 
 trigger_aggregator() {
     local mode="$1"   # "full" or "partial"
+    local overall_status="success"
+
     log "[AGGREGATOR] mode=$mode — starting rsync + aggregate"
 
     log "[AGGREGATOR] step 1: rsync v7_sam_family from V100"
@@ -167,7 +169,8 @@ trigger_aggregator() {
         -e "ssh -p $SSH_PORT -o BatchMode=yes -o ConnectTimeout=8" \
         "${SSH_HOST}:/home/${EXPECTED_USER}/fl-oran-tmc/${V100_OUTDIR}/" \
         "${LOCAL_OUTDIR}/" \
-        >> "$LOG_FILE" 2>&1
+        >> "$LOG_FILE" 2>&1 \
+        || { log "[AGGREGATOR] rsync FAILED"; overall_status="failed"; }
 
     cd "$LOCAL_REPO"
     # shellcheck disable=SC1091
@@ -177,7 +180,8 @@ trigger_aggregator() {
     python scripts/aggregate_v7_results.py \
         --sweep-dir "$LOCAL_OUTDIR" \
         --out-md docs/RESULTS_V7_PATH_D_EXTENDED.md \
-        >> "$LOG_FILE" 2>&1 || log "[AGGREGATOR] aggregate_v7_results.py failed"
+        >> "$LOG_FILE" 2>&1 \
+        || { log "[AGGREGATOR] aggregate_v7_results.py FAILED"; overall_status="failed"; }
 
     log "[AGGREGATOR] step 3: aggregate_path_d.py"
     # NOTE: aggregate_path_d.py uses --output (not --out-md like
@@ -186,13 +190,24 @@ trigger_aggregator() {
     python scripts/aggregate_path_d.py \
         --sweep-dir "$LOCAL_OUTDIR" \
         --output docs/RESULTS_V7_PATH_D_PAPER.md \
-        >> "$LOG_FILE" 2>&1 || log "[AGGREGATOR] aggregate_path_d.py failed"
+        >> "$LOG_FILE" 2>&1 \
+        || { log "[AGGREGATOR] aggregate_path_d.py FAILED"; overall_status="failed"; }
 
-    touch "$SIGNAL_FILE"
-    log "[AGGREGATOR] step 4: signal file written — $SIGNAL_FILE"
-    log "[DONE] $mode aggregation complete. Outputs:"
-    log "  docs/RESULTS_V7_PATH_D_EXTENDED.md"
-    log "  docs/RESULTS_V7_PATH_D_PAPER.md"
+    # Signal file written ONLY on full success — gives clean retry
+    # semantics. If any step failed, leave .waiter_done absent so
+    # re-invoking the waiter (after the user fixes the issue) will
+    # retry the full pipeline rather than short-circuit.
+    if [[ "$overall_status" == "success" ]]; then
+        touch "$SIGNAL_FILE"
+        log "[DONE] $mode aggregation complete. Signal file: $SIGNAL_FILE"
+        log "  output 1: docs/RESULTS_V7_PATH_D_EXTENDED.md"
+        log "  output 2: docs/RESULTS_V7_PATH_D_PAPER.md"
+    else
+        log "[FAILED] $mode aggregation had errors — see [AGGREGATOR] ... FAILED lines above."
+        log "         NOT writing signal file ($SIGNAL_FILE)."
+        log "         Fix the underlying issue and re-run the waiter to retry the full pipeline."
+        exit 1
+    fi
 }
 
 log "[START] V100 extended waiter — polling every ${POLL_INTERVAL}s, target ${TARGET_CELLS}"
