@@ -60,16 +60,20 @@ ALGO_COLORS = {
     "scaffold": "#9467bd",  # purple
     "feddyn":   "#d62728",  # red
 }
-# Per-partition color (used in Panel C to show IID vs Dirichlet stratification)
-# IID natural is reference (high AUC); Dirichlet alphas go from blue (mild
-# stress) to red (extreme stress) to match the inverted α pattern we found.
+# Per-partition color (used in Panel C to show IID vs Dirichlet stratification).
+# IID natural is reference (high AUC); Dirichlet alphas form a heterogeneity-
+# monotone gradient cool→warm as α decreases (= stress increases).
+#
+# 2026-05-18 fix: α=5.00 and α=1.00 were both assigned the same hex
+# (#1f77b4) so 2 of the 6 Panel-C curves were visually indistinguishable.
+# Changed α=5.00 to cyan to restore 6 unique colors.
 PARTITION_COLORS = {
-    "iid":         "#2ca02c",  # green = IID baseline (best)
-    "5.00":        "#1f77b4",  # blue = mildest Dirichlet (worst we saw)
-    "1.00":        "#1f77b4",  # blue = mild Dirichlet
-    "0.50":        "#ff7f0e",  # orange = mid
-    "0.10":        "#d62728",  # red = severe Dirichlet
-    "0.05":        "#8c564b",  # brown = extreme Dirichlet (best Dirichlet)
+    "iid":         "#2ca02c",  # green = IID natural-BS baseline (separate category)
+    "5.00":        "#17becf",  # cyan  = mildest Dirichlet (was duplicate blue)
+    "1.00":        "#1f77b4",  # blue  = mild Dirichlet
+    "0.50":        "#ff7f0e",  # orange = mid Dirichlet
+    "0.10":        "#d62728",  # red   = severe Dirichlet
+    "0.05":        "#8c564b",  # brown = extreme Dirichlet
 }
 TOTAL_CELLS = 897 + 3  # 3 preserved + 897 to run = 900
 
