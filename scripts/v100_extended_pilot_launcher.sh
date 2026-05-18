@@ -25,6 +25,17 @@
 #     cleanly attributable (no GPU contention if one V100 lane stalls)
 #   - Other 3 V100s likely still busy with Path D core sweep (#25) anyway
 #
+# Which GPU? CUDA_VISIBLE_DEVICES is env-overridable (default 0).
+#   - If Path D core has finished and all 4 GPUs are free: just use default 0
+#   - If Path D core is STILL RUNNING and you want concurrent pilot launch
+#     (co-tenancy via V100 Hyper-Q): pick an idle GPU (check with
+#     `nvidia-smi --query-gpu=index,utilization.gpu --format=csv,noheader`)
+#     and launch with e.g. `EXECUTE=1 CUDA_VISIBLE_DEVICES=1 ./this.sh`.
+#     V100's 32 GB memory + Hyper-Q concurrent-kernel support means
+#     a small (~2 GB) pilot can co-tenant with a path D chain at minimal
+#     mutual slowdown (Path D chains are CPU-bound much of the time;
+#     verified via 5-sec nvidia-smi sampling on 2026-05-18).
+#
 # Safety:
 # - set -u catches unset variable typos
 # - Pre-flight --dry-run catches spec errors before GPU time spent
@@ -83,7 +94,7 @@ if [[ "$DRY_RUN_MODE" != "1" ]]; then
     echo "    export OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4"
     echo "    export TORCHDYNAMO_DISABLE=1"
     echo "    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
-    echo "    CUDA_VISIBLE_DEVICES=0 \\"
+    echo "    CUDA_VISIBLE_DEVICES=\${CUDA_VISIBLE_DEVICES:-0} \\   # env-overridable; default 0"
     echo "      python experiments/run_v7_phase_sweep.py \\"
     echo "        --spec $SPEC \\"
     echo "        --output-dir $OUTDIR \\"
@@ -145,8 +156,9 @@ echo "pre-flight OK (see $LOGDIR/v100_extended_pilot_preflight.log)"
 echo ""
 
 echo "=== Step 2: launch pilot at $(date) ==="
+echo "    using GPU: ${CUDA_VISIBLE_DEVICES:-0} (env-overridable; was hardcoded to 0 pre-2026-05-18)"
 t0=$(date +%s)
-CUDA_VISIBLE_DEVICES=0 \
+CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0} \
 python experiments/run_v7_phase_sweep.py \
     --spec "$SPEC" \
     --output-dir "$OUTDIR" \
