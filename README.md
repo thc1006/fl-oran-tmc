@@ -31,9 +31,9 @@ A clean-history reboot of the v1–v4 exploratory codebase (`colosseum-oran-fede
   directly (no Mamba-style `out_proj` bottleneck), while the 3 core archs
   and Mamba-3 narrow to 32 before the head — this is the architecture-level
   confounder that the param-count parity rule controls for.
-- **6 client-partition modes**: natural-by-BS (7 ColO-RAN gNBs as clients),
+- **6 client partitions**: natural-by-BS (7 ColO-RAN gNBs as clients),
   Dirichlet `α ∈ {0.05, 0.10, 0.50, 1.00, 5.00}`, plus controlled
-  `random_split` and `per_bs_dirichlet` ablations.
+  `random_split` and `per_bs_dirichlet` ablation modes.
 - **OOD split** by `training_config` id (tr0-21 train / tr22-24 val /
   tr25-27 test) to prevent the target-leakage that invalidated v1.
 - **NVML per-round training-energy** measurement on commodity GPU,
