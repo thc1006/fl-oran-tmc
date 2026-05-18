@@ -20,17 +20,26 @@
 #   3. On completion:
 #      a) Rsync `v7_sam_family/` from V100 to local
 #         `artifacts/v7_sam_family/` (idempotent; rsync --update so
-#         we don't clobber locally-newer files).
+#         we don't clobber locally-newer files). On failure: hard-stop
+#         with `exit 1` — aggregators do NOT run on stale data.
 #      b) Run `scripts/aggregate_v7_results.py` against the synced cells
 #         → `docs/RESULTS_V7_PATH_D_EXTENDED.md`.
 #      c) Run `scripts/aggregate_path_d.py` against the synced cells
 #         → `docs/RESULTS_V7_PATH_D_PAPER.md`.
+#      Aggregator failures accumulate via an internal `overall_status`
+#      flag; if either b or c failed, the script writes a [FAILED] log
+#      + `exit 1` WITHOUT creating the signal file (so re-running
+#      retries the full pipeline).
 #   4. Logs to `logs/v100_extended_waiter.log` throughout.
 #
 # Idempotency:
-#   - SIGNAL_FILE (`.waiter_done` in OUTDIR) is created when the waiter
-#     fires its auto-aggregator; subsequent invocations short-circuit
-#     and exit cleanly. Delete the file to re-trigger.
+#   - SIGNAL_FILE (`.waiter_done` in OUTDIR) is created ONLY when ALL
+#     three steps (rsync + both aggregators) succeed. On any failure,
+#     the signal file is NOT created — just re-run the waiter after
+#     fixing the underlying issue to retry the full pipeline (no
+#     manual cleanup needed).
+#   - If a SUCCESSFUL run needs to be re-triggered (e.g., manual cell
+#     edits + want re-aggregation): `rm $SIGNAL_FILE` then re-run.
 #
 # Why dry-run-by-default:
 #   - Polling V100 every 5 min creates SSH login records; users may want
