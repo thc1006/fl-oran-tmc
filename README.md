@@ -15,32 +15,59 @@ repo's name is preserved for historical continuity with v1-v4 artifacts.)
 
 ## What this is
 
-A clean-history reboot of the v1–v4 exploratory codebase (`colosseum-oran-federated-slicing`), scoped down to what the TMC paper needs:
+A clean-history reboot of the v1–v4 exploratory codebase (`colosseum-oran-federated-slicing`), scoped down to what the JSAC paper needs (paper title: *Federated O-RAN Slice SLA Prediction: A Cross-Architecture Empirical Benchmark on Colosseum/ColO-RAN*):
 
-- **6 FL algorithms** in a unified registry: `FedAvg`, `FedProx`, `FedAdam`,
-  `SCAFFOLD`, `FedDyn`, `MOON`.
-- **Dirichlet non-IID partition** over the `slice_id` column (NIID-Bench
-  convention; alpha sweep planned).
+- **10 FL algorithms** in a unified registry: `FedAvg`, `FedProx`, `FedAdam`,
+  `SCAFFOLD`, `FedDyn`, `FedBN`, `FedSWA`, `FedSCAM`, `FedGMT`, `FedMoSWA`
+  (MOON deferred per ADR-001 D-16; raises `NotImplementedError` at dispatch).
+- **5 sequence architectures**: LSTM (`ForecasterV2`), Mamba-S6, Spiking-SSM
+  for the 3-arch core panel (Phase 5, 900 cells); xLSTM-sLSTM (Beck et al.,
+  NeurIPS 2024) and Mamba-3 (Lahoti et al., arXiv 2603.15569) added in the
+  Path D extended sweep (360 additional cells, 2026-05-18 prep). All five
+  share an identical encoder and a structurally-identical classifier head
+  (`Linear → ReLU → Linear`); only the temporal trunk differs. Total
+  parameter count is matched within ±10% across all 5 archs (ADR-001 D-20
+  parity constraint); xLSTM's head shell happens to consume `hidden_size=48`
+  directly (no Mamba-style `out_proj` bottleneck), while the 3 core archs
+  and Mamba-3 narrow to 32 before the head — this is the architecture-level
+  confounder that the param-count parity rule controls for.
+- **6 client partitions**: natural-by-BS (7 ColO-RAN gNBs as clients),
+  Dirichlet `α ∈ {0.05, 0.10, 0.50, 1.00, 5.00}`, plus controlled
+  `random_split` and `per_bs_dirichlet` ablation modes.
 - **OOD split** by `training_config` id (tr0-21 train / tr22-24 val /
   tr25-27 test) to prevent the target-leakage that invalidated v1.
-- **PyTorch-native**, single-machine (RTX 4080, 16 GiB VRAM, Python 3.12,
-  PyTorch 2.10 + CUDA 12.8). **No Flower, no TFF.**
+- **NVML per-round training-energy** measurement on commodity GPU,
+  idle-baseline subtracted.
+- **PyTorch-native**, single-machine. Stage 1 + Stage 2 core sweep
+  collected on RTX 4080 (sm_89); current dev workstation is RTX 4060 Ti
+  (sm_89, 16 GiB VRAM) post 2026-05-16 migration. Path D core sweep
+  runs on a separate 4× Tesla V100-SXM2-32GB cluster. Python 3.14 +
+  PyTorch 2.11 + CUDA 12.8 (4060) / CUDA 12.1 (V100). **No Flower, no TFF.**
 
-The v1–v4 code is preserved under `src/fl_oran/` untouched; v5 extensions
-live alongside it. See `docs/ADR-001-v5-tmc-paper-plan.md` for the full
-design record.
+The v1–v4 code is preserved under `src/fl_oran/` untouched; v5–v7
+extensions live alongside it. See `docs/ADR-001-v5-tmc-paper-plan.md`
+for the full design record (filename retains the historical
+`tmc-paper-plan` slug — venue switched to JSAC on 2026-05-05; see
+ADR-001 Revision History).
 
-## Current milestone state
+## Current state (as of 2026-05-18)
 
-| Milestone | Scope | Status |
+| Stage | Scope | Status |
 |-----------|-------|--------|
-| M1 | Dirichlet partition, `FLAlgorithm` registry, FedAvg, FedProx | done |
-| M2 | FedAdam, SCAFFOLD, FedDyn + `run_local_sgd` helper | done |
-| M3a | MOON with caller-supplied `encode_fn` | done |
-| M3b | Sweep orchestrator + ForecasterV2 encode_fn + pilot | in progress |
-| M4 | Multi-seed × alpha × algorithm sweep + aggregation + tables | pending |
+| M1–M5 (v5) | Algorithm registry + 150-cell FL benchmark | done (see `docs/RESULTS_V5_FINAL.md`) |
+| Stage 1 (v6) | 3-arch centralized sweep (3 archs × 10 seeds = 30 cells) | done (see `docs/RESULTS_V6_STAGE1.md`) |
+| Stage 2 / Phase 5 (v7) | 3-arch × 5-algo × 6-partition × 10-seed FL sweep (900 cells) | done (paper Figs 1–3 + `docs/RESULTS_V7_PHASE5.md`) |
+| Phase 6 (v7) | Per-BS Dirichlet ablation + R2 reviewer feedback | done (paper Tables 4 & 6 + §7.1.5) |
+| Path D core (v7) | 3-arch × 3 SAM-family-algo × 6-partition × 10-seed (540 cells) | in progress on V100 cluster |
+| Path D extension prep | 5-arch spec + pilot launcher + paper draft (xLSTM + Mamba-3) | done (PRs #18–#23) |
+| Path D extended sweep | 2-new-arch × 3-algo × 6-partition × 10-seed (360 cells) | pending V100 release |
 
-**124 tests passing.** No v1–v4 regression (89/89 legacy tests preserved).
+**334+ tests passing** across v1–v7 (89 legacy v1–v4 + 42 v5 FL + 90 v6 arch + 162+ v7 FL × arch + R1/R2 audit invariants + paper-claim sources + 5 new pin tests for xLSTM/Mamba-3). All test infrastructure is in `tests/`; CI uses `pytest --no-cov` for the canonical run.
+
+**Paper artifact**: `paper/main.tex` (21 pp) + `paper/supplementary.tex`
+(3 pp) + 67-entry `paper/bibliography.bib`. Submission-ready PDF
+deposited to Zenodo at **DOI [10.5281/zenodo.20075433](https://doi.org/10.5281/zenodo.20075433)**
+under tag `v0.9.2-submission-ready`.
 
 ## Algorithm registry
 
@@ -92,10 +119,13 @@ python scripts/step2_mechanism_search.py # → artifacts/step2_mechanism_search.
 pytest
 ```
 
-**Training runs are not yet wired up** — the M3b orchestrator is in
-progress. `experiments/run_v3_centralized.py`, `run_v3_fl_iid.py`,
-`run_v3_fl_noniid.py`, `run_v4_all_seeds.py` replay the v3/v4 baselines
-and will be kept as-is for TMC baseline comparisons.
+**Training is fully wired up** as of v6/v7 (commits `c63b...` onwards).
+The Stage 2 / Phase 5 entry point is `experiments/run_v7_phase_sweep.py
+--spec experiments/specs/<spec>.yaml --skip-completed`. See
+`experiments/specs/` for the available sweep specifications (`stage2_full.yaml`,
+`path_d_full.yaml`, `path_d_extended_pilot.yaml`, etc.). The v3/v4
+legacy entry points (`run_v3_centralized.py`, `run_v4_all_seeds.py`)
+are kept as-is for baseline reproducibility.
 
 ## Data
 
@@ -115,26 +145,47 @@ leakage audit):
 ## Repository layout
 
 ```
-src/fl_oran/               Main package (v1–v4 preserved, v5 additive)
+src/fl_oran/               Main package (v1–v4 preserved, v5–v7 additive)
 ├── data_v2/                Dirichlet partition, OOD split, target builder v2
 ├── federated/
 │   ├── aggregation.py      Shared FedAvg weighted-average primitive
 │   ├── client.py           ClientUpdate dataclass
-│   └── algorithms/         FLAlgorithm Protocol + 6 algorithm classes
-├── models/                 ForecasterV2 (embeddings + LSTM)
-├── training/               v3/v4 trainers (do not modify)
+│   └── algorithms/         FLAlgorithm Protocol + 10 algorithm classes
+├── models/                 ForecasterV2 (LSTM) + MambaForecaster +
+│                           SpikingForecaster + xLSTMForecaster (NEW) +
+│                           Mamba3Forecaster (NEW)
+├── training/               v3/v4 trainers (frozen) + v6 centralized +
+│                           v7 federated
 └── utils/                  seed, device, AMP helpers
 
-tests/                     124 tests; conftest.py has shared fixtures
+tests/                      334+ tests across v1–v7; conftest.py has shared fixtures
 docs/
-├── ADR-001-v5-tmc-paper-plan.md   Full v5 plan + 16 decisions + history
-└── README.md                      ADR index
+├── ADR-001-v5-tmc-paper-plan.md   Plan + decision log (16+ decisions, history)
+├── ADR-002-phase6-fedswa.md       Mechanism-based FedSWA rejection
+├── PAPER_NOTES_{XLSTM,MAMBA3}.md  Per-arch design rationale
+├── PAPER_5ARCH_EXTENSION_DRAFT.md Paste-ready §3+§4+§7 5-arch text
+└── RESULTS_*.md                   Aggregated paper-grade tables (committed)
 experiments/
-├── run_v3_*.py             v3 baselines (kept for comparison)
-└── run_v4_all_seeds.py     v4 multi-seed baseline
+├── run_v3_*.py / run_v4_all_seeds.py    v3/v4 baselines (frozen)
+├── run_v5_*.py                          v5 FL algorithm sweeps (frozen, M5)
+├── run_v6_arch_sweep.py                 Stage 1 centralized 3-arch sweep
+├── run_v7_phase_sweep.py                Stage 2 / Path D spec-driven launcher
+└── specs/                               sweep specifications (.yaml)
 artifacts/
-├── RESULTS_V3.md           v3 centralized/IID/non-IID numbers
-└── RESULTS_V4.md           v4 multi-seed numbers (baseline of record)
+├── RESULTS_V4.md                        v3/v4 baseline numbers (committed)
+└── (all run outputs gitignored)         see `.gitignore` for the full pattern
+paper/
+├── main.tex / supplementary.tex         JSAC submission source
+├── bibliography.bib                     67 BibTeX entries
+└── main.pdf                             v0.9.2-submission-ready (Zenodo)
+scripts/
+├── aggregate_v7_results.py              Phase 5 / Stage 2 results aggregator
+│                                        (generates docs/RESULTS_V7_PHASE5.md
+│                                        — sourced by paper Figs 1–3)
+├── aggregate_path_d.py                  Path D paper §7 generator
+│                                        (paired-bootstrap CI95 tables)
+├── sweep_dashboard.py                   Live Path D sweep dashboard
+└── v100_*_launcher.sh                   V100 cluster launchers
 ```
 
 New contributors (and Claude) should read `CLAUDE.md` at the root first
