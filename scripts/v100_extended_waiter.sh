@@ -106,8 +106,11 @@ if [[ "$DRY_RUN_MODE" != "1" ]]; then
     echo "      → trigger DONE (partial)"
     echo "    sleep $POLL_INTERVAL"
     echo ""
-    echo "  on DONE:"
-    echo "    1) rsync -avz --update ${SSH_HOST}:${V100_OUTDIR}/ ${LOCAL_OUTDIR}/"
+    echo "  on DONE (either trigger A or trigger B fires):"
+    echo "    1) rsync -avz --update \\"
+    echo "         -e \"ssh -p $SSH_PORT -o BatchMode=yes -o ConnectTimeout=8\" \\"
+    echo "         ${SSH_HOST}:${V100_OUTDIR}/ ${LOCAL_OUTDIR}/"
+    echo "       if rsync fails: log FAILED + exit 1 (skip aggregators; no fresh data)"
     echo "    2) cd $LOCAL_REPO && source .venv/bin/activate"
     echo "    3) python scripts/aggregate_v7_results.py \\"
     echo "         --sweep-dir $LOCAL_OUTDIR \\"
@@ -115,11 +118,17 @@ if [[ "$DRY_RUN_MODE" != "1" ]]; then
     echo "    4) python scripts/aggregate_path_d.py \\"
     echo "         --sweep-dir $LOCAL_OUTDIR \\"
     echo "         --output docs/RESULTS_V7_PATH_D_PAPER.md"
-    echo "    5) touch $SIGNAL_FILE     # idempotency"
-    echo "    6) echo 'DONE — see docs/RESULTS_V7_PATH_D_*.md' to log"
+    echo "    5) if BOTH aggregators succeeded:"
+    echo "         touch $SIGNAL_FILE        # idempotency marker"
+    echo "         log 'DONE — see docs/RESULTS_V7_PATH_D_*.md'"
+    echo "         exit 0"
+    echo "       else:"
+    echo "         log '[FAILED] ... NOT writing signal file ($SIGNAL_FILE)'"
+    echo "         log '         re-run the waiter after fixing the underlying issue'"
+    echo "         exit 1"
     echo ""
     echo "  on MAX_POLLS reached without DONE:"
-    echo "    write 'TIMEOUT after $((MAX_POLLS * POLL_INTERVAL))s' to log + exit non-zero"
+    echo "    log 'TIMEOUT after $((MAX_POLLS * POLL_INTERVAL))s' + exit 1"
     echo ""
     echo "DRY-RUN END. To actually launch:"
     echo "  nohup EXECUTE=1 ./scripts/v100_extended_waiter.sh \\"
@@ -165,12 +174,19 @@ trigger_aggregator() {
     # Use an inline ssh command string (not "${SSH_OPTS[*]}") so future
     # maintainers don't accidentally add a space-containing option that
     # the array-to-string conversion would mangle.
-    rsync -avz --update \
+    # Short-circuit on rsync failure: aggregators against stale/empty
+    # data would just multiply FAILED log lines for the same root cause.
+    if ! rsync -avz --update \
         -e "ssh -p $SSH_PORT -o BatchMode=yes -o ConnectTimeout=8" \
         "${SSH_HOST}:/home/${EXPECTED_USER}/fl-oran-tmc/${V100_OUTDIR}/" \
         "${LOCAL_OUTDIR}/" \
-        >> "$LOG_FILE" 2>&1 \
-        || { log "[AGGREGATOR] rsync FAILED"; overall_status="failed"; }
+        >> "$LOG_FILE" 2>&1; then
+        log "[AGGREGATOR] rsync FAILED — skipping aggregators (no fresh data)."
+        log "[FAILED] $mode pipeline aborted at rsync step."
+        log "         NOT writing signal file ($SIGNAL_FILE)."
+        log "         Re-run the waiter after V100 connectivity is restored."
+        exit 1
+    fi
 
     cd "$LOCAL_REPO"
     # shellcheck disable=SC1091
