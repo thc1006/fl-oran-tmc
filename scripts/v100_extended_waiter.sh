@@ -114,7 +114,7 @@ if [[ "$DRY_RUN_MODE" != "1" ]]; then
     echo "         --out-md docs/RESULTS_V7_PATH_D_EXTENDED.md"
     echo "    4) python scripts/aggregate_path_d.py \\"
     echo "         --sweep-dir $LOCAL_OUTDIR \\"
-    echo "         --out-md docs/RESULTS_V7_PATH_D_PAPER.md"
+    echo "         --output docs/RESULTS_V7_PATH_D_PAPER.md"
     echo "    5) touch $SIGNAL_FILE     # idempotency"
     echo "    6) echo 'DONE — see docs/RESULTS_V7_PATH_D_*.md' to log"
     echo ""
@@ -160,7 +160,11 @@ trigger_aggregator() {
     log "[AGGREGATOR] mode=$mode — starting rsync + aggregate"
 
     log "[AGGREGATOR] step 1: rsync v7_sam_family from V100"
-    rsync -avz --update -e "ssh ${SSH_OPTS[*]}" \
+    # Use an inline ssh command string (not "${SSH_OPTS[*]}") so future
+    # maintainers don't accidentally add a space-containing option that
+    # the array-to-string conversion would mangle.
+    rsync -avz --update \
+        -e "ssh -p $SSH_PORT -o BatchMode=yes -o ConnectTimeout=8" \
         "${SSH_HOST}:/home/${EXPECTED_USER}/fl-oran-tmc/${V100_OUTDIR}/" \
         "${LOCAL_OUTDIR}/" \
         >> "$LOG_FILE" 2>&1
@@ -176,9 +180,12 @@ trigger_aggregator() {
         >> "$LOG_FILE" 2>&1 || log "[AGGREGATOR] aggregate_v7_results.py failed"
 
     log "[AGGREGATOR] step 3: aggregate_path_d.py"
+    # NOTE: aggregate_path_d.py uses --output (not --out-md like
+    # aggregate_v7_results.py). The two aggregators inherited slightly
+    # different CLI conventions from when they were written separately.
     python scripts/aggregate_path_d.py \
         --sweep-dir "$LOCAL_OUTDIR" \
-        --out-md docs/RESULTS_V7_PATH_D_PAPER.md \
+        --output docs/RESULTS_V7_PATH_D_PAPER.md \
         >> "$LOG_FILE" 2>&1 || log "[AGGREGATOR] aggregate_path_d.py failed"
 
     touch "$SIGNAL_FILE"
