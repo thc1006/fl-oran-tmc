@@ -15,7 +15,7 @@ Layout:
 - Panel A (large, top-left): forest plot of Δ AUC with paired-bootstrap
   CI95. y-axis: (arch, algo, partition). Green = CI95 > 0 (Path D wins),
   red = CI95 < 0 (Path D loses), gray = straddles 0 (no signal).
-- Panel B (top-right): sweep progress matrix, 3 archs × 3 algos, each
+- Panel B (top-right): sweep progress matrix, 5 archs × 3 algos, each
   bucket shows X/60 with a mini bar.
 - Panel C (bottom-left): top-5 most-recently-active cells, val_auc curves
   colour-coded by arch.
@@ -71,10 +71,10 @@ ARCH_WALL_FALLBACK_S = {
 }
 N_PARALLEL_CHAINS = 4
 # Cells per chain after shard 1/4 — useful for chain-progress display.
-# 540 cells / 4 chains = 135 nominal; --skip-existing-summary trims to
-# ~119 new cells per chain (sweep skips 60 LSTM + 4 pilot = 64 cells
-# already done). Used purely for "X/Y" progress display.
-CELLS_PER_CHAIN_NEW = 119
+# Path D extension: 900-cell spec sharded /4 = 225 nominal/chain;
+# --skip-existing-summary trims the 540 done core cells, leaving 90
+# new (xLSTM + Mamba-3) cells per chain. Used purely for "X/Y" display.
+CELLS_PER_CHAIN_NEW = 90
 
 # Per-arch colour (used in curves + forest plot row groups).
 ARCH_COLOR = {
@@ -87,6 +87,13 @@ ARCH_COLOR = {
 ALGO_MARKER = {"fedscam": "o", "fedgmt": "^", "fedmoswa": "s"}
 KNOWN_ARCHS = ("lstm", "mamba", "spiking_expand2", "xlstm", "mamba3")
 KNOWN_ALGOS = ("fedscam", "fedgmt", "fedmoswa")
+ARCH_DISPLAY = {
+    "lstm": "LSTM", "mamba": "Mamba", "spiking_expand2": "Spiking",
+    "xlstm": "xLSTM", "mamba3": "Mamba-3",
+}
+# Path D core = original 3 archs (Phase 5 reuse); extension = 2 new archs.
+CORE_ARCHS = ("lstm", "mamba", "spiking_expand2")
+EXT_ARCHS = ("xlstm", "mamba3")
 PARTITION_ORDER = (
     "iid",
     "dirichlet_a0p05", "dirichlet_a0p10", "dirichlet_a0p50",
@@ -108,7 +115,7 @@ ALGO_TO_BASELINE = {
     "fedgmt": "fedadam",
 }
 
-PATH_D_TARGET_CELLS = 540   # 3 archs × 3 algos × 6 partitions × 10 seeds
+PATH_D_TARGET_CELLS = 900   # 5 archs × 3 algos × 6 partitions × 10 seeds
 
 
 def _ssh_cmd(cmd: str, default: str = "") -> str:
@@ -442,411 +449,268 @@ def probe_local_gpu() -> dict:
 
 
 def render_png(
-    cells: list[dict], groups: list[dict],
-    v100: dict, local_gpu: dict, eta: dict, out_path: Path,
+    cells: list[dict], groups: list[dict], out_path: Path,
 ) -> None:
-    # Configure CJK-capable font for Traditional Chinese rendering.
-    # On Ubuntu, the only family matplotlib's PS-name scanner picks up
-    # from the multi-CJK Noto .ttc is "Noto Sans CJK JP" — but the same
-    # font file contains the TC/SC/HK glyph variants, so this renders
-    # Traditional Chinese characters correctly. AR PL UMing CN is the
-    # Ubuntu-bundled fallback (uming.ttc). Boxes-instead-of-glyphs would
-    # indicate no CJK font installed at all.
+    """繪製聚焦科學結果的 2 區段快照圖。
+
+    重新設計 2026-05-19：移除進度矩陣與硬體側欄（HTML 儀表板已以
+    原生 CSS 呈現且更清晰）。PNG 僅保留 HTML 無法取代的兩件事——
+    依演算法分面的 Δ AUC 森林圖，與即時驗證 AUC 訓練曲線。
+    """
+    # CJK-capable font: the multi-CJK Noto .ttc registers as "Noto Sans
+    # CJK JP" but the same file carries the TC glyph variants, so
+    # Traditional Chinese renders correctly. AR PL UMing CN is the
+    # Ubuntu-bundled fallback.
     matplotlib.rcParams["font.sans-serif"] = [
         "Noto Sans CJK JP", "AR PL UMing CN", "AR PL UKai CN",
         "DejaVu Sans",
     ]
-    # Monospace fallback also needs a CJK font for sidebar value column
-    # ("完成 X · 進行 X · 失敗 X"). Noto Sans CJK isn't strictly monospace
-    # but renders 全形 (CJK) glyphs at fixed cell width, so columns still
-    # align reasonably.
-    matplotlib.rcParams["font.monospace"] = [
-        "Noto Sans Mono CJK JP", "Noto Sans CJK JP",
-        "AR PL UKai CN", "DejaVu Sans Mono",
-    ]
     matplotlib.rcParams["font.family"] = "sans-serif"
     matplotlib.rcParams["axes.unicode_minus"] = False
 
-    # Larger figure + constrained_layout so CJK characters never collide.
-    # constrained_layout auto-adjusts subplot spacing whenever text would
-    # overflow into another axes — strictly better than bbox_inches='tight'
-    # for dense dashboards.
-    fig = plt.figure(figsize=(22, 16), constrained_layout=True)
+    fig = plt.figure(figsize=(16, 10.5), constrained_layout=True)
     fig.set_constrained_layout_pads(
-        w_pad=0.12, h_pad=0.18, hspace=0.10, wspace=0.10,
+        w_pad=0.10, h_pad=0.16, hspace=0.12, wspace=0.06,
     )
-    # Tall forest panel (50% height), shorter middle row (progress + sidebar),
-    # and a bottom row for live curves.
-    gs = fig.add_gridspec(
-        3, 6, width_ratios=[1, 1, 1, 1, 1, 1],
-        height_ratios=[2.2, 1.0, 1.0],
-    )
-    axA = fig.add_subplot(gs[0, :])
-    _render_forest(axA, groups)
-    # Progress matrix gets 4 of 6 cols (more horizontal room), sidebar 2 cols.
-    axB = fig.add_subplot(gs[1, 0:4])
-    _render_progress_matrix(axB, cells, eta)
-    axC = fig.add_subplot(gs[1, 4:])
-    _render_sidebar(axC, cells, v100, local_gpu, eta)
-    axD = fig.add_subplot(gs[2, :])
-    _render_live_curves(axD, cells)
+    gs = fig.add_gridspec(2, 3, height_ratios=[2.3, 1.0])
+
+    # 三個演算法分面共用 x 軸範圍，方便直接比較效果量。
+    paired = [g for g in groups if g["n"] > 0]
+    if paired:
+        max_abs = max(
+            max(abs(g["ci_low"]), abs(g["ci_high"]), abs(g["mean_delta"]))
+            for g in paired
+        )
+        max_abs = max(max_abs * 1.18, 0.012)
+    else:
+        max_abs = 0.05
+
+    for j, algo in enumerate(KNOWN_ALGOS):
+        ax = fig.add_subplot(gs[0, j])
+        _render_forest_panel(ax, groups, algo, max_abs, first=(j == 0))
+
+    ax_curves = fig.add_subplot(gs[1, :])
+    _render_live_curves(ax_curves, cells)
 
     fig.suptitle(
-        f"Path D SAM 家族大規模實驗  —  {datetime.now():%Y-%m-%d %H:%M:%S}",
-        fontsize=15, fontweight="bold",
+        "Path D · Δ AUC 對 Phase 5 基線之配對比較  與  即時訓練曲線"
+        f"      {datetime.now():%Y-%m-%d %H:%M:%S}",
+        fontsize=13.5, fontweight="bold",
     )
-    plt.savefig(out_path, dpi=110, facecolor="white")
+    plt.savefig(out_path, dpi=120, facecolor="white")
     plt.close()
 
 
-def _render_forest(ax, groups: list[dict]) -> None:
-    """Δ AUC 森林圖 (與 Phase 5 基線配對)。
+def _render_forest_panel(
+    ax, groups: list[dict], algo: str, max_abs: float, first: bool,
+) -> None:
+    """單一演算法的 Δ AUC 森林圖分面。
 
-    每列依 (架構, 演算法) 分組並以淺色分隔線區隔。標籤包含分割
-    模式、樣本數、基線 AUC、平均 Δ AUC 與顯著性標記。
+    列依 (架構, 切分) 排序，架構區塊間以淺色分隔線區隔。綠 = 95%
+    信賴區間全為正（顯著優於基線），紅 = 全為負，灰 = 橫跨 0。
+    三個分面共用 ``max_abs`` x 軸範圍以便直接比較效果量。``first``
+    為真時才畫 y 軸標籤（三分面列集相同，只需最左側標一次）。
     """
-    if not groups:
-        ax.set_title(
-            "Δ AUC vs Phase 5 基線  (尚無配對的 V100 實驗格)",
-            fontsize=11,
-        )
-        ax.text(0.5, 0.5,
-                "Path D 尚未產生 V100 (sample_ratio=1.0) 實驗格。\n"
-                "等待 V100 sweep 啟動後，森林圖會自動填入。",
-                ha="center", va="center", transform=ax.transAxes,
-                fontsize=11, color="#888")
-        ax.axis("off")
+    arch_idx = {a: i for i, a in enumerate(KNOWN_ARCHS)}
+    part_idx = {p: i for i, p in enumerate(PARTITION_ORDER)}
+    gp = sorted(
+        (g for g in groups if g["algo"] == algo),
+        key=lambda g: (arch_idx.get(g["arch"], 9),
+                       part_idx.get(g["partition"], 9)),
+    )
+    SMALL_N = 3
+    n_win = sum(1 for g in gp if g["n"] >= SMALL_N and g["ci_low"] > 0)
+    n_lose = sum(1 for g in gp if g["n"] >= SMALL_N and g["ci_high"] < 0)
+    n_null = len(gp) - n_win - n_lose
+    ax.set_title(
+        f"{algo}\n{n_win} 優   ·   {n_lose} 劣   ·   {n_null} 無顯著",
+        fontsize=11, fontweight="bold", pad=8,
+    )
+    if not gp:
+        ax.text(0.5, 0.5, "尚無配對實驗格", ha="center", va="center",
+                transform=ax.transAxes, fontsize=10, color="#9aa1ab")
+        ax.set_xticks([])
+        ax.set_yticks([])
         return
 
-    # n<3 groups have unreliable CIs — count separately + grey-out display
-    SMALL_N = 3
-    final_groups = [g for g in groups if g["n"] >= SMALL_N]
-    prelim_groups = [g for g in groups if g["n"] < SMALL_N]
-    n_win = sum(1 for g in final_groups if g["ci_low"] > 0)
-    n_lose = sum(1 for g in final_groups if g["ci_high"] < 0)
-    n_null = len(final_groups) - n_win - n_lose
-    n_prelim = len(prelim_groups)
-    title_parts = [
-        f"{n_win} 組顯著優於基線",
-        f"{n_lose} 組顯著劣於基線",
-        f"{n_null} 組無顯著差異",
-    ]
-    if n_prelim > 0:
-        title_parts.append(f"{n_prelim} 組初步 (n<{SMALL_N})")
-    ax.set_title(
-        "Δ AUC 對 Phase 5 基線之差異  "
-        "(配對自助法 95% 信賴區間, 抽樣 1000 次)\n"
-        + "   ·   ".join(title_parts),
-        fontsize=11, fontweight="bold", pad=14,
-    )
-
-    ax.axvline(0.0, color="black", lw=1.0, ls="-", alpha=0.6, zorder=2)
-
-    y_positions = []
-    y_labels = []
-    prev_block = None
-    # Walk groups top-to-bottom in (arch, algo, partition) order
-    for i, g in enumerate(groups):
-        y = len(groups) - 1 - i
-        # Separator line between (arch, algo) blocks
-        block = (g["arch"], g["algo"])
-        if prev_block is not None and block != prev_block:
-            ax.axhline(y + 0.5, color="#dddddd", lw=0.5, zorder=1)
-        prev_block = block
-        y_positions.append(y)
-        # 列標籤：架構 · 演算法 · 切分 · 種子數 · 基線 AUC
-        # Display-friendly arch names matched to figure legend.
-        arch_disp = {"lstm": "LSTM", "mamba": "Mamba",
-                     "spiking_expand2": "Spiking",
-                     "xlstm": "xLSTM", "mamba3": "Mamba-3"}.get(g["arch"], g["arch"])
-        b_auc = g.get("baseline_auc_mean")
-        ref_str = f"  基線 {b_auc:.3f}" if b_auc is not None else ""
-        y_labels.append(
-            f"{arch_disp:<7} · {g['algo']:<8} · "
-            f"{PARTITION_LABEL[g['partition']]:<10}  "
-            f"n={g['n']}{ref_str}"
-        )
-        # CI color: green (CI>0), red (CI<0), gray (straddles).
-        # For n < SMALL_N: muted variants since CI95 is unreliable.
-        is_prelim = g["n"] < SMALL_N
-        if g["ci_low"] > 0 and not is_prelim:
-            color = "#1d6b2a"
-            band = "#d4f4dd"
-        elif g["ci_high"] < 0 and not is_prelim:
-            color = "#8a1f1f"
-            band = "#fcdada"
-        elif is_prelim:
-            color = "#bbbbbb"   # grey for low-confidence
-            band = None
+    ax.axvline(0.0, color="#9aa1ab", lw=1.0, zorder=2)
+    n = len(gp)
+    prev_arch = None
+    for i, g in enumerate(gp):
+        y = n - 1 - i
+        if prev_arch is not None and g["arch"] != prev_arch:
+            ax.axhline(y + 0.5, color="#e3e6ea", lw=0.9, zorder=1)
+        prev_arch = g["arch"]
+        prelim = g["n"] < SMALL_N
+        if prelim:
+            col, band = "#b8bdc4", None
+        elif g["ci_low"] > 0:
+            col, band = "#16a34a", "#dcfce7"
+        elif g["ci_high"] < 0:
+            col, band = "#dc2626", "#fee2e2"
         else:
-            color = "#666"
-            band = None
-        # Background band shading for significant rows
+            col, band = "#6b7280", None
         if band is not None:
-            ax.axhspan(y - 0.4, y + 0.4, color=band, alpha=0.5, zorder=1)
-        # CI line + point (lighter linewidth for preliminary)
-        lw = 1.2 if is_prelim else 2.5
-        alpha = 0.45 if is_prelim else 0.95
-        ax.plot([g["ci_low"], g["ci_high"]], [y, y], color=color, lw=lw,
-                solid_capstyle="round", alpha=alpha, zorder=3)
-        ax.plot([g["mean_delta"]], [y],
-                marker=ALGO_MARKER[g["algo"]],
-                color=color, markersize=9 if not is_prelim else 6,
-                markeredgecolor="black", markeredgewidth=0.9 if not is_prelim else 0.5,
-                alpha=alpha, zorder=4)
-        # Arch hint as colored edge bar on left
-        ax.plot([0, 0], [y - 0.4, y + 0.4],
-                color=ARCH_COLOR[g["arch"]], lw=5, alpha=0.0)  # invisible
-
-    ax.set_yticks(y_positions)
-    ax.set_yticklabels(y_labels, fontsize=8, family="monospace")
-    ax.set_xlabel("Δ AUC  (Path D 演算法 − Phase 5 基線，相同隨機種子)",
-                  fontsize=10)
-    ax.grid(True, axis="x", alpha=0.25, zorder=0)
-    max_abs = max(
-        max(abs(g["ci_low"]), abs(g["ci_high"]), abs(g["mean_delta"]))
-        for g in groups
-    )
-    max_abs = max(max_abs * 1.15, 0.01)
+            ax.axhspan(y - 0.44, y + 0.44, color=band, zorder=1)
+        ax.plot([g["ci_low"], g["ci_high"]], [y, y], color=col, lw=2.4,
+                solid_capstyle="round", zorder=3)
+        ax.plot([g["mean_delta"]], [y], marker="o", color=col,
+                markersize=6.5, markeredgecolor="white",
+                markeredgewidth=1.0, zorder=4)
+    ax.set_ylim(-0.6, n - 0.4)
     ax.set_xlim(-max_abs, max_abs)
-    # Direction-of-effect annotations placed BELOW the x-axis (inside the
-    # plotting area), not above the title — avoids overlap with the
-    # multiline title and keeps the visual focus on the data area.
-    ax.text(0.99, -0.07, "→ Path D 顯著優於基線",
-            color="#1d6b2a", fontsize=10, ha="right", va="top",
-            transform=ax.transAxes, fontweight="bold")
-    ax.text(0.01, -0.07, "Path D 顯著劣於基線 ←",
-            color="#8a1f1f", fontsize=10, ha="left", va="top",
-            transform=ax.transAxes, fontweight="bold")
-
-
-def _render_progress_matrix(ax, cells: list[dict], eta: dict) -> None:
-    """3 架構 × 3 演算法進度矩陣，每格顯示 done/60 與進度條。
-
-    底部顯示總進度與 ETA，預留充足垂直空間避免重疊。
-    """
-    ax.set_title("Path D 實驗格完成進度  (每格 60 個 V100 實驗格)",
-                 fontsize=11, fontweight="bold", pad=12)
-    ax.set_xlim(-1.1, 3.0)
-    ax.set_ylim(-0.85, 3.55)
-    ax.axis("off")
-
-    # 列標題（演算法）— 在資料格上方 0.35 處避免黏在格子邊緣
-    for j, algo in enumerate(KNOWN_ALGOS):
-        ax.text(j + 0.5, 3.30, algo, fontsize=11, fontweight="bold",
-                ha="center", va="center")
-    # Display-friendly arch names — truncate spiking_expand2 to "spiking"
-    arch_display = {"lstm": "LSTM", "mamba": "Mamba",
-                    "spiking_expand2": "Spiking",
-                    "xlstm": "xLSTM", "mamba3": "Mamba-3"}
-    # 列標題（架構）— 自己的 column 在 x=-0.55，更寬避免被切掉
-    for i, arch in enumerate(KNOWN_ARCHS):
-        y = 2 - i
-        ax.text(-0.55, y + 0.5, arch_display[arch], fontsize=11,
-                fontweight="bold", color=ARCH_COLOR[arch],
-                ha="center", va="center", rotation=0)
-        for j, algo in enumerate(KNOWN_ALGOS):
-            n = sum(1 for c in cells
-                    if c["source"] == "V100"
-                    and c["arch"] == arch and c["algo"] == algo
-                    and c["status"] == "done")
-            pct = 100 * n / 60.0
-            color = "#2ca02c" if n >= 60 else "#1f77b4" if n > 0 else "#ddd"
-            # background rect
-            ax.add_patch(plt.Rectangle((j, y), 1, 1, fill=True,
-                                        facecolor="#fafafa",
-                                        edgecolor="#aaaaaa", lw=0.7))
-            # progress bar (bottom strip)
-            bar_w = min(n / 60.0, 1.0)
-            ax.add_patch(plt.Rectangle((j + 0.05, y + 0.08), 0.9 * bar_w, 0.18,
-                                        fill=True, facecolor=color, alpha=0.85,
-                                        edgecolor="none"))
-            # count text
-            ax.text(j + 0.5, y + 0.62, f"{n}/60",
-                    fontsize=12, ha="center", va="center", fontweight="bold")
-            ax.text(j + 0.5, y + 0.40, f"{pct:.0f}%",
-                    fontsize=8, ha="center", va="center", color="#666")
-
-    total_done = sum(1 for c in cells
-                     if c["source"] == "V100"
-                     and c["status"] == "done"
-                     and c["algo"] in KNOWN_ALGOS)
-    pct_total = 100 * total_done / PATH_D_TARGET_CELLS
-    bar_color = "#2ca02c" if total_done >= PATH_D_TARGET_CELLS else "#1f77b4"
-    # Total progress + ETA — stacked with 0.30 vspace to avoid collision.
-    ax.text(1.0, -0.30,
-            f"Path D V100 總進度: {total_done} / "
-            f"{PATH_D_TARGET_CELLS}  ({pct_total:.1f}%)",
-            fontsize=11, ha="center", fontweight="bold", color=bar_color)
-    _short, eta_long = _format_eta(eta)
-    eta_color = "#1f77b4" if eta["remaining_seconds"] > 60 else "#2ca02c"
-    ax.text(1.0, -0.65, eta_long, fontsize=10, ha="center", color=eta_color)
-
-
-def _render_sidebar(
-    ax, cells: list[dict], v100: dict, local_gpu: dict, eta: dict,
-) -> None:
-    """硬體狀態 + ETA + 失敗計數。寬欄位、簡潔排版。"""
-    ax.axis("off")
-    ax.set_title("即時狀態", fontsize=11, fontweight="bold", pad=10)
-    failed = sum(1 for c in cells if c["status"] == "failed")
-    in_prog = sum(1 for c in cells if c["status"] == "in_progress")
-    done = sum(1 for c in cells if c["status"] == "done")
-
-    master_marker = "執行中" if v100["master_alive"] else "閒置"
-    master_color = "#2ca02c" if v100["master_alive"] else "#888888"
-    short_eta, _ = _format_eta(eta)
-
-    # 摺疊式排版：每組相關欄位放成單一寬列，減少視覺擁擠。
-    lines: list[tuple[str, str, str, str]] = [
-        # (label, value, color, weight)
-        ("V100 主控", master_marker, master_color, "bold"),
-        ("預計剩餘", short_eta, "#1f4b80", "bold"),
-        ("預計完成", f"{eta['eta_datetime']:%Y-%m-%d %H:%M}",
-         "#1f4b80", "normal"),
-        ("__SEP__", "", "", ""),
-    ]
-
-    # Per-chain progress (P0 improvement — detect stuck chains)
-    # ``v100['chains']`` is populated by probe_v100_status which counts
-    # "v7_\w+ done:" matches in each chain log file. The pattern matches
-    # the per-cell completion line from run_v7_phase_sweep.
-    if v100["chains"]:
-        lines.append(("Chain 進度", f"目標 ~{CELLS_PER_CHAIN_NEW}/chain",
-                      "black", "bold"))
-        chain_done_max = max(
-            (st["done"] for st in v100["chains"].values()),
-            default=0,
+    ax.set_yticks(range(n))
+    if first:
+        ax.set_yticklabels(
+            [f"{ARCH_DISPLAY.get(g['arch'], g['arch'])} · "
+             f"{PARTITION_LABEL[g['partition']]}" for g in reversed(gp)],
+            fontsize=8.5,
         )
-        chain_done_min = min(
-            (st["done"] for st in v100["chains"].values()),
-            default=0,
-        )
-        for c_idx, st in sorted(v100["chains"].items()):
-            done_n = st["done"]
-            fail_n = st["fail"]
-            # 落後判定：done 比中位數低 50% 即標紅
-            if (chain_done_max - done_n) > 5 and done_n < chain_done_max * 0.5:
-                row_color = "#d62728"   # red — stuck/slow
-                tag = "⚠"
-            elif fail_n > 0:
-                row_color = "#cc6600"   # orange — failures
-                tag = f"✗{fail_n}"
-            else:
-                row_color = "#2ca02c" if done_n > 0 else "#888"
-                tag = ""
-            lines.append((
-                f"  Chain{c_idx}",
-                f"{done_n:>3d}/{CELLS_PER_CHAIN_NEW} {tag}",
-                row_color, "normal",
-            ))
-        lines.append(("__SEP__", "", "", ""))
-
-    # GPU util 一行一張卡，數字靠右對齊
-    if v100["gpus"]:
-        lines.append(("V100 GPU", "使用率 / 記憶體", "black", "bold"))
-        for g in v100["gpus"]:
-            util_color = "#2ca02c" if g["util_pct"] > 50 else "#888"
-            lines.append((
-                f"  GPU{g['idx']}",
-                f"{g['util_pct']:>3d}%   {g['mem_mib']:>5d} MiB",
-                util_color, "normal",
-            ))
     else:
-        lines.append(("V100 GPU", "（無法連線取得資料）", "#888", "normal"))
-    lines.extend([
-        ("__SEP__", "", "", ""),
-        ("4060 GPU",
-         f"{local_gpu['util_pct']:>3d}%   {local_gpu['mem_mib']:>5d} MiB",
-         "black", "bold"),
-        ("__SEP__", "", "", ""),
-        ("完成數", f"{done:>3d}",
-         "#2ca02c" if done else "black", "bold"),
-        ("進行中", f"{in_prog:>3d}",
-         "#1f4b80" if in_prog else "black", "bold"),
-        ("失敗",   f"{failed:>3d}",
-         "#d62728" if failed else "#888", "bold"),
-        ("__SEP__", "", "", ""),
-        ("更新時間", datetime.now().strftime("%H:%M:%S"),
-         "#888", "normal"),
-    ])
-    y = 0.92
-    line_h = 0.060
-    for label, value, color, weight in lines:
-        if label == "__SEP__":
-            # 分隔線 — use Line2D in axes coords (axhline can't take
-            # transform=ax.transAxes; it generates its own transform).
-            ax.plot([0.05, 0.95], [y - line_h * 0.4, y - line_h * 0.4],
-                    color="#dddddd", lw=0.6,
-                    transform=ax.transAxes, clip_on=False)
-            y -= line_h * 0.7
-            continue
-        ax.text(0.05, y, label, fontsize=9,
-                color=color, weight=weight,
-                transform=ax.transAxes, va="top")
-        ax.text(0.98, y, value, fontsize=9, family="monospace",
-                color=color, weight=weight,
-                transform=ax.transAxes, va="top", ha="right")
-        y -= line_h
+        ax.set_yticklabels([])
+    ax.set_xlabel("Δ AUC  (演算法 − 基線)", fontsize=9)
+    ax.tick_params(axis="x", labelsize=8)
+    ax.grid(True, axis="x", alpha=0.22, zorder=0)
 
 
 def _render_live_curves(ax, cells: list[dict]) -> None:
-    """最近驗證 AUC 訓練曲線（最新更新的前 5 個實驗格）。"""
-    ax.set_title("最近驗證 AUC 訓練曲線  (最新更新的前 5 個實驗格)",
-                 fontsize=11, fontweight="bold", pad=10)
-    ax.set_xlabel("訓練回合", fontsize=10)
-    ax.set_ylabel("驗證 AUC", fontsize=10)
-    ax.grid(True, alpha=0.3)
+    """即時驗證 AUC 訓練曲線（最新更新的前 6 個實驗格）。
+
+    每條曲線採用獨立的高對比色，而非依架構著色——延伸 sweep 階段
+    最新的 cell 常同屬一個架構，依架構著色會使多條線同色而難以分辨。
+    曲線末端標出當前 val_auc 數值。
+    """
+    ax.set_title("即時訓練曲線  ·  最新更新的 6 個實驗格之驗證 AUC",
+                 fontsize=11, fontweight="bold", pad=8)
+    ax.set_xlabel("訓練回合", fontsize=9)
+    ax.set_ylabel("驗證 AUC", fontsize=9)
+    ax.grid(True, alpha=0.25)
 
     live = [c for c in cells if c["history"] is not None
-            and "val_auc" in c["history"].columns]
+            and "val_auc" in c["history"].columns
+            and len(c["history"]) > 0]
     live.sort(key=lambda c: c["mtime"], reverse=True)
-    top = live[:5]
+    top = live[:6]
     if not top:
-        ax.text(0.5, 0.5, "（尚無訓練歷史）",
-                ha="center", va="center", transform=ax.transAxes,
-                fontsize=11, color="#888")
+        ax.text(0.5, 0.5, "（尚無訓練歷史）", ha="center", va="center",
+                transform=ax.transAxes, fontsize=11, color="#9aa1ab")
+        ax.set_xticks([])
+        ax.set_yticks([])
         return
-    for c in top:
+    line_colors = ["#2563eb", "#dc2626", "#16a34a", "#d97706",
+                   "#9333ea", "#0891b2"]
+    for k, c in enumerate(top):
         h = c["history"]
-        color = ARCH_COLOR.get(c["arch"], "#888")
-        marker = ALGO_MARKER.get(c["algo"], None)
-        # Label uses display-friendly arch name and Chinese partition tag
-        arch_short = {"lstm": "LSTM", "mamba": "Mamba",
-                      "spiking_expand2": "Spiking"}.get(c["arch"], c["arch"])
-        label = (f"{arch_short} · {c['algo']} · "
+        color = line_colors[k % len(line_colors)]
+        label = (f"{ARCH_DISPLAY.get(c['arch'], c['arch'])} · {c['algo']} · "
                  f"{PARTITION_LABEL.get(c['partition'], c['partition'])} · "
                  f"種子 {c['seed']}")
-        ax.plot(h["round"], h["val_auc"], color=color, lw=1.5, alpha=0.85,
-                marker=marker, markersize=5, markevery=max(len(h) // 8, 1),
-                label=label)
-    # Legend OUTSIDE the plot area (top-right of axes) so it doesn't
-    # overlap with data lines, especially near the rightmost rounds.
-    ax.legend(fontsize=9, loc="center left",
-              bbox_to_anchor=(1.005, 0.5), framealpha=0.95,
-              title="實驗格", title_fontsize=9)
+        ax.plot(h["round"], h["val_auc"], color=color, lw=1.9, alpha=0.92,
+                label=label, zorder=3)
+        last_r = h["round"].iloc[-1]
+        last_v = h["val_auc"].iloc[-1]
+        ax.plot([last_r], [last_v], marker="o", color=color, markersize=5,
+                markeredgecolor="white", markeredgewidth=0.8, zorder=4)
+        ax.annotate(f"{last_v:.3f}", (last_r, last_v),
+                    textcoords="offset points", xytext=(6, 0),
+                    fontsize=8, color=color, va="center", fontweight="bold")
+    ax.legend(fontsize=8.5, loc="center left", bbox_to_anchor=(1.012, 0.5),
+              framealpha=0.96, title="實驗格（依最新更新排序）",
+              title_fontsize=8.5)
     ax.set_ylim(0.5, 1.0)
+    ax.margins(x=0.03)
+
+
+DASHBOARD_CSS = """
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#f4f5f7;color:#1b1f24;
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans CJK TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+main{max-width:1200px;margin:0 auto;padding:24px 22px 72px;}
+.hd h1{font-size:20px;font-weight:700;letter-spacing:.01em;}
+.hd .sub{color:#6b7280;font-size:12.5px;margin-top:3px;}
+section{margin-top:16px;}
+.grid{display:grid;gap:16px;}
+.card{background:#fff;border:1px solid #e5e8ec;border-radius:14px;
+  padding:18px 20px;box-shadow:0 1px 3px rgba(16,24,40,.05);}
+.card h2{font-size:13px;font-weight:700;color:#3a414b;margin-bottom:13px;}
+.hero{grid-template-columns:1.7fr 1fr;}
+.prog-pct{font-size:32px;font-weight:800;line-height:1;}
+.prog-pct small{font-size:14px;font-weight:600;color:#6b7280;}
+.prog-cap{color:#6b7280;font-size:12.5px;margin:5px 0 13px;}
+.track{display:flex;height:24px;background:#e9ecef;border-radius:12px;overflow:hidden;}
+.seg{height:100%;}
+.seg.core{background:#16a34a;}
+.seg.ext{background:repeating-linear-gradient(45deg,#2563eb,#2563eb 9px,#4f86f5 9px,#4f86f5 18px);}
+.prog-legend{display:flex;gap:18px;margin-top:11px;font-size:12px;color:#4b5563;}
+.dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle;}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.kpi{background:#f8f9fb;border:1px solid #e8eaee;border-radius:10px;padding:10px 12px;}
+.kpi .k-lbl{font-size:11px;color:#6b7280;}
+.kpi .k-val{font-size:17px;font-weight:700;margin-top:2px;}
+.kpi.ok .k-val{color:#16a34a;}
+.kpi.bad .k-val{color:#dc2626;}
+.kpi.warn .k-val{color:#d97706;}
+.kpi.info .k-val{color:#2563eb;}
+.matrix{display:grid;grid-template-columns:96px repeat(3,1fr);gap:7px;}
+.mx-head{font-weight:700;text-align:center;font-size:12px;color:#3a414b;padding:4px 0;}
+.mx-arch{display:flex;align-items:center;font-weight:700;font-size:12.5px;}
+.mx-arch.ext{color:#b45309;}
+.mx-cell{border-radius:9px;padding:9px 11px;border:1px solid #e5e8ec;background:#fafbfc;}
+.mx-cell.done{background:#ecfdf3;border-color:#bbf7d0;}
+.mx-cell.run{background:#eff5ff;border-color:#bfd6fb;}
+.mx-n{font-size:15px;font-weight:700;}
+.mx-n small{font-size:11px;color:#9aa1ab;font-weight:600;}
+.mx-bar{display:block;height:6px;background:#e6e8eb;border-radius:3px;margin-top:7px;overflow:hidden;}
+.mx-bar i{display:block;height:100%;border-radius:3px;background:#cdd2d8;}
+.mx-cell.done .mx-bar i{background:#16a34a;}
+.mx-cell.run .mx-bar i{background:#2563eb;}
+.cols{grid-template-columns:1fr 1fr;}
+table{border-collapse:collapse;width:100%;font-size:12.5px;}
+th,td{border-bottom:1px solid #eef0f2;padding:6px 10px;text-align:left;}
+th{background:#f8f9fb;font-weight:700;color:#475467;font-size:11.5px;position:sticky;top:0;}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
+tr.win td{background:#f0fdf4;}
+tr.lose td{background:#fef2f2;}
+tr.win td:last-child{color:#15803d;font-weight:700;}
+tr.lose td:last-child{color:#b91c1c;font-weight:700;}
+tr.slow td{color:#dc2626;font-weight:700;}
+.scroll{max-height:430px;overflow-y:auto;border:1px solid #e5e8ec;border-radius:10px;}
+.note{color:#6b7280;font-size:11.5px;margin-top:9px;}
+.snap img{width:100%;border-radius:10px;border:1px solid #e5e8ec;margin-top:2px;}
+ul.fails{list-style:none;font-size:12px;}
+ul.fails li{padding:4px 2px;border-bottom:1px solid #f0f1f3;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+ul.fails li.none{color:#16a34a;font-family:inherit;}
+@media(max-width:880px){
+  .hero,.cols,.kpis{grid-template-columns:1fr;}
+  .matrix{grid-template-columns:74px repeat(3,1fr);}
+}
+"""
 
 
 def _format_group_row(g: dict) -> str:
-    """彙整結果表的單列 HTML。"""
+    """彙整結果表的單列 HTML（與 Phase 5 基線之配對比較）。"""
     if g["ci_low"] > 0:
-        css = "background:#d4f4dd"
-        sig = "★ 勝"
+        cls, sig = "win", "★ 顯著優"
     elif g["ci_high"] < 0:
-        css = "background:#fcdada"
-        sig = "↓ 負"
+        cls, sig = "lose", "↓ 顯著劣"
     else:
-        css = ""
-        sig = "—"
+        cls, sig = "null", "— 無差異"
+    base = g.get("baseline_auc_mean")
+    pathd = g.get("path_d_auc_mean")
+    base_s = f"{base:.4f}" if base is not None else "—"
+    pathd_s = f"{pathd:.4f}" if pathd is not None else "—"
     return (
-        f"<tr style='{css}'>"
-        f"<td>{g['arch']}</td>"
+        f"<tr class='{cls}'>"
+        f"<td>{ARCH_DISPLAY.get(g['arch'], g['arch'])}</td>"
         f"<td>{g['algo']}</td>"
         f"<td>{PARTITION_LABEL[g['partition']]}</td>"
-        f"<td>{g['n']}</td>"
-        f"<td>{g['mean_delta']:+.4f}</td>"
-        f"<td>[{g['ci_low']:+.4f}, {g['ci_high']:+.4f}]</td>"
+        f"<td class='num'>{g['n']}</td>"
+        f"<td class='num'>{base_s}</td>"
+        f"<td class='num'>{pathd_s}</td>"
+        f"<td class='num'>{g['mean_delta']:+.4f}</td>"
+        f"<td class='num'>[{g['ci_low']:+.4f}, {g['ci_high']:+.4f}]</td>"
         f"<td>{sig}</td>"
         f"</tr>"
     )
@@ -857,132 +721,204 @@ def render_html(
     v100: dict, local_gpu: dict, eta: dict, png_name: str,
 ) -> str:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    done = sum(1 for c in cells if c["status"] == "done")
-    in_prog = sum(1 for c in cells if c["status"] == "in_progress")
     failed = sum(1 for c in cells if c["status"] == "failed")
-    path_d_cells = sum(1 for c in cells
-                       if c["source"] == "V100"
-                       and c["algo"] in KNOWN_ALGOS
-                       and c["status"] == "done")
+
+    def _ndone(archs: tuple) -> int:
+        return sum(1 for c in cells
+                   if c["source"] == "V100" and c["arch"] in archs
+                   and c["algo"] in KNOWN_ALGOS and c["status"] == "done")
+
+    core_done = _ndone(CORE_ARCHS)
+    ext_done = _ndone(EXT_ARCHS)
+    total_done = core_done + ext_done
+    core_w = 100.0 * core_done / PATH_D_TARGET_CELLS
+    ext_w = 100.0 * ext_done / PATH_D_TARGET_CELLS
+    pct_total = 100.0 * total_done / PATH_D_TARGET_CELLS
 
     short_eta, long_eta = _format_eta(eta)
 
-    # ETA 細項：各架構的剩餘實驗格 + 經驗 wall
-    eta_arch_rows = ""
-    for arch in KNOWN_ARCHS:
-        info = eta["per_arch"][arch]
-        src_label = (
-            f"實測 (n={info['empirical_n']})" if info["empirical_n"] > 0
-            else "預估"
-        )
-        eta_arch_rows += (
-            f"<tr><td>{arch}</td>"
-            f"<td>{info['done']}/{info['target']}</td>"
-            f"<td>{info['remaining_cells']}</td>"
-            f"<td>{info['wall_s']/60:.1f} 分</td>"
-            f"<td>{src_label}</td></tr>"
-        )
+    # 即時狀態 KPI
+    master_txt = "執行中" if v100["master_alive"] else "閒置"
+    master_cls = "ok" if v100["master_alive"] else "warn"
+    gpus = v100.get("gpus") or []
+    n_gpu_busy = sum(1 for g in gpus if g["util_pct"] > 5)
+    gpu_txt = f"{n_gpu_busy} / {len(gpus)} 運轉" if gpus else "無資料"
+    gpu_cls = "ok" if (gpus and n_gpu_busy == len(gpus)) else (
+        "warn" if gpus else "")
+    eta_done = eta["remaining_seconds"] < 60
 
-    # 各 (架構, 演算法) 進度條
-    progress_rows = ""
+    # 進度矩陣 5 架構 × 3 演算法
+    mx = ["<div></div>"]
+    for algo in KNOWN_ALGOS:
+        mx.append(f'<div class="mx-head">{algo}</div>')
     for arch in KNOWN_ARCHS:
+        ext_cls = " ext" if arch in EXT_ARCHS else ""
+        mx.append(f'<div class="mx-arch{ext_cls}">{ARCH_DISPLAY[arch]}</div>')
         for algo in KNOWN_ALGOS:
             n = sum(1 for c in cells if c["source"] == "V100"
-                    and c["arch"] == arch
-                    and c["algo"] == algo and c["status"] == "done")
-            pct = 100 * n / 60.0
-            progress_rows += (
-                f"<tr><td>{arch}</td><td>{algo}</td>"
-                f"<td>{n}/60</td><td>{pct:.0f}%</td></tr>"
+                    and c["arch"] == arch and c["algo"] == algo
+                    and c["status"] == "done")
+            pct = 100.0 * n / 60.0
+            state = "done" if n >= 60 else "run" if n > 0 else "idle"
+            mx.append(
+                f'<div class="mx-cell {state}">'
+                f'<span class="mx-n">{n}<small>/60</small></span>'
+                f'<span class="mx-bar"><i style="width:{pct:.0f}%"></i></span>'
+                f"</div>"
             )
+    matrix_html = "".join(mx)
 
-    fails = sorted(
-        (c for c in cells if c["status"] == "failed"),
-        key=lambda c: c["mtime"], reverse=True,
-    )[:10]
-    fail_rows = "".join(
-        f"<tr><td>{c['name']}</td></tr>" for c in fails
-    ) or '<tr><td><i>無</i></td></tr>'
+    # 各架構 ETA
+    eta_rows = ""
+    for arch in KNOWN_ARCHS:
+        info = eta["per_arch"][arch]
+        src = (f"實測 n={info['empirical_n']}" if info["empirical_n"] > 0
+               else "預估")
+        eta_rows += (
+            f"<tr><td>{ARCH_DISPLAY[arch]}</td>"
+            f"<td class='num'>{info['done']}/{info['target']}</td>"
+            f"<td class='num'>{info['remaining_cells']}</td>"
+            f"<td class='num'>{info['wall_s']/60:.1f} 分</td>"
+            f"<td>{src}</td></tr>"
+        )
 
+    # V100 4×GPU + chain 健康度（GPU N ↔ chain N 一對一對應）
+    gpu_by_idx = {g["idx"]: g for g in (v100.get("gpus") or [])}
+    chains = v100["chains"]
+    have_v100 = bool(gpu_by_idx) or any(
+        st["done"] or st["fail"] for st in chains.values())
+    if have_v100:
+        done_vals = [st["done"] for st in chains.values()]
+        mx_done = max(done_vals) if done_vals else 0
+        gpu_rows = ""
+        for i in range(4):
+            st = chains.get(i, {"done": 0, "fail": 0})
+            g = gpu_by_idx.get(i)
+            dn, fn = st["done"], st["fail"]
+            util = f"{g['util_pct']}%" if g else "—"
+            mem = f"{g['mem_mib'] / 1024:.1f} GB" if g else "—"
+            # util 是瞬時取樣，聯邦訓練在回合/客戶端切換間會自然落到
+            # 0%（CPU-bound 的聚合階段），故不以 util 觸發警示——真正
+            # 的卡住由 done 進度落後於同儕來偵測。
+            slow = (mx_done - dn) > 5 and dn < mx_done * 0.5
+            if fn:
+                tag, cls = f"✗ {fn} 失敗", "slow"
+            elif slow:
+                tag, cls = "進度落後", "slow"
+            else:
+                tag, cls = "正常", ""
+            gpu_rows += (
+                f"<tr class='{cls}'><td>GPU {i} · Chain {i}</td>"
+                f"<td class='num'>{util}</td><td class='num'>{mem}</td>"
+                f"<td class='num'>{dn}/{CELLS_PER_CHAIN_NEW}</td>"
+                f"<td>{tag}</td></tr>"
+            )
+    else:
+        gpu_rows = ("<tr><td colspan='5'>（無法連線 V100 取得 "
+                    "GPU / chain 狀態）</td></tr>")
+
+    # Δ AUC 配對表
     sorted_groups = sorted(
         groups, key=lambda g: (-g["mean_delta"], g["arch"], g["algo"])
     )
     grouped_rows = "".join(_format_group_row(g) for g in sorted_groups) \
-        or '<tr><td colspan="7"><i>（尚無與 Phase 5 配對的實驗格）</i></td></tr>'
+        or ('<tr><td colspan="9"><i>（尚無與 Phase 5 配對的實驗格）'
+            '</i></td></tr>')
+
+    # 近期失敗
+    fails = sorted((c for c in cells if c["status"] == "failed"),
+                   key=lambda c: c["mtime"], reverse=True)[:8]
+    fail_html = ("".join(f"<li>{c['name']}</li>" for c in fails)
+                 if fails else "<li class='none'>無</li>")
 
     return f"""<!doctype html>
 <html lang="zh-Hant"><head>
 <meta charset="utf-8">
 <meta http-equiv="refresh" content="30">
-<title>Path D 大規模實驗 — 即時儀表板</title>
-<style>
-body {{ font-family: -apple-system, "Noto Sans CJK TC", "PingFang TC",
-        "Microsoft JhengHei", sans-serif; margin: 18px; max-width: 1500px; }}
-h1 {{ margin-bottom: 4px; }}
-h3 {{ margin-top: 1.5em; }}
-.ts {{ color: #666; font-size: 0.9em; }}
-.kpi {{ display: inline-block; padding: 4px 14px; margin-right: 8px;
-       background: #f4f4f4; border-radius: 4px; font-weight: bold; }}
-.kpi.win {{ background: #d4f4dd; color: #1d6b2a; }}
-.kpi.fail {{ background: #fcdada; color: #8a1f1f; }}
-.kpi.eta {{ background: #e0eaf5; color: #1f4b80; }}
-table {{ border-collapse: collapse; margin: 8px 0; }}
-th, td {{ border: 1px solid #ccc; padding: 4px 10px; text-align: left;
-         font-size: 0.85em; }}
-th {{ background: #f4f4f4; }}
-img {{ max-width: 100%; border: 1px solid #ddd; }}
-.flex {{ display: flex; gap: 24px; flex-wrap: wrap; }}
-.legend {{ font-size: 0.85em; color: #555; margin-bottom: 6px; }}
-</style>
+<title>Path D 即時儀表板 · 5 架構 SAM 家族</title>
+<style>{DASHBOARD_CSS}</style>
 </head><body>
-<h1>Path D SAM 家族即時儀表板</h1>
-<p class="ts">更新時間：{ts} · 自動重新整理 30 秒</p>
-<p>
-<span class="kpi">Path D 進度：{path_d_cells} / {PATH_D_TARGET_CELLS}</span>
-<span class="kpi">完成 {done}</span>
-<span class="kpi">進行中 {in_prog}</span>
-<span class="kpi{' fail' if failed else ''}">失敗 {failed}</span>
-<span class="kpi eta">{long_eta}</span>
-</p>
-
-<img src="{png_name}?t={int(time.time())}" alt="dashboard">
-
-<h3>彙整結果（與 Phase 5 基線配對比較）</h3>
-<p class="legend">配對規則：fedscam / fedmoswa 對應 fedavg；fedgmt 對應 fedadam。
-   ★ 顯著優 = 95% 信賴區間完全為正，Path D 演算法顯著優於基線；
-   ↓ 顯著劣 = 95% 信賴區間完全為負，Path D 演算法顯著劣於基線；
-   — 無差異 = 信賴區間橫跨 0，差異未達顯著水準。</p>
-<table>
-<tr><th>架構</th><th>演算法</th><th>資料切分</th><th>種子數</th>
-    <th>平均 Δ AUC</th><th>95% 信賴區間</th><th>顯著性</th></tr>
-{grouped_rows}
-</table>
-
-<div class="flex">
-<div>
-<h3>各 (架構 × 演算法) 完成進度</h3>
-<table>
-<tr><th>架構</th><th>演算法</th><th>已完成 / 目標</th><th>百分比</th></tr>
-{progress_rows}
-</table>
-</div>
-<div>
-<h3>各架構 ETA 細項</h3>
-<table>
-<tr><th>架構</th><th>已完成</th><th>剩餘格數</th>
-    <th>單格耗時</th><th>來源</th></tr>
-{eta_arch_rows}
-</table>
-</div>
-<div>
-<h3>近期失敗的實驗格</h3>
-<table>
-<tr><th>實驗格名稱</th></tr>
-{fail_rows}
-</table>
-</div>
+<main>
+<div class="hd">
+  <h1>Path D · SAM 家族 × 5 架構大規模實驗</h1>
+  <div class="sub">更新 {ts} · 每 30 秒自動刷新 · 核心 540 + 擴充 360 = 900 實驗格</div>
 </div>
 
+<section class="grid hero">
+  <div class="card">
+    <h2>整體進度</h2>
+    <div class="prog-pct">{pct_total:.0f}%<small> · {total_done} / {PATH_D_TARGET_CELLS} 實驗格</small></div>
+    <div class="prog-cap">核心 3 架構 {core_done}/540 已完成 · 擴充 2 架構（xLSTM + Mamba-3）{ext_done}/360 進行中</div>
+    <div class="track">
+      <div class="seg core" style="width:{core_w:.2f}%"></div>
+      <div class="seg ext" style="width:{ext_w:.2f}%"></div>
+    </div>
+    <div class="prog-legend">
+      <span><i class="dot" style="background:#16a34a"></i>核心已完成</span>
+      <span><i class="dot" style="background:#2563eb"></i>擴充進行中</span>
+      <span><i class="dot" style="background:#e9ecef"></i>尚未開始</span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>即時狀態</h2>
+    <div class="kpis">
+      <div class="kpi {'ok' if eta_done else 'info'}"><div class="k-lbl">預計剩餘</div><div class="k-val">{short_eta}</div></div>
+      <div class="kpi {master_cls}"><div class="k-lbl">V100 主控</div><div class="k-val">{master_txt}</div></div>
+      <div class="kpi {gpu_cls}"><div class="k-lbl">V100 GPU</div><div class="k-val">{gpu_txt}</div></div>
+      <div class="kpi {'bad' if failed else 'ok'}"><div class="k-lbl">失敗實驗格</div><div class="k-val">{failed}</div></div>
+    </div>
+    <div class="note">{long_eta}</div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>各（架構 × 演算法）完成進度 · 每格 60 實驗格</h2>
+  <div class="matrix">{matrix_html}</div>
+</section>
+
+<section class="grid cols">
+  <div class="card">
+    <h2>各架構 ETA 細項</h2>
+    <table>
+      <tr><th>架構</th><th class="num">已完成</th><th class="num">剩餘</th><th class="num">單格耗時</th><th>來源</th></tr>
+      {eta_rows}
+    </table>
+  </div>
+  <div class="card">
+    <h2>V100 — 4×GPU / Chain 健康度</h2>
+    <table>
+      <tr><th>GPU · Chain</th><th class="num">使用率</th><th class="num">記憶體</th><th class="num">已完成</th><th>狀態</th></tr>
+      {gpu_rows}
+    </table>
+    <div class="note">GPU N ↔ Chain N 一對一對應;每 chain 約 {CELLS_PER_CHAIN_NEW} 個擴充實驗格(540 核心格已跳過)。V100 單卡 32 GB;使用率為瞬時取樣,回合間落到 0% 屬正常。</div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Δ AUC · Path D 演算法 vs Phase 5 基線（配對自助法 95% 信賴區間）</h2>
+  <div class="scroll">
+    <table>
+      <tr><th>架構</th><th>演算法</th><th>資料切分</th><th class="num">n</th>
+          <th class="num">基線 AUC</th><th class="num">Path D AUC</th>
+          <th class="num">平均 Δ AUC</th><th class="num">95% 信賴區間</th><th>顯著性</th></tr>
+      {grouped_rows}
+    </table>
+  </div>
+  <div class="note">配對規則：fedscam · fedmoswa → fedavg；fedgmt → fedadam。
+    ★ 顯著優 / ↓ 顯著劣 表 95% CI 完全偏離 0；— 無差異 表 CI 橫跨 0。
+    擴充架構 xLSTM / Mamba-3 在 Phase 5 無對應基線，完成後僅見於進度矩陣與訓練曲線，不列入此配對表。</div>
+</section>
+
+<section class="card snap">
+  <h2>完整視覺化快照 · 森林圖 · 進度矩陣 · 即時訓練曲線</h2>
+  <img src="{png_name}?t={int(time.time())}" alt="dashboard snapshot">
+</section>
+
+<section class="card">
+  <h2>近期失敗實驗格</h2>
+  <ul class="fails">{fail_html}</ul>
+</section>
+</main>
 </body></html>
 """
 
@@ -1018,7 +954,7 @@ def main() -> None:
             groups = aggregate_by_group(paired)
             eta = compute_eta(cells)
 
-            render_png(cells, groups, v100_status, local_gpu, eta, png)
+            render_png(cells, groups, png)
             html.write_text(render_html(
                 cells, groups, v100_status, local_gpu, eta, "status.png",
             ))

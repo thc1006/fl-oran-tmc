@@ -61,7 +61,13 @@ DRY_RUN_MODE="${EXECUTE:-0}"
 POLL_INTERVAL="${POLL_INTERVAL:-300}"        # 5 min between polls
 TARGET_CELLS="${TARGET_CELLS:-900}"          # 540 core + 360 ext
 MIN_FOR_PARTIAL="${MIN_FOR_PARTIAL:-800}"    # accept partial >= 800
-STALE_THRESHOLD_S="${STALE_THRESHOLD_S:-1800}"  # 30 min
+# Bumped from 1800 (30 min) to 3600 (60 min) on 2026-05-20 after a false
+# partial-trigger: Mamba-3 cells on V100 take ~33 min each, and when all
+# 4 chains synchronously work mamba3 cells the gap between any new
+# summary.json can exceed 30 min while the sweep is completely healthy.
+# 60 min comfortably exceeds the longest per-cell wall, so a > 60 min
+# stale window is now a reliable "actually stuck" signal.
+STALE_THRESHOLD_S="${STALE_THRESHOLD_S:-3600}"  # 60 min (was 1800 = 30 min)
 MAX_POLLS="${MAX_POLLS:-2880}"               # 10 days worst-case
 
 # --- expected V100 + local environment ---
@@ -70,7 +76,11 @@ SSH_HOST="${EXPECTED_USER}@203.145.216.194"
 SSH_PORT="51419"
 V100_OUTDIR="artifacts/v7_sam_family"
 
-LOCAL_REPO="$HOME/fl-oran-tmc"
+# Repo root derived from this script's own location (scripts/..) so the
+# waiter works regardless of where the repo is checked out. The previous
+# hardcoded "$HOME/fl-oran-tmc" broke after the 2026-05-16 4060-dev
+# migration moved the repo to $HOME/dev/fl-oran-tmc.
+LOCAL_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_OUTDIR="$LOCAL_REPO/artifacts/v7_sam_family"
 LOCAL_LOGDIR="$LOCAL_REPO/logs"
 LOG_FILE="$LOCAL_LOGDIR/v100_extended_waiter.log"
