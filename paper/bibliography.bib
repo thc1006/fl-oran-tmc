@@ -722,4 +722,51 @@
     year      = {2024}
 }
 
+% ---------------------------------------------------------------------
+% Related work for the 5-arch extension (verified May 2026 lit check).
+% Closest prior art for xLSTM-in-wireless and Mamba-in-wireless, plus a
+% contemporary federated O-RAN slicing paper. Cited in §related-work to
+% scope novelty precisely: no element of the extension is first-of-kind
+% in isolation --- the contribution is the specific FL x O-RAN x 5-arch
+% combination, and these three entries delimit that gap.
+% ---------------------------------------------------------------------
+
+@misc{Ali2025_xLSTMCellular,
+    author    = {Ali, Khalid and Bettouche, Zineddine and
+                 Kassler, Andreas and Fischer, Andreas},
+    title     = {Enhancing Spatiotemporal Networks with {xLSTM}: A Scalar
+                 {LSTM} Approach for Cellular Traffic Forecasting},
+    howpublished = {arXiv:2507.19513},
+    note      = {Closest prior art to our xLSTM panel: applies the sLSTM
+                 block to \emph{centralized} cellular traffic forecasting
+                 (Jul 2025). We differ in being federated and in targeting
+                 O-RAN slice-SLA prediction rather than traffic volume ---
+                 this paper delimits the gap our xLSTM extension fills.},
+    year      = {2025}
+}
+
+@misc{Raviv2026_WiMamba,
+    author    = {Raviv, Tomer and Shlezinger, Nir},
+    title     = {{WiMamba}: Linear-Scale Wireless Foundation Model},
+    howpublished = {arXiv:2603.26367},
+    note      = {Mamba-based wireless foundation model (Mar 2026): evidence
+                 that selective state-space models are an active wireless
+                 direction, motivating our Mamba / Mamba-3 panel.},
+    year      = {2026}
+}
+
+@misc{Mohammadi2026_SliceFed,
+    author    = {Mohammadi, Hossein and Hashemi Natanzi, Seyed Bagher and
+                 Nassiri, Ramak and Hassanpour, Jamshid and Tang, Bo and
+                 Marojevic, Vuk},
+    title     = {{SliceFed}: Federated Constrained Multi-Agent {DRL} for
+                 Dynamic Spectrum Slicing in {6G}},
+    howpublished = {arXiv:2603.11390},
+    note      = {Contemporary (Mar 2026) federated O-RAN slicing work; uses
+                 multi-agent DRL for spectrum-slicing \emph{control} --- a
+                 control task, distinct from our supervised slice-SLA
+                 \emph{prediction} benchmark. Cited to position scope.},
+    year      = {2026}
+}
+
 % Add further entries as later sections (S11-F onwards) are migrated.

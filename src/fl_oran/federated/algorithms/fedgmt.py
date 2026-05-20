@@ -1,4 +1,4 @@
-"""FedGMT (Lee et al., ICML 2025) — "One Arrow, Two Hawks: Sharpness-aware
+"""FedGMT (Li et al., ICML 2025) — "One Arrow, Two Hawks: Sharpness-aware
 Minimization for Federated Learning via Global Model Trajectory".
 
 OpenReview: https://openreview.net/forum?id=80mK2Mqaph
