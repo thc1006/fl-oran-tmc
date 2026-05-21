@@ -12,7 +12,7 @@ repo's name is preserved for historical continuity with v1-v4 artifacts.)
 > is appropriate (the paper notes an anonymised mirror option for
 > double-blind venues). The paper is archived on Zenodo under a **concept DOI**
 > that always resolves to the latest version:
-> **DOI: [10.5281/zenodo.20075432](https://doi.org/10.5281/zenodo.20075432)**
+> **DOI: [10.5281/zenodo.20263144](https://doi.org/10.5281/zenodo.20263144)**
 > — this is the preprint / submission deposit; an accepted-version DOI
 > will be minted after JSAC acceptance.
 
@@ -69,7 +69,7 @@ ADR-001 Revision History).
 
 **Paper artifact**: `paper/main.tex` (24 pp) + `paper/supplementary.tex`
 (3 pp) + 71-entry `paper/bibliography.bib`. Submission-ready PDF
-deposited to Zenodo at concept **DOI [10.5281/zenodo.20075432](https://doi.org/10.5281/zenodo.20075432)**
+deposited to Zenodo at concept **DOI [10.5281/zenodo.20263144](https://doi.org/10.5281/zenodo.20263144)**
 (latest version: tag `v0.9.3-submission-ready`).
 
 ## Algorithm registry
