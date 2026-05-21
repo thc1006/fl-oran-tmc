@@ -1,12 +1,13 @@
 # Citation metadata for the fl-oran-tmc repository.
 # Renders GitHub's "Cite this repository" button. Authoritative artifact
-# for v0.9.2-submission-ready is the Zenodo deposit at the DOI below.
+# is the Zenodo deposit at the concept DOI below (version-agnostic; always
+# resolves to the latest GitHub-archived release).
 
 cff-version: 1.2.0
 message: >-
   If you use this software or its accompanying paper, please cite both
-  the Zenodo deposit (for the v0.9.2 submission-ready software/artifact
-  release) and the underlying paper (under review at IEEE JSAC; see
+  the Zenodo deposit (concept DOI for the software/artifact release;
+  always resolves to the latest version) and the underlying paper (see
   `preferred-citation` below).
 type: software
 title: >-
@@ -23,26 +24,26 @@ abstract: >-
   measurement. All five architectures share an identical encoder and a
   structurally-identical classifier head; only the temporal trunk
   differs (total parameter count matched within ±10% via the ADR-001
-  D-20 parity constraint). Paper under review at IEEE Journal on
-  Selected Areas in Communications.
+  D-20 parity constraint). Manuscript prepared for submission to IEEE
+  Journal on Selected Areas in Communications.
 authors:
   - family-names: Tsai
     given-names: Hsiu-Chi
     email: hctsai1006@cs.nctu.edu.tw
     orcid: 'https://orcid.org/0000-0001-7421-8027'
     affiliation: National Yang Ming Chiao Tung University
-version: 0.9.2
-date-released: '2026-05-08'
+version: 0.9.4
+date-released: '2026-05-21'
 license: AGPL-3.0
 url: 'https://github.com/thc1006/fl-oran-tmc'
 repository-code: 'https://github.com/thc1006/fl-oran-tmc'
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.20075433
+    value: 10.5281/zenodo.20263144
     description: >-
-      Zenodo deposit of the v0.9.2-submission-ready paper artifact
-      (main.pdf + supplementary.pdf). Cite this DOI if you are citing
-      the paper/artifact as deposited at JSAC submission time.
+      Zenodo concept DOI (version-agnostic) for the paper artifact
+      (main.pdf + supplementary.pdf); always resolves to the latest
+      GitHub-archived release (currently v0.9.4-preprint).
 keywords:
   - federated-learning
   - O-RAN
@@ -68,13 +69,14 @@ preferred-citation:
       email: hctsai1006@cs.nctu.edu.tw
       affiliation: National Yang Ming Chiao Tung University
   journal: >-
-    IEEE Journal on Selected Areas in Communications (under review)
+    IEEE Journal on Selected Areas in Communications (targeted venue)
   year: 2026
-  doi: 10.5281/zenodo.20075433
+  doi: 10.5281/zenodo.20263144
   notes: >-
-    Under review at IEEE JSAC since 2026-05-08 (venue switched from
-    IEEE TMC on 2026-05-05; the `tmc` in this repo's name is
-    preserved for historical continuity with the v1-v4 codebase
-    `colosseum-oran-federated-slicing`). DOI above is the Zenodo
-    preprint/submission-ready deposit; a separate accepted-version
-    DOI will be minted after JSAC acceptance.
+    Manuscript prepared for submission to IEEE JSAC (not yet submitted
+    as of 2026-05-21; venue switched from IEEE TMC on 2026-05-05; the
+    `tmc` in this repo's name is preserved for historical continuity
+    with the v1-v4 codebase `colosseum-oran-federated-slicing`). The DOI
+    above is the Zenodo concept DOI for the preprint/submission-ready
+    artifact; a separate accepted-version DOI will be minted after JSAC
+    acceptance.
