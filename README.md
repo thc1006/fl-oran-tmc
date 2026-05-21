@@ -8,8 +8,9 @@ on multi-algorithm FL under realistic non-IID splits.
 repo's name is preserved for historical continuity with v1-v4 artifacts.)
 
 > **Status: private during review.** The repository is kept private until
-> camera-ready. The submission-ready paper (v0.9.2) is archived on Zenodo:
-> **DOI: [10.5281/zenodo.20075433](https://doi.org/10.5281/zenodo.20075433)**
+> camera-ready. The paper is archived on Zenodo under a **concept DOI**
+> that always resolves to the latest version:
+> **DOI: [10.5281/zenodo.20075432](https://doi.org/10.5281/zenodo.20075432)**
 > — this is the preprint / submission deposit; an accepted-version DOI
 > will be minted after JSAC acceptance.
 
@@ -64,10 +65,10 @@ ADR-001 Revision History).
 
 **334+ tests passing** across v1–v7 (89 legacy v1–v4 + 42 v5 FL + 90 v6 arch + 162+ v7 FL × arch + R1/R2 audit invariants + paper-claim sources + 5 new pin tests for xLSTM/Mamba-3). All test infrastructure is in `tests/`; CI uses `pytest --no-cov` for the canonical run.
 
-**Paper artifact**: `paper/main.tex` (21 pp) + `paper/supplementary.tex`
-(3 pp) + 67-entry `paper/bibliography.bib`. Submission-ready PDF
-deposited to Zenodo at **DOI [10.5281/zenodo.20075433](https://doi.org/10.5281/zenodo.20075433)**
-under tag `v0.9.2-submission-ready`.
+**Paper artifact**: `paper/main.tex` (24 pp) + `paper/supplementary.tex`
+(3 pp) + 71-entry `paper/bibliography.bib`. Submission-ready PDF
+deposited to Zenodo at concept **DOI [10.5281/zenodo.20075432](https://doi.org/10.5281/zenodo.20075432)**
+(latest version: tag `v0.9.3-submission-ready`).
 
 ## Algorithm registry
 
