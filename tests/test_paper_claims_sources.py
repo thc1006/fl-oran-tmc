@@ -301,13 +301,17 @@ class TestSection714HardwareDriftBound:
 
 
 # ============================================================================
-# License consistency (ADR-001 D-15)
+# License consistency (ADR-001 D-15, reversed 2026-05-21 -> AGPL-3.0)
 # ============================================================================
 
 class TestLicenseConsistency:
 
-    def test_apache_in_paper_and_no_mit(self, paper_text: str) -> None:
-        assert "Apache-2.0" in paper_text
+    def test_agpl_in_paper_and_no_permissive_relicense(self, paper_text: str) -> None:
+        # D-15 reversed: the repo ships AGPL-3.0 (LICENSE since the initial
+        # commit; a clean-history reboot of the AGPL-3.0 upstream + AGPL
+        # dataset, so copyleft binds). The paper must match the shipped license.
+        assert "AGPL-3.0" in paper_text
+        assert "Apache-2.0" not in paper_text
         assert "MIT license" not in paper_text
         assert "MIT/Apache-2.0" not in paper_text
 

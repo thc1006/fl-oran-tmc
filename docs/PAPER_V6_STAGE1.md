@@ -40,7 +40,7 @@ than to a fixed-step budget — supporting a trade-off-study framing
 rather than the negative-result framing that the preregistered row
 alone would have suggested.
 
-**Reproducibility**: full source under Apache-2.0 at
+**Reproducibility**: full source under AGPL-3.0 at
 github.com/thc1006/fl-oran-tmc (private during review), commit
 `__COMMIT_HASH__`, hardware: single RTX 4080. Total sweep wall-clock
 **41.7 min** for 30 cells.
@@ -642,7 +642,7 @@ a trade-off study. Either path is left for the Stage 2 follow-up.
 ## Reproducibility
 
 Source code: <https://github.com/thc1006/fl-oran-tmc> (private during review,
-Apache-2.0 on acceptance). Commit hash and `requirements.lock` in the
+AGPL-3.0 on acceptance). Commit hash and `requirements.lock` in the
 supplementary. Hardware: single NVIDIA RTX 4080 (16 GiB VRAM), Ubuntu 24.04,
 Python 3.12.3, PyTorch 2.10 + CUDA 12.8.
 

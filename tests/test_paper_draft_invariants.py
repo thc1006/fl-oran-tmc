@@ -127,18 +127,21 @@ class TestDatasetCardinalityCorrected:
 
 
 # ============================================================================
-# License (ADR-001 D-15)
+# License (ADR-001 D-15, reversed 2026-05-21 -> AGPL-3.0)
 # ============================================================================
 
 class TestLicense:
-    def test_paper_does_not_say_mit_license(self, paper_text: str) -> None:
-        """ADR-001 D-15 fixes license = Apache-2.0; paper inherited 'MIT'."""
-        forbidden = ["MIT license", "MIT/Apache-2.0", "MIT-licensed"]
+    def test_paper_does_not_say_mit_or_apache(self, paper_text: str) -> None:
+        """D-15 reversed: the repo ships AGPL-3.0 (LICENSE since the initial
+        commit; clean-history reboot of the AGPL-3.0 upstream + AGPL dataset,
+        so copyleft binds). The paper must not claim MIT or a permissive
+        relicense (Apache)."""
+        forbidden = ["MIT license", "MIT/Apache-2.0", "MIT-licensed", "Apache-2.0"]
         for s in forbidden:
             assert s not in paper_text, f"forbidden phrase still present: {s!r}"
 
-    def test_paper_says_apache_2_0(self, paper_text: str) -> None:
-        assert "Apache-2.0" in paper_text, "paper must declare Apache-2.0 license"
+    def test_paper_says_agpl_3_0(self, paper_text: str) -> None:
+        assert "AGPL-3.0" in paper_text, "paper must declare AGPL-3.0 license"
 
 
 # ============================================================================

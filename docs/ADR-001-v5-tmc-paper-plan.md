@@ -534,7 +534,9 @@ First time a client is selected, previous-local-model is undefined. Contrastive 
 
 ### D-15. Reproducibility commitment
 
-On paper acceptance: release `src/`, `experiments/`, `tests/`, `docs/`, plus aggregated sweep outputs (not raw `best_state.pt` files due to size) under **Apache-2.0** (revised from earlier AGPL-3.0 to avoid license-incompatibility friction with `mamba-ssm` Apache-2.0 / `snntorch` MIT / `fvcore` Apache-2.0 dependencies; AGPL's strong copyleft would create distribution complications without practical benefit for an academic codebase). Seeds listed in paper. Hardware (RTX 4080) listed in paper. Exact commit hash referenced in paper. Stage 1 short paper supplementary will include `requirements.lock` and a `Dockerfile.repro` for one-line reproduction.
+> **[CORRECTION 2026-05-21 — D-15 REVERSED]** The Apache-2.0 plan below was never executed and is legally unexecutable: this repo is a clean-history *reboot* of the **AGPL-3.0** `colosseum-oran-federated-slicing` upstream and uses the AGPL-licensed ColO-RAN dataset, so AGPL copyleft binds. The shipped `LICENSE` has been AGPL-3.0 since the initial commit `3f5044b`; `pyproject.toml`, README, CITATION.cff, and the Zenodo deposit all agree. The original rationale weighed only the *permissive pip dependencies* (mamba-ssm / snntorch / fvcore) and missed the AGPL upstream + dataset that actually govern. **Canonical license = AGPL-3.0.** Paper text (`paper/main.tex` + `docs/PAPER_DRAFT.md`) and the license-invariant tests (`test_paper_claims_sources.py`, `test_paper_draft_invariants.py`) were corrected to AGPL-3.0 in the same change.
+
+On paper acceptance: release `src/`, `experiments/`, `tests/`, `docs/`, plus aggregated sweep outputs (not raw `best_state.pt` files due to size) under **AGPL-3.0** (the earlier plan to switch to Apache-2.0 was reversed — see the correction above; the pip-dependency-only rationale was incorrect). Seeds listed in paper. Hardware (RTX 4080) listed in paper. Exact commit hash referenced in paper. Stage 1 short paper supplementary will include `requirements.lock` and a `Dockerfile.repro` for one-line reproduction.
 
 ---
 
@@ -636,7 +638,7 @@ Calendar: Stage 1 = ~5 weeks (4 engineering + 1 paper drafting). Stage 2 = ~5-6 
 - NeurIPS/ICML *main track* still out of scope — accepted trade-off. **NeurIPS Workshop on ML for Systems / NeurIPS Datasets-and-Benchmarks track / ICLR Workshop on ML for Wireless** are now plausible secondary venues for Stage 1 given the energy-aware Spiking-SSM novelty.
 - Spiking implementation introduces surrogate-gradient + LIF state complexity new to this codebase; risk-managed via TDD plan in D-20 + dependency sanity check before any LoC is written.
 - Total GPU time across both stages: Stage 1 = ~6 hr (30 runs × ~12 min mean) + Stage 2 conditional = ~14 hr (1050 cells × 1.16 min/cell + Spiking overhead). Combined ~20 hr GPU.
-- License changed from AGPL-3.0 → Apache-2.0 (D-15) to avoid friction with mamba-ssm/snntorch/fvcore dependencies.
+- License: **AGPL-3.0** (D-15's planned AGPL→Apache switch was reversed 2026-05-21 — copyleft binds via the AGPL-3.0 upstream reboot + AGPL dataset; the pip-dependency-only rationale was incorrect. See the D-15 correction note.).
 
 **Neutral**:
 - Codebase footprint: M1-M5 baseline (~+700 LoC) preserved; Stage 1 adds ~+400-500 LoC (`MambaForecaster` ~120, `SpikingForecaster` ~180, `run_v6_arch_sweep.py` ~80, `aggregate_v6_results.py` ~60, plus ~7 v6 test files); Stage 2 conditional adds ~+200 LoC (`fedbn.py` + `run_v7_fl_arch_sweep.py`). Total post-Stage-2: ~+1300 LoC across ~14 new files vs the v4 baseline.
