@@ -89,7 +89,7 @@ The latter two suites (53 tests total) form a paper-correctness developer pre-co
 
 \subsection{Croissant dataset metadata (extends \S\,5.4)}
 
-The Colosseum/ColO-RAN public release is upstream-licensed; our preprocessed \lstinline|coloran_raw_unified.parquet| ($\approx 18$\,M rows) and the partition specifications are documented in a Croissant 1.0 metadata file shipped with the release archive. The metadata block describes the (\lstinline|bs_id|, \lstinline|slice_id|, \lstinline|sched|, \lstinline|tr|) keying, the 17 continuous features (\S\,3.1), the OOD train/val/test split (\S\,3.3), and the \lstinline|add_classification_target| derivation rule (\S\,3.2).
+The Colosseum/ColO-RAN public release is upstream-licensed; our preprocessed \lstinline|coloran_raw_unified.parquet| ($\approx 18$\,M rows) and the partition specifications are documented in a Croissant 1.0 metadata file (\lstinline|croissant.json| at the repository root, validated against the official \lstinline|mlcroissant| validator) shipped with the release archive. The metadata block describes the (\lstinline|bs_id|, \lstinline|slice_id|, \lstinline|sched|, \lstinline|tr|) keying, the 17 continuous features (\S\,3.1), the OOD train/val/test split (\S\,3.3), and the \lstinline|add_classification_target| derivation rule (\S\,3.2).
 
 \subsection{Reproducible execution environment (extends \S\,5.5)}
 

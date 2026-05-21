@@ -298,7 +298,7 @@ The release ships 277 passing tests across four suites (202 trainer + 22 aggrega
 
 \subsection{Croissant dataset metadata}
 
-The preprocessed \lstinline|coloran_raw_unified.parquet| is documented in a Croissant 1.0 metadata file shipped with the release archive (App.~B.3).
+The preprocessed \lstinline|coloran_raw_unified.parquet| is documented in a Croissant 1.0 metadata file (\lstinline|croissant.json|) shipped with the release archive (App.~B.3).
 
 \subsection{Reproducible execution environment}
 
@@ -578,7 +578,7 @@ The residual gap between Phase~6 $\alphadir = 0.05$ and the Phase~5 natural-by-B
 
 \subsubsection{Quantifying the tr-embedding-bug confound}\label{sec:tr-embedding-confound}
 
-A code-level audit identified that the test traffic-config index \lstinline|tr| $\in \{25, 26, 27\}$ is encoded via \lstinline|nn.Embedding(30, 8)|, but the train set only ever indexes rows $\{0..21\}$. Rows 22--29 therefore stay at PyTorch's default $\mathcal{N}(0, 1)$ initialisation and are bit-identical to a fresh seed-0 init at test time (verified across all 3 architectures in \lstinline|tests/test_audit_invariants.py::test_tr_embedding_rows_22_to_29_byte_identical_to_fresh_init|). The concern this raises: this random-vector test-time confound might artificially inflate natural-by-BS dominance if the Dirichlet partition relies more on the \lstinline|tr| feature.
+A code-level audit identified that the test traffic-config index \lstinline|tr| $\in \{25, 26, 27\}$ is encoded via \lstinline|nn.Embedding(30, 8)|, but the train set only ever indexes rows $\{0..21\}$. Rows 22--29 therefore stay at PyTorch's default $\mathcal{N}(0, 1)$ initialisation and are bit-identical to a fresh seed-0 init at test time (verified across all 3 architectures by the \lstinline|tr|-embedding byte-identity invariant in \lstinline|tests/test_audit_invariants.py|). The concern this raises: this random-vector test-time confound might artificially inflate natural-by-BS dominance if the Dirichlet partition relies more on the \lstinline|tr| feature.
 
 We quantify the impact via inference-only re-evaluation on 54 cells (3 archs $\times$ FedAvg $\times$ \{natural-by-BS, Dirichlet $\alphadir = 0.05$\} $\times$ 9 seeds; \lstinline|experiments/run_p1_tr_embedding_check.py --archs lstm mamba spiking_expand2|) --- load each Phase 5 checkpoint, replace \lstinline|tr|-embedding rows 22--29 with the mean of trained rows 0--21, re-compute test AUC. Per-architecture summary in Table~\ref{tab:tr-embedding-shrinkage}.
 

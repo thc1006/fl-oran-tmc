@@ -187,7 +187,7 @@ The release ships 277 passing tests across four suites (202 trainer + 22 aggrega
 
 ### 5.4 Croissant dataset metadata
 
-The preprocessed `coloran_raw_unified.parquet` is documented in a Croissant 1.0 metadata file shipped with the release archive (App. B.3).
+The preprocessed `coloran_raw_unified.parquet` is documented in a Croissant 1.0 metadata file (`croissant.json`) shipped with the release archive (App. B.3).
 
 ### 5.5 Reproducible execution environment
 
