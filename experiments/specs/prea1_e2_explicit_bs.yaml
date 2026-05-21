@@ -1,0 +1,48 @@
+# PREREG-A1 E2 — arm: EXPLICIT-BS (control)
+#
+# LSTM x FedAvg x natural-by-BS (mode=iid) x 10 seeds, bs_id KEPT as input.
+# Same-env partner of prea1_e2_no_bs.yaml (identical except drop_categorical).
+# The decisive E2 read = AUC(explicit-bs) - AUC(no-bs) over paired seeds:
+#   ~0 difference  -> the bs INPUT does not drive the natural-partition
+#                     advantage (it is partition/channel structure);
+#   large drop      -> the cell index drives it.
+# Shuffle-partition floor (~0.74 AUC) already established by Phase-0.
+#
+# Run on V100 (sm_70 -> fp16; BF16 is emulated on Volta):
+#   .venv/bin/python experiments/run_v7_phase_sweep.py \
+#     --spec experiments/specs/prea1_e2_explicit_bs.yaml \
+#     --output-dir artifacts/prea1_e2/explicit_bs --skip-completed
+# Output: artifacts/prea1_e2/explicit_bs/v7_lstm_fedavg_iid_n7_s<S>/{best.pt,summary.json}
+
+description: PREREG-A1 E2 explicit-bs — LSTM x FedAvg x natural-by-BS x 10 seeds (V100 fp16)
+
+archs:
+  - lstm
+
+algorithms:
+  - name: fedavg
+    kwargs: {}
+
+partitions:
+  - mode: iid
+    n_clients: 7
+
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 42]
+
+shared:
+  num_rounds: 100
+  clients_per_round: 5
+  max_steps_per_round: 50
+  batch_size: 64
+  lr_warmup_rounds: 3
+  seq_len: 5
+  sample_ratio: 1.0
+  threshold: 0.10
+  pos_weight_split: train
+  cudnn_deterministic: true
+  mixed_precision: fp16        # V100 sm_70: BF16 software-emulated -> use fp16
+  device: cuda
+
+arch_overrides:
+  lstm:
+    lr: 5.0e-4
