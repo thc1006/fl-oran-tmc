@@ -7,8 +7,10 @@ on multi-algorithm FL under realistic non-IID splits.
 `docs/ADR-001-v5-tmc-paper-plan.md` Revision History. The `tmc` in this
 repo's name is preserved for historical continuity with v1-v4 artifacts.)
 
-> **Status: private during review.** The repository is kept private until
-> camera-ready. The paper is archived on Zenodo under a **concept DOI**
+> **Status: public.** The code and submission-ready paper artifact are
+> openly released; IEEE JSAC review is single-blind, so a public repository
+> is appropriate (the paper notes an anonymised mirror option for
+> double-blind venues). The paper is archived on Zenodo under a **concept DOI**
 > that always resolves to the latest version:
 > **DOI: [10.5281/zenodo.20075432](https://doi.org/10.5281/zenodo.20075432)**
 > — this is the preprint / submission deposit; an accepted-version DOI
