@@ -65,6 +65,9 @@ def _client_stats(s: pd.DataFrame) -> dict:
         "slice_entropy_bits": round(_entropy(sl_counts), 3),
         "distinct_tr": int(s["tr"].nunique()),
         "contig_frac": round(n_contig / n_win, 4) if n_win else float("nan"),
+        "bs_dist": {int(k): int(v) for k, v in s["bs_id"].value_counts().sort_index().items()},
+        "slice_dist": {int(k): int(v) for k, v in s["slice_id"].value_counts().sort_index().items()},
+        "tr_dist": {int(k): int(v) for k, v in s["tr"].value_counts().sort_index().items()},
     }
 
 
