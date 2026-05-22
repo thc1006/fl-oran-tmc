@@ -22,7 +22,7 @@ def partition_clients(
     df: pd.DataFrame,
     *,
     mode: Literal["iid", "noniid_slice", "dirichlet", "random_split",
-                  "per_bs_dirichlet", "run_random"],
+                  "per_bs_dirichlet", "run_random", "run_dirichlet"],
     client_slice_map: dict[int, list[int]] | None = None,
     alpha: float | None = None,
     n_clients: int | None = None,
@@ -53,6 +53,15 @@ def partition_clients(
     contiguity → valid windows — while still breaking bs_id coherence (each
     client gets a random mix of BS). It isolates "intact sequences" from
     "BS-coherent partition." Requires ``n_clients``.
+    ``run_dirichlet``: the **run-level analog of** ``dirichlet`` — per slice,
+    distribute that slice's WHOLE ``(run_id)`` groups across clients by
+    ``Dir(alpha)`` (each ``(run_id, slice_id)`` group stays in one client, so
+    runs are intact → valid windows), with the SAME per-slice Dirichlet skew as
+    the row-level version. Comparing ``run_dirichlet(alpha)`` vs
+    ``dirichlet(alpha)`` at matched ``alpha`` isolates the sequence-corruption
+    axis from the heterogeneity axis (the decisive test of whether the
+    inverted-heterogeneity finding is a row-partitioning artifact). Requires
+    ``alpha`` and ``n_clients``.
 
     Assumes ``df`` has a unique index (the default integer RangeIndex or any
     ``reset_index(drop=True)`` output). Callers whose pipeline may produce
@@ -164,6 +173,43 @@ def partition_clients(
             "run_random partition (n_clients=%d, seed=%s): %d shards from %d "
             "(run_id,slice_id) groups; rows=%s",
             n_clients, seed, len(shards), len(keys),
+            {c: len(s) for c, s in shards.items()},
+        )
+        return shards
+
+    if mode == "run_dirichlet":
+        if alpha is None:
+            raise ValueError("run_dirichlet mode requires alpha")
+        if n_clients is None:
+            raise ValueError("run_dirichlet mode requires n_clients")
+        rng = np.random.default_rng(seed)
+        # Run-level analog of mode="dirichlet": per slice, distribute that
+        # slice's WHOLE (run_id) groups across clients by Dir(alpha). Each
+        # (run_id, slice_id) group stays in ONE client (intact runs → valid
+        # windows), but the allocation is Dirichlet-skewed exactly like the
+        # row-level version. ``.indices`` = POSITIONAL row arrays (iloc-safe).
+        grp = df.groupby(["slice_id", "run_id"], observed=True, sort=False).indices
+        by_slice: dict = {}
+        for (sl, _run), pos in grp.items():
+            by_slice.setdefault(sl, []).append(pos)
+        client_pos: list[list[np.ndarray]] = [[] for _ in range(n_clients)]
+        for sl in by_slice:
+            groups = by_slice[sl]
+            order = rng.permutation(len(groups))
+            proportions = rng.dirichlet([alpha] * n_clients)
+            splits = (np.cumsum(proportions) * len(groups)).astype(int)
+            parts = np.split(order, splits[:-1])
+            for cid, part in enumerate(parts):
+                for gi in part:
+                    client_pos[cid].append(groups[int(gi)])
+        shards: dict[int, pd.DataFrame] = {}
+        for cid in range(n_clients):
+            if client_pos[cid]:
+                shards[cid] = df.iloc[np.concatenate(client_pos[cid])].reset_index(drop=True)
+        log.info(
+            "run_dirichlet partition (alpha=%.3f, n_clients=%d, seed=%s): %d "
+            "non-empty shards; rows=%s",
+            alpha, n_clients, seed, len(shards),
             {c: len(s) for c, s in shards.items()},
         )
         return shards

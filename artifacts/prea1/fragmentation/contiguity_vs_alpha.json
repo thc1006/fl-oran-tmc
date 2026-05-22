@@ -1,0 +1,35 @@
+{
+  "seq_len": 5,
+  "alphas": {
+    "0.05": {
+      "contiguous": 12178257,
+      "windows": 14455557,
+      "contig_fraction": 0.8425
+    },
+    "0.1": {
+      "contiguous": 3295718,
+      "windows": 14410893,
+      "contig_fraction": 0.2287
+    },
+    "0.5": {
+      "contiguous": 2191076,
+      "windows": 14380460,
+      "contig_fraction": 0.1524
+    },
+    "1.0": {
+      "contiguous": 61862,
+      "windows": 14345955,
+      "contig_fraction": 0.0043
+    },
+    "5.0": {
+      "contiguous": 18664,
+      "windows": 14338218,
+      "contig_fraction": 0.0013
+    }
+  },
+  "natural_by_bs": {
+    "contiguous": 14515074,
+    "windows": 14515074,
+    "contig_fraction": 1.0
+  }
+}

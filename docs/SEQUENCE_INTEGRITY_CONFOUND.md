@@ -4,9 +4,10 @@
 (below) shows the natural-by-BS advantage is **sequence integrity, not BS-coherence**.
 Consequently:
 - **The JSAC §6 "inverted heterogeneity / natural-by-BS dominance as a RAN structural
-  property" framing is an artifact** and must be removed/reinterpreted before any
-  submission. The HOLD (do not submit / do not claim it is a RAN structural property)
-  **stands until that rewrite is done.**
+  property" framing is an artifact** (DIRECTLY confirmed across the α-curve by the
+  factorial below) and must be removed/reinterpreted before any submission. The HOLD
+  (do not submit / do not claim it is a RAN structural property) **stands until that
+  rewrite is done.**
 - **Paper A's original thesis ("conditional structure, not distributional skew") is
   falsified** and stops; it pivots to the methodological contribution (a row-level
   partitioning artifact in FL-time-series benchmarks).
@@ -121,6 +122,35 @@ Comparison baseline: E2 natural-by-BS (same env, fp16-V100-eager) = **0.91588**
    artifact."* — likely generalizes beyond this dataset.
 3. **Downstream** (offline xApp recommender, Twinning): were predicated on the inversion
    being a real exploitable structure → re-scope before investing.
-4. **Open follow-up** (optional, to fully characterize): run-level Dirichlet vs row-level
-   Dirichlet at matched α, to show the inversion vanishes under sequence-preserving
-   heterogeneity (directly rescues-or-kills the JSAC §6 α-curve).
+4. **Factorial confirmation (DONE 2026-05-22)** — run-level vs row-level Dirichlet,
+   same-env (V100 fp16 eager, LSTM×FedAvg, 3 seeds {0,1,2}, identical hypers):
+
+   | α | run_dirichlet (intact) | dirichlet (row, corrupt) | corruption cost |
+   |---|---|---|---|
+   | 0.1 | 0.91395 | 0.83685 | +0.077 |
+   | 0.5 | 0.91577 | 0.79035 | +0.125 |
+   | 1.0 | 0.91589 | 0.75480 | +0.161 |
+
+   natural = 0.91569; random_split (corrupt-IID floor) = 0.73966. **run_dirichlet
+   (intact) is FLAT at ~natural across all α** — heterogeneity does not hurt when
+   sequences are intact. The row-level deficit, and its α-dependence (row-Dirichlet
+   *improves* as α↓: 0.755→0.790→0.837), is sequence **fragmentation**: smaller α →
+   fewer clients hold each run → less fragmentation → less corruption. So the "inverted
+   heterogeneity" is a corruption-severity effect, not a real heterogeneity benefit.
+   **The JSAC §6 inverted-α is now a DIRECTLY-DEMONSTRATED sequence-corruption artifact**
+   (no longer an inference). Per-cell: `artifacts/prea1_factorial/`.
+
+## Complete same-env factorial (the one-line summary)
+
+| | intact sequences | corrupted (row-level) |
+|---|---|---|
+| coherent (natural-by-BS) | **0.916** | — |
+| IID (run_random / random_split) | **0.916** | 0.740 |
+| skewed α=0.1 | **0.914** | 0.837 |
+| skewed α=0.5 | **0.916** | 0.790 |
+| skewed α=1.0 | **0.916** | 0.755 |
+
+The **intact column is flat (~0.916) regardless of coherence or skew**; the corrupted
+column ranges 0.74–0.84 by fragmentation severity. **Sequence integrity is the sole
+axis; BS-coherence and heterogeneity contribute ~0.** The natural-by-BS dominance and
+the inverted-α are both artifacts of row-level partitioning of a time series.
