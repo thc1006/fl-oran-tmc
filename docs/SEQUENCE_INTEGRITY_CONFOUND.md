@@ -1,10 +1,18 @@
 # Sequence-integrity confound under row-level client partitioning
 
-**Status: OPEN — BLOCKING.** Until the decisive gate below resolves:
-- **Do NOT submit the JSAC paper.**
-- **Do NOT claim the inverted-heterogeneity / natural-by-BS dominance is a *structural property of RAN telemetry*** (in JSAC §6, Paper A, or any preprint/talk).
+**Status: RESOLVED 2026-05-22 — CONFOUND CONFIRMED.** The decisive `run_random` gate
+(below) shows the natural-by-BS advantage is **sequence integrity, not BS-coherence**.
+Consequently:
+- **The JSAC §6 "inverted heterogeneity / natural-by-BS dominance as a RAN structural
+  property" framing is an artifact** and must be removed/reinterpreted before any
+  submission. The HOLD (do not submit / do not claim it is a RAN structural property)
+  **stands until that rewrite is done.**
+- **Paper A's original thesis ("conditional structure, not distributional skew") is
+  falsified** and stops; it pivots to the methodological contribution (a row-level
+  partitioning artifact in FL-time-series benchmarks).
 
-Opened 2026-05-22 after an adversarial review of the PREREG-A1 Phase-1 mechanism work.
+Opened 2026-05-22 after an adversarial review of the PREREG-A1 Phase-1 mechanism work;
+resolved the same day by the `run_random` control.
 
 ---
 
@@ -87,6 +95,32 @@ Comparison baseline: E2 natural-by-BS (same env, fp16-V100-eager) = **0.91588**
   isolation vs natural).
 - Single-cell-CLI integration smoke passed (eager, no triton; 0.863 AUC @ 8
   rounds; config field-by-field == E2 natural).
-- **5-seed control RUNNING** on V100 (`artifacts/prea1_run_random/`,
-  `v7_lstm_fedavg_runrandom_n7_s{0,1,2,3,42}`). Result pending → update this file
-  and lift/confirm the HOLD accordingly.
+- **5-seed control DONE** (V100, fp16 eager, identical hypers, paired with E2-natural):
+
+  | partition | sequences | BS | mean test-AUC (n=5) |
+  |---|---|---|---|
+  | natural-by-BS (E2 explicit) | intact | coherent | 0.91572 |
+  | **run_random** | intact | **mixed** | **0.91583** |
+  | random_split (floor) | corrupted | mixed | 0.740 |
+
+  `natural − run_random = −0.00011`, paired bootstrap CI95 **[−0.00030, +0.00013]**
+  (straddles 0); `run_random − floor = +0.17554`. Breaking BS-coherence with sequences
+  intact costs ~0; the entire +0.175 "advantage" is recovered by intact sequences alone.
+  Three-point closure: intact+coherent = 0.916, intact+mixed = 0.916, corrupted+mixed =
+  0.74. **CONFOUND CONFIRMED** — the advantage is the intact-vs-corrupted-sequence axis,
+  ≈0 from BS-coherence. (Per-cell results: `artifacts/prea1_run_random/`.)
+
+## Decision & next steps (2026-05-22)
+1. **JSAC**: do not submit until §6 is rewritten. The natural-by-BS / inverted-α results
+   must be reframed as **sensitive to a partitioning artifact**, OR the non-IID baselines
+   must be re-run with **sequence-preserving (run-level) partitioning** and the headline
+   re-derived from whatever survives.
+2. **Paper A**: original mechanism thesis falsified. Pivot to a methodological paper:
+   *"Row-level non-IID client partitioning corrupts FL-time-series benchmarks; the
+   apparent inverted heterogeneity in O-RAN slice-SLA FL is a sequence-integrity
+   artifact."* — likely generalizes beyond this dataset.
+3. **Downstream** (offline xApp recommender, Twinning): were predicated on the inversion
+   being a real exploitable structure → re-scope before investing.
+4. **Open follow-up** (optional, to fully characterize): run-level Dirichlet vs row-level
+   Dirichlet at matched α, to show the inversion vanishes under sequence-preserving
+   heterogeneity (directly rescues-or-kills the JSAC §6 α-curve).
