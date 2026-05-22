@@ -86,7 +86,7 @@ def _parse_args() -> argparse.Namespace:
     # Partition.
     p.add_argument(
         "--partition-mode", default="dirichlet",
-        choices=["dirichlet", "iid", "random_split", "per_bs_dirichlet", "run_random"],
+        choices=["dirichlet", "iid", "random_split", "per_bs_dirichlet", "run_random", "run_dirichlet"],
     )
     p.add_argument(
         "--alpha", type=float, default=0.5,

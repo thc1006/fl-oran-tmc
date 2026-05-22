@@ -191,6 +191,10 @@ class V7Config:
                 # Sequence-integrity control: token is single-word "runrandom"
                 # (no underscore) so it stays one cell-name segment.
                 part_tag = f"runrandom_n{self.n_clients}"
+            elif self.partition_mode == "run_dirichlet":
+                # Run-level Dirichlet (intact runs, skewed): token "rundir".
+                alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
+                part_tag = f"rundir_a{alpha_tag}_n{self.n_clients}"
             elif self.partition_mode == "per_bs_dirichlet":
                 alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
                 part_tag = f"perbsdir_a{alpha_tag}"
@@ -564,10 +568,18 @@ def _partition(df: pd.DataFrame, cfg: V7Config) -> dict[int, pd.DataFrame]:
         return partition_clients(
             df, mode="run_random", n_clients=cfg.n_clients, seed=cfg.seed,
         )
+    if cfg.partition_mode == "run_dirichlet":
+        # Run-level analog of dirichlet (intact runs, Dirichlet-skewed): the
+        # decisive control for whether the inverted-alpha finding is a
+        # row-partitioning sequence-corruption artifact.
+        return partition_clients(
+            df, mode="run_dirichlet",
+            alpha=cfg.alpha, n_clients=cfg.n_clients, seed=cfg.seed,
+        )
     raise ValueError(
         f"unsupported partition_mode for v7: {cfg.partition_mode!r} "
         "(use 'dirichlet', 'iid', 'random_split', 'per_bs_dirichlet', "
-        "or 'run_random')"
+        "'run_random', or 'run_dirichlet')"
     )
 
 
