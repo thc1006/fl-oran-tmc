@@ -22,7 +22,7 @@ def partition_clients(
     df: pd.DataFrame,
     *,
     mode: Literal["iid", "noniid_slice", "dirichlet", "random_split",
-                  "per_bs_dirichlet"],
+                  "per_bs_dirichlet", "run_random"],
     client_slice_map: dict[int, list[int]] | None = None,
     alpha: float | None = None,
     n_clients: int | None = None,
@@ -44,6 +44,15 @@ def partition_clients(
     "does natural-by-BS dominance come from bs_id structure?" — by stripping
     away both bs_id and slice_id grouping while keeping per-client sample-size
     balanced, this isolates the structural contribution. Requires ``n_clients``.
+    ``run_random``: assign each WHOLE ``(run_id, slice_id)`` group to one client
+    (groups never split across clients), using greedy least-loaded-by-rows
+    assignment over a seed-shuffled group order. This is the sequence-integrity
+    control (PREREG-A1 follow-up): unlike ``random_split`` (row-level shuffle,
+    which scatters a run's timesteps across clients so ``build_run_sequences``
+    builds temporally-broken windows), ``run_random`` preserves each run's
+    contiguity → valid windows — while still breaking bs_id coherence (each
+    client gets a random mix of BS). It isolates "intact sequences" from
+    "BS-coherent partition." Requires ``n_clients``.
 
     Assumes ``df`` has a unique index (the default integer RangeIndex or any
     ``reset_index(drop=True)`` output). Callers whose pipeline may produce
@@ -122,6 +131,39 @@ def partition_clients(
         log.info(
             "random_split partition (n_clients=%d, seed=%s): %d shards; rows=%s",
             n_clients, seed, len(shards),
+            {c: len(s) for c, s in shards.items()},
+        )
+        return shards
+
+    if mode == "run_random":
+        if n_clients is None:
+            raise ValueError("run_random mode requires n_clients")
+        rng = np.random.default_rng(seed)
+        # Whole-(run_id, slice_id)-group assignment: a group is the unit, never
+        # split across clients, so build_run_sequences sees contiguous runs.
+        # ``.indices`` gives POSITIONAL row arrays (index-label agnostic, like
+        # the random_split branch's df.iloc usage).
+        grp_pos = df.groupby(["run_id", "slice_id"], observed=True, sort=False).indices
+        keys = list(grp_pos.keys())
+        perm = rng.permutation(len(keys))
+        # Greedy least-loaded-by-rows so shard sizes stay balanced despite
+        # variable group sizes.
+        client_rows = [0] * n_clients
+        client_pos: list[list[np.ndarray]] = [[] for _ in range(n_clients)]
+        for ki in perm:
+            pos = grp_pos[keys[int(ki)]]
+            cid = min(range(n_clients), key=lambda c: (client_rows[c], c))
+            client_pos[cid].append(pos)
+            client_rows[cid] += len(pos)
+        shards: dict[int, pd.DataFrame] = {}
+        for cid in range(n_clients):
+            if client_pos[cid]:
+                allpos = np.concatenate(client_pos[cid])
+                shards[cid] = df.iloc[allpos].reset_index(drop=True)
+        log.info(
+            "run_random partition (n_clients=%d, seed=%s): %d shards from %d "
+            "(run_id,slice_id) groups; rows=%s",
+            n_clients, seed, len(shards), len(keys),
             {c: len(s) for c, s in shards.items()},
         )
         return shards

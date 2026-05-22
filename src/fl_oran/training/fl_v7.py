@@ -187,6 +187,10 @@ class V7Config:
                 part_tag = f"iid_n{self.n_clients}"
             elif self.partition_mode == "random_split":
                 part_tag = f"randsplit_n{self.n_clients}"
+            elif self.partition_mode == "run_random":
+                # Sequence-integrity control: token is single-word "runrandom"
+                # (no underscore) so it stays one cell-name segment.
+                part_tag = f"runrandom_n{self.n_clients}"
             elif self.partition_mode == "per_bs_dirichlet":
                 alpha_tag = f"{self.alpha:.2f}".replace(".", "p")
                 part_tag = f"perbsdir_a{alpha_tag}"
@@ -551,9 +555,19 @@ def _partition(df: pd.DataFrame, cfg: V7Config) -> dict[int, pd.DataFrame]:
             sub_per_bs=int(cfg.algo_kwargs["sub_per_bs"]),
             seed=cfg.seed,
         )
+    if cfg.partition_mode == "run_random":
+        # Sequence-integrity control (PREREG-A1 follow-up): assign WHOLE
+        # (run_id, slice_id) groups to clients at random — preserves per-run
+        # contiguity (valid windows) while breaking bs_id coherence. Isolates
+        # "intact sequences" from "BS-coherent partition" vs random_split
+        # (row-level shuffle, which corrupts windows).
+        return partition_clients(
+            df, mode="run_random", n_clients=cfg.n_clients, seed=cfg.seed,
+        )
     raise ValueError(
         f"unsupported partition_mode for v7: {cfg.partition_mode!r} "
-        "(use 'dirichlet', 'iid', 'random_split', or 'per_bs_dirichlet')"
+        "(use 'dirichlet', 'iid', 'random_split', 'per_bs_dirichlet', "
+        "or 'run_random')"
     )
 
 
