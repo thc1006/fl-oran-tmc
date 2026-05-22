@@ -1,0 +1,461 @@
+{
+  "seq_len": 5,
+  "n_clients": 7,
+  "seed": 0,
+  "modes": {
+    "natural (iid by-BS)": {
+      "mode": "iid",
+      "kwargs": {},
+      "aggregate": {
+        "n_clients_nonempty": 7,
+        "total_windows": 14515074,
+        "fragmentation_score_overall": 1.0
+      },
+      "per_client": {
+        "1": {
+          "rows": 2075530,
+          "windows": 2071318,
+          "runs": 351,
+          "distinct_bs": 1,
+          "bs_entropy_bits": -0.0,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "2": {
+          "rows": 2041646,
+          "windows": 2037438,
+          "runs": 351,
+          "distinct_bs": 1,
+          "bs_entropy_bits": -0.0,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "3": {
+          "rows": 2079414,
+          "windows": 2075202,
+          "runs": 351,
+          "distinct_bs": 1,
+          "bs_entropy_bits": -0.0,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "4": {
+          "rows": 2101570,
+          "windows": 2097362,
+          "runs": 351,
+          "distinct_bs": 1,
+          "bs_entropy_bits": -0.0,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "5": {
+          "rows": 2083215,
+          "windows": 2079003,
+          "runs": 351,
+          "distinct_bs": 1,
+          "bs_entropy_bits": -0.0,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "6": {
+          "rows": 2117322,
+          "windows": 2113110,
+          "runs": 351,
+          "distinct_bs": 1,
+          "bs_entropy_bits": -0.0,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "7": {
+          "rows": 2045853,
+          "windows": 2041641,
+          "runs": 351,
+          "distinct_bs": 1,
+          "bs_entropy_bits": -0.0,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        }
+      }
+    },
+    "row-random (random_split)": {
+      "mode": "random_split",
+      "kwargs": {
+        "n_clients": 7,
+        "seed": 0
+      },
+      "aggregate": {
+        "n_clients_nonempty": 7,
+        "total_windows": 14338218,
+        "fragmentation_score_overall": 0.0004
+      },
+      "per_client": {
+        "0": {
+          "rows": 2077793,
+          "windows": 2048317,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 0.0004
+        },
+        "1": {
+          "rows": 2077793,
+          "windows": 2048317,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 0.0004
+        },
+        "2": {
+          "rows": 2077793,
+          "windows": 2048317,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 0.0005
+        },
+        "3": {
+          "rows": 2077793,
+          "windows": 2048317,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 0.0005
+        },
+        "4": {
+          "rows": 2077793,
+          "windows": 2048317,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 0.0004
+        },
+        "5": {
+          "rows": 2077793,
+          "windows": 2048317,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 0.0004
+        },
+        "6": {
+          "rows": 2077792,
+          "windows": 2048316,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 0.0004
+        }
+      }
+    },
+    "row-Dirichlet (a=1.0)": {
+      "mode": "dirichlet",
+      "kwargs": {
+        "n_clients": 7,
+        "seed": 0,
+        "alpha": 1.0
+      },
+      "aggregate": {
+        "n_clients_nonempty": 7,
+        "total_windows": 14345955,
+        "fragmentation_score_overall": 0.0043
+      },
+      "per_client": {
+        "1": {
+          "rows": 2091350,
+          "windows": 2061874,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.529,
+          "distinct_tr": 22,
+          "contig_frac": 0.0008
+        },
+        "2": {
+          "rows": 2793785,
+          "windows": 2764311,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.198,
+          "distinct_tr": 22,
+          "contig_frac": 0.0076
+        },
+        "3": {
+          "rows": 891028,
+          "windows": 861869,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.137,
+          "distinct_tr": 22,
+          "contig_frac": 0.0001
+        },
+        "4": {
+          "rows": 1433180,
+          "windows": 1411122,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 0.897,
+          "distinct_tr": 22,
+          "contig_frac": 0.0013
+        },
+        "5": {
+          "rows": 1590511,
+          "windows": 1561035,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.572,
+          "distinct_tr": 22,
+          "contig_frac": 0.0002
+        },
+        "6": {
+          "rows": 3526907,
+          "windows": 3497431,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.503,
+          "distinct_tr": 22,
+          "contig_frac": 0.0087
+        },
+        "7": {
+          "rows": 2217789,
+          "windows": 2188313,
+          "runs": 2457,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.807,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.313,
+          "distinct_tr": 22,
+          "contig_frac": 0.003
+        }
+      }
+    },
+    "run_random": {
+      "mode": "run_random",
+      "kwargs": {
+        "n_clients": 7,
+        "seed": 0
+      },
+      "aggregate": {
+        "n_clients_nonempty": 7,
+        "total_windows": 14515074,
+        "fragmentation_score_overall": 1.0
+      },
+      "per_client": {
+        "0": {
+          "rows": 2077838,
+          "windows": 2073602,
+          "runs": 915,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.803,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "1": {
+          "rows": 2078886,
+          "windows": 2074690,
+          "runs": 933,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.804,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.583,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "2": {
+          "rows": 2076893,
+          "windows": 2072681,
+          "runs": 905,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.805,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "3": {
+          "rows": 2078488,
+          "windows": 2074272,
+          "runs": 910,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.798,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.584,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "4": {
+          "rows": 2077335,
+          "windows": 2073143,
+          "runs": 917,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.804,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.581,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "5": {
+          "rows": 2077461,
+          "windows": 2073273,
+          "runs": 896,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.803,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.585,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "6": {
+          "rows": 2077649,
+          "windows": 2073413,
+          "runs": 923,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.805,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.58,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        }
+      }
+    },
+    "run_dirichlet (a=1.0)": {
+      "mode": "run_dirichlet",
+      "kwargs": {
+        "n_clients": 7,
+        "seed": 0,
+        "alpha": 1.0
+      },
+      "aggregate": {
+        "n_clients_nonempty": 7,
+        "total_windows": 14515074,
+        "fragmentation_score_overall": 1.0
+      },
+      "per_client": {
+        "0": {
+          "rows": 3226456,
+          "windows": 3219920,
+          "runs": 1310,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.806,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.526,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "1": {
+          "rows": 1392133,
+          "windows": 1389281,
+          "runs": 650,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.796,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.361,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "2": {
+          "rows": 876667,
+          "windows": 874899,
+          "runs": 432,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.8,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 0.668,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "3": {
+          "rows": 1041434,
+          "windows": 1039354,
+          "runs": 495,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.799,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.575,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "4": {
+          "rows": 2265151,
+          "windows": 2260531,
+          "runs": 1030,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.796,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.344,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "5": {
+          "rows": 1911500,
+          "windows": 1907612,
+          "runs": 862,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.798,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.424,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        },
+        "6": {
+          "rows": 3831209,
+          "windows": 3823477,
+          "runs": 1545,
+          "distinct_bs": 7,
+          "bs_entropy_bits": 2.805,
+          "distinct_slice": 3,
+          "slice_entropy_bits": 1.289,
+          "distinct_tr": 22,
+          "contig_frac": 1.0
+        }
+      }
+    }
+  }
+}
