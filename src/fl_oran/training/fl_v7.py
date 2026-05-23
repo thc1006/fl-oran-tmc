@@ -656,6 +656,12 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     df = add_classification_target(
         df, column="ul_bler", threshold=cfg.threshold, target_name="y_sla_next",
     )
+    unknown = [c for c in cfg.drop_continuous if c not in V3_CONTINUOUS]
+    if unknown:
+        raise ValueError(
+            f"drop_continuous contains unknown feature(s) {unknown}; valid names "
+            f"are {V3_CONTINUOUS}. (Guard against a silent no-op ablation from a typo.)"
+        )
     continuous = [c for c in V3_CONTINUOUS if c not in cfg.drop_continuous]
     schema = FeatureSchema(
         categorical=V3_CATEGORICAL,

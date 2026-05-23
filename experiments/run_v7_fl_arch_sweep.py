@@ -157,7 +157,7 @@ def main() -> None:
         algorithm=args.algorithm,
         algo_kwargs=algo_kwargs,
         partition_mode=args.partition_mode,
-        drop_continuous=([s for s in args.drop_continuous.split(",") if s] if args.drop_continuous else []),
+        drop_continuous=[s.strip() for s in args.drop_continuous.split(",") if s.strip()],
         alpha=args.alpha,
         n_clients=args.n_clients,
         num_rounds=args.num_rounds,

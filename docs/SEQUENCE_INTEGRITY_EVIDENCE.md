@@ -21,10 +21,16 @@ ablation (`--drop-continuous dl_bler,ul_bler`, LSTM, 5 seeds, V100; `scripts/pre
 + `aggregate_nobler.py`) **CONFIRMS** the inverted-α gap is channel-state sequence-integrity, not a
 BLER-rate confound: removing both BLER channels from the model input leaves the run-level≫row-level gap
 unchanged — α=1.0: **+0.162** (CI95 [+0.158,+0.165]) vs with-BLER +0.161; α=0.1: **+0.079** (CI95
-[+0.060,+0.095]) vs +0.077 — while absolute AUC drops only ~0.005. Nuance (the earlier over-claim,
+[+0.060,+0.095]) vs +0.077 — while absolute AUC drops by only 0.005–0.008. Nuance (the earlier over-claim,
 corrected): the *last-value* BLER predictor = 0.5133 ≈ chance, but the *5-step rolling-mean* BLER =
 0.6258 carries a **run-level-rate** signal; that signal is partition-invariant (scattered ≈ consecutive
 samples estimate the same run rate) and so cancels in the gap — the ablation settles it empirically.
+**Seed-set cross-check (adversarial review of PR #30, 2026-05-24):** the with-BLER reference uses seeds
+0–2 (n=3, the available `prea1_factorial`) while no-BLER uses seeds 0–4 (n=5), so the headline +0.162/+0.079
+is a 5-vs-3-seed comparison. Restricting the no-BLER gap to the **common seeds 0–2** gives +0.1615 (α=1.0)
+/ +0.0741 (α=0.1) vs with-BLER +0.1611 / +0.0771 on the same seeds — i.e. the gap is unchanged to within
+≤0.003 on matched seeds, so the conclusion is not a seed-set artifact of the differing n. (Absolute-drop
+range: run_dir 0.0047/0.0062, dir 0.0056/0.0082 → max 0.008, hence "0.005–0.008" not the earlier "~0.005".)
 Reflected in main.tex §6.7 + §8 L18. 25/25 cells verified (correct `drop_continuous`, no NaN, seeds 0-4).
 
 ---
