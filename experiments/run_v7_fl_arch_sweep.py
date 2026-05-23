@@ -93,6 +93,12 @@ def _parse_args() -> argparse.Namespace:
         help="Dirichlet concentration (ignored if partition-mode in {iid, random_split, run_random})",
     )
     p.add_argument(
+        "--drop-continuous", default="",
+        help="Comma-separated continuous features to remove from model input "
+             "(e.g. 'dl_bler,ul_bler' for the no-BLER leakage-control ablation). "
+             "Target is built from ul_bler before feature selection, so the label is unaffected.",
+    )
+    p.add_argument(
         "--n-clients", type=int, default=7,
         help="Number of FL clients (ignored in iid mode — uses bs_id partition).",
     )
@@ -151,6 +157,7 @@ def main() -> None:
         algorithm=args.algorithm,
         algo_kwargs=algo_kwargs,
         partition_mode=args.partition_mode,
+        drop_continuous=[s.strip() for s in args.drop_continuous.split(",") if s.strip()],
         alpha=args.alpha,
         n_clients=args.n_clients,
         num_rounds=args.num_rounds,
