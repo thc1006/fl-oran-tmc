@@ -126,6 +126,12 @@ class V7Config:
     # (matches Phase 5 behaviour). Only respected by ForecasterV2 today;
     # Mamba/Spiking constructors silently ignore it.
     drop_categorical: list[str] = field(default_factory=list)
+    # Continuous features to drop from the model input (e.g. ["dl_bler", "ul_bler"]
+    # for the no-BLER leakage-control ablation). The classification target is built
+    # from ul_bler at t+1 BEFORE feature selection, so dropping ul_bler from the
+    # feature set does NOT change the label; it only removes BLER as a model input.
+    # input_dim adapts via schema.n_continuous; persistence_feature is None (no skip).
+    drop_continuous: list[str] = field(default_factory=list)
 
     # Algorithm.
     algorithm: str = "fedavg"
@@ -650,10 +656,11 @@ def run_v7_sweep(cfg: V7Config) -> dict:
     df = add_classification_target(
         df, column="ul_bler", threshold=cfg.threshold, target_name="y_sla_next",
     )
+    continuous = [c for c in V3_CONTINUOUS if c not in cfg.drop_continuous]
     schema = FeatureSchema(
         categorical=V3_CATEGORICAL,
         categorical_sizes=V3_CAT_SIZES,
-        continuous=V3_CONTINUOUS,
+        continuous=continuous,
     )
     feat_cols = schema.categorical + schema.continuous
     split = ood_split_by_tr(df, cfg.train_tr, cfg.val_tr, cfg.test_tr)
