@@ -112,6 +112,34 @@ not model formally. This is a *diagnostic with a mechanism*, not a theorem.
   the budget; CIs are correspondingly tight). Partition client counts differ by mode (iid = 7 BS;
   run/row Dirichlet = 8) — immaterial to the global-test gap but noted.
 
+## A failure mode of Δ_traj: last-step anchor vs consecutive trajectory (the Twinning hunt)
+
+A targeted search on Twinning (`twinning_hunt.py`) for a *within-dataset* sequence-essential positive
+found a clean **decoupling of Δ_traj from the fragmentation gap**, which qualifies the diagnostic.
+Change-event targets (`dl_mcs`/`dl_cqi` drop > δ, low autocorrelation) are predictable (seq AUC
+0.70–0.82) and **Δ_traj-positive** (shuffling the window order hurts 0.07–0.13) — yet show **no
+fragmentation gap** (intact vs row +0.002 / −0.001 / +0.001).
+
+The reason, read directly off the numbers (the row-partition AUC tracks the intact *ordered* seqC,
+**not** the shuffled shufC — dl_mcs drop: row 0.694 ≈ seqC 0.704 ≫ shufC 0.633; dl_cqi: 0.814 ≈
+0.816 ≫ 0.691): **row-level fragmentation preserves within-window ORDER** — each client's window is
+still sorted ascending by step, only with *gaps* — and destroys **only CONSECUTIVENESS** (the gaps),
+worth just seqC − row ≈ 0.003–0.010 for these targets. The **shuffle** baseline instead destroys
+ORDER entirely (shufC ≪ seqC), so Δ_traj = seqC − shufC measures the full **order-value** (0.07–0.13).
+A drop-event depends on order (the ascending trend / latest-step reference) but *tolerates gaps*, so
+its order-value ≫ its consecutiveness-value, i.e. **Δ_traj ≫ gap**. ColO-RAN BLER instead needs the
+*consecutive* channel-state trajectory (gap-sensitive), so gaps and shuffling destroy the same thing
+and Δ_traj tracked the gap there (ρ=0.945). In short: the **gap is the consecutiveness-value**, Δ_traj
+is the **order-value**, and they coincide only when the signal needs consecutiveness, not mere order.
+
+**Consequence (honest):** Δ_seq/Δ_traj **over-predict** the fragmentation gap for last-step-anchored
+targets; they are cheap, partition-free **screens** (a small Δ_traj is good evidence a benchmark is
+*safe*; a large Δ_traj flags a benchmark to *investigate*), **not** a perfect substitute for the
+ground-truth control. The decisive test remains the **run-level-vs-row-level partition comparison**.
+This also strengthens the Twinning negative control: even its sequence-essential targets are
+fragmentation-robust, because their predictability is current-state / mean-reversion, not multi-step
+trajectory.
+
 ## Implication for benchmark design
 
 1. **Partition by entity / run** (intact). To synthesise heterogeneity, use **run-level Dirichlet**

@@ -96,6 +96,26 @@ dl_cqi / dl_mcs next-step targets: gap −0.007 / −0.001 (no gap). A REAL null
 diagnostic), consistent with low Δ_seq on Twinning's persistent targets. The mechanism replicates
 (§1) but the AUC impact does not — exactly as the Δ_seq law predicts.
 
+**6b. Twinning-hunt (`twinning_hunt.py`, local) — a Δ_traj caveat.** A search for a within-Twinning
+*sequence-essential* positive tested low-autocorr change-event targets (dl_mcs/dl_cqi drop > δ):
+
+| target | pos | inst | seqC | shufC | Δ_seq | Δ_traj | gap (intact−row) |
+|---|---|---|---|---|---|---|---|
+| dl_mcs drop>2 | 0.205 | 0.596 | 0.704 | 0.633 | +0.108 | **+0.071** | **+0.002** |
+| dl_cqi drop>2 | 0.101 | 0.631 | 0.816 | 0.691 | +0.185 | **+0.125** | **−0.001** |
+| dl_mcs drop>1 | 0.252 | 0.595 | 0.698 | 0.630 | +0.103 | **+0.069** | **+0.001** |
+
+These are predictable and **Δ_traj-positive** (shuffle hurts) yet show **no fragmentation gap**.
+Reason (read off the numbers: row AUC tracks the ordered seqC, NOT the shuffled shufC): row-level
+windowing keeps each window sorted-ascending (only gappy), so it **preserves ORDER and destroys only
+CONSECUTIVENESS** (seqC − row ≈ 0.003–0.010 = the gap); the *shuffle* destroys ORDER entirely
+(Δ_traj = the full order-value 0.07–0.13). A drop-event needs order but tolerates gaps, so
+Δ_traj ≫ gap. ColO-RAN BLER needs the *consecutive* trajectory (gap-sensitive), so there Δ_traj
+tracked the gap. Net: **no within-Twinning fragmentation-positive exists** (negative control
+strengthened), and **Δ_traj ≥ gap empirically — a cheap partition-free screen that over-predicts; the
+run-level-vs-row-level control is the ground truth** (see SEQUENCE_INTEGRITY_THEORY.md "A failure mode
+of Δ_traj").
+
 ## Honest caveats
 
 - The `gap ≤ Δ_seq` bound is **false** (synthetic). Diagnostics are monotone, not bounds.
