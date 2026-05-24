@@ -35,6 +35,22 @@ def test_build_windows_grouped_matches_build_run_sequences():
     assert len(X2) == 10
 
 
+def test_multi_slice_groups_do_not_cross_boundary():
+    # same run_id, two slice_ids -> two SEPARATE (run_id, slice_id) groups; windows must not cross
+    df = pd.DataFrame({
+        "run_id":   [0] * 12,
+        "slice_id": [0] * 6 + [1] * 6,
+        "step_idx": list(range(6)) + list(range(6)),
+        "f0": np.arange(12, dtype=float),
+        "y": (np.arange(12) % 2).astype(float),
+    })
+    X1, Y1 = build_run_sequences(df, ["f0"], ["y"], seq_len=5)
+    X2, Y2, gid = build_windows_grouped(df, ["f0"], ["y"], seq_len=5)
+    assert np.array_equal(X1, X2) and np.array_equal(Y1, Y2)
+    assert gid.tolist() == [0] * 2 + [1] * 2   # 6 rows/group -> 2 windows each, distinct group ids
+    assert len(X2) == 4
+
+
 def test_client_windows_intact_indexes_by_group():
     df = _df()
     X, Y, gid = build_windows_grouped(df, ["f0", "f1"], ["y"], seq_len=5)

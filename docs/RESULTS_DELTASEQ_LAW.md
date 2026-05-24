@@ -74,8 +74,17 @@ single-step). ⇒ Δ_seq/Δ_traj are monotone **diagnostics**, not bounds.
 
 ## 5. Architecture invariance + sanity — `coloran_arch_invariance.py` (local, 4 targets, 3 seeds, frac 0.15)
 
-- **MLP sanity:** a no-sequence mean-pool MLP shows max |gap| = 0.025 over all targets (incl
-  high-Δ_seq BLER), an order of magnitude below LSTM's 0.16 → **the gap is sequence-specific**.
+- **MLP sanity + gap decomposition:** a no-sequence mean-pool MLP shows gap `0.000` for the *point*
+  target bler_th10 (per-seed −0.0002/−0.0002/+0.0004) but a real, seed-consistent `0.025` for the
+  *aggregate* smoothed target bler_trend5 (per-seed 0.0252/0.0248/0.0242). This isolates a **second,
+  smaller gap source — window-content** (fragmentation changes *which* steps populate a window, so a
+  window-aggregate label shifts even for an order-invariant model), distinct from the **trajectory**
+  component (sequence models only). For point targets the gap is ~pure trajectory (MLP ≈ 0, LSTM 0.16);
+  for aggregate targets the trajectory component still dominates (MLP 0.025 ≪ LSTM 0.082). See
+  `docs/SEQUENCE_INTEGRITY_THEORY.md`. Net: **the gap is sequence-specific for point targets and
+  trajectory-dominated otherwise** (not "purely" sequence-specific — stated precisely).
+- Partition client counts differ by mode (iid = 7 BS; run/row Dirichlet = 8) — immaterial to the
+  global-test gap but noted for full disclosure.
 - **LSTM + GRU** both learn the BLER trajectory (intact ~0.90) and show gap tracking Δ_seq
   (bler +0.16/+0.155, trend5 +0.08, brate/mcs ~0) → law is architecture-invariant.
 - **Transformer: underfit** in this small-data FL regime (intact bler 0.69 ≈ MLP 0.66, never
