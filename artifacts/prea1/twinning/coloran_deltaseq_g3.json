@@ -1,0 +1,111 @@
+{
+  "config": {
+    "keep_run_frac": 0.3,
+    "seeds": "0,1,2,3,4",
+    "targets": "buffer_med,brate_med",
+    "rounds": 50,
+    "smoke": false,
+    "parquet": "data/coloran_raw_unified.parquet",
+    "out": "artifacts/prea1/twinning/coloran_deltaseq_g3.json"
+  },
+  "targets": [
+    {
+      "name": "buffer_med",
+      "thr": 0.0,
+      "pos": 0.399,
+      "n_feats": 15,
+      "single_step": 0.9088,
+      "seq_central": 0.9218,
+      "intact": 0.9221,
+      "row": 0.9221,
+      "delta_seq": 0.013,
+      "gap": 0.0,
+      "per_mode": {
+        "iid": 0.9222,
+        "run_dirichlet": 0.922,
+        "dirichlet": 0.9221,
+        "random_split": 0.922
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.9222,
+          0.9225,
+          0.9218,
+          0.922,
+          0.9223
+        ],
+        "run_dirichlet": [
+          0.9223,
+          0.9225,
+          0.922,
+          0.9217,
+          0.9216
+        ],
+        "dirichlet": [
+          0.9224,
+          0.9227,
+          0.9214,
+          0.9222,
+          0.9219
+        ],
+        "random_split": [
+          0.9222,
+          0.9223,
+          0.9213,
+          0.922,
+          0.9221
+        ]
+      }
+    },
+    {
+      "name": "brate_med",
+      "thr": 0.1078,
+      "pos": 0.502,
+      "n_feats": 16,
+      "single_step": 0.7976,
+      "seq_central": 0.9085,
+      "intact": 0.8797,
+      "row": 0.8872,
+      "delta_seq": 0.1108,
+      "gap": -0.0075,
+      "per_mode": {
+        "iid": 0.8822,
+        "run_dirichlet": 0.8772,
+        "dirichlet": 0.8845,
+        "random_split": 0.8899
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.8751,
+          0.8818,
+          0.8891,
+          0.8871,
+          0.878
+        ],
+        "run_dirichlet": [
+          0.8894,
+          0.8945,
+          0.8767,
+          0.8543,
+          0.8713
+        ],
+        "dirichlet": [
+          0.8859,
+          0.8904,
+          0.8816,
+          0.8746,
+          0.8901
+        ],
+        "random_split": [
+          0.8955,
+          0.8948,
+          0.8897,
+          0.8923,
+          0.8769
+        ]
+      }
+    }
+  ],
+  "pearson_gap_deltaseq": -1.0,
+  "spearman_gap_deltaseq": -1.0
+}

@@ -1,0 +1,19 @@
+  ...500 bs CSVs processed
+  ...1000 bs CSVs processed
+  ...1500 bs CSVs processed
+  ...2000 bs CSVs processed
+  ...2500 bs CSVs processed
+  ...3000 bs CSVs processed
+  ...3500 bs CSVs processed
+  ...4000 bs CSVs processed
+  ...4500 bs CSVs processed
+  ...5000 bs CSVs processed
+  ...5500 bs CSVs processed
+  ...6000 bs CSVs processed
+  ...6500 bs CSVs processed
+
+DONE: 6884 bs CSVs, 6858 usable (run,UE) groups, 30,971,468 total rows
+                      mode | fragmentation_score | windows
+ entity/run-level (intact) |              1.0000 | 30,944,036
+        random_split (row) |              0.0002 | 30,752,946
+       dirichlet (row,a=1) |              0.0031 | 30,772,906

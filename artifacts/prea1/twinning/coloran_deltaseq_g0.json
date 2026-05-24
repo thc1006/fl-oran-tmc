@@ -1,0 +1,159 @@
+{
+  "config": {
+    "keep_run_frac": 0.3,
+    "seeds": "0,1,2,3,4",
+    "targets": "bler_th05,bler_th10,bler_th20",
+    "rounds": 50,
+    "smoke": false,
+    "parquet": "data/coloran_raw_unified.parquet",
+    "out": "artifacts/prea1/twinning/coloran_deltaseq_g0.json"
+  },
+  "targets": [
+    {
+      "name": "bler_th05",
+      "thr": 0.05,
+      "pos": 0.313,
+      "n_feats": 15,
+      "single_step": 0.6827,
+      "seq_central": 0.91,
+      "intact": 0.9109,
+      "row": 0.7589,
+      "delta_seq": 0.2273,
+      "gap": 0.152,
+      "per_mode": {
+        "iid": 0.9107,
+        "run_dirichlet": 0.911,
+        "dirichlet": 0.7728,
+        "random_split": 0.7449
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.9106,
+          0.9101,
+          0.9106,
+          0.9108,
+          0.9116
+        ],
+        "run_dirichlet": [
+          0.9111,
+          0.9107,
+          0.9107,
+          0.9111,
+          0.9116
+        ],
+        "dirichlet": [
+          0.761,
+          0.7766,
+          0.7731,
+          0.779,
+          0.7743
+        ],
+        "random_split": [
+          0.7398,
+          0.7427,
+          0.7487,
+          0.7468,
+          0.7468
+        ]
+      }
+    },
+    {
+      "name": "bler_th10",
+      "thr": 0.1,
+      "pos": 0.31,
+      "n_feats": 15,
+      "single_step": 0.6802,
+      "seq_central": 0.9073,
+      "intact": 0.9083,
+      "row": 0.7565,
+      "delta_seq": 0.2272,
+      "gap": 0.1518,
+      "per_mode": {
+        "iid": 0.9081,
+        "run_dirichlet": 0.9084,
+        "dirichlet": 0.7706,
+        "random_split": 0.7425
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.908,
+          0.9075,
+          0.908,
+          0.9083,
+          0.9091
+        ],
+        "run_dirichlet": [
+          0.9085,
+          0.9081,
+          0.9081,
+          0.9085,
+          0.9089
+        ],
+        "dirichlet": [
+          0.7585,
+          0.7739,
+          0.7708,
+          0.7771,
+          0.7728
+        ],
+        "random_split": [
+          0.7375,
+          0.7388,
+          0.747,
+          0.7447,
+          0.7443
+        ]
+      }
+    },
+    {
+      "name": "bler_th20",
+      "thr": 0.2,
+      "pos": 0.288,
+      "n_feats": 15,
+      "single_step": 0.6745,
+      "seq_central": 0.8959,
+      "intact": 0.8976,
+      "row": 0.7488,
+      "delta_seq": 0.2215,
+      "gap": 0.1488,
+      "per_mode": {
+        "iid": 0.8975,
+        "run_dirichlet": 0.8978,
+        "dirichlet": 0.7625,
+        "random_split": 0.735
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.8975,
+          0.8967,
+          0.8975,
+          0.8977,
+          0.8978
+        ],
+        "run_dirichlet": [
+          0.8977,
+          0.8974,
+          0.8977,
+          0.8979,
+          0.898
+        ],
+        "dirichlet": [
+          0.7505,
+          0.7636,
+          0.7618,
+          0.7713,
+          0.7654
+        ],
+        "random_split": [
+          0.7303,
+          0.7312,
+          0.7401,
+          0.7377,
+          0.7357
+        ]
+      }
+    }
+  ],
+  "pearson_gap_deltaseq": 0.999,
+  "spearman_gap_deltaseq": 1.0
+}
