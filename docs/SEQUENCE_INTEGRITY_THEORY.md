@@ -112,6 +112,30 @@ not model formally. This is a *diagnostic with a mechanism*, not a theorem.
   the budget; CIs are correspondingly tight). Partition client counts differ by mode (iid = 7 BS;
   run/row Dirichlet = 8) — immaterial to the global-test gap but noted.
 
+## A failure mode of Δ_traj: last-step anchor vs consecutive trajectory (the Twinning hunt)
+
+A targeted search on Twinning (`twinning_hunt.py`) for a *within-dataset* sequence-essential positive
+found a clean **decoupling of Δ_traj from the fragmentation gap**, which qualifies the diagnostic.
+Change-event targets (`dl_mcs`/`dl_cqi` drop > δ, low autocorrelation) are predictable (seq AUC
+0.70–0.82) and **Δ_traj-positive** (shuffling the window order hurts 0.07–0.13) — yet show **no
+fragmentation gap** (intact vs row +0.002 / −0.001 / +0.001).
+
+The reason: the within-window order these targets depend on is the **last-step anchor** (a drop is
+defined relative to the latest step), which the *shuffle* baseline destroys (Δ_traj > 0) but which
+**END-aligned row-level windowing preserves** (the latest available step is still placed last), so
+fragmentation does not hurt. The fragmentation gap specifically requires **consecutive-trajectory**
+dependence — the developing multi-step pattern that scattering destroys — which the shuffle and the
+fragmentation both destroy *for ColO-RAN BLER* (hence Δ_traj tracked the gap there, ρ=0.945), but
+which a last-step-anchored target does not have.
+
+**Consequence (honest):** Δ_seq/Δ_traj **over-predict** the fragmentation gap for last-step-anchored
+targets; they are cheap, partition-free **screens** (a small Δ_traj is good evidence a benchmark is
+*safe*; a large Δ_traj flags a benchmark to *investigate*), **not** a perfect substitute for the
+ground-truth control. The decisive test remains the **run-level-vs-row-level partition comparison**.
+This also strengthens the Twinning negative control: even its sequence-essential targets are
+fragmentation-robust, because their predictability is current-state / mean-reversion, not multi-step
+trajectory.
+
 ## Implication for benchmark design
 
 1. **Partition by entity / run** (intact). To synthesise heterogeneity, use **run-level Dirichlet**

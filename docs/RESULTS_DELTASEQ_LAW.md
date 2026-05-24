@@ -96,6 +96,23 @@ dl_cqi / dl_mcs next-step targets: gap −0.007 / −0.001 (no gap). A REAL null
 diagnostic), consistent with low Δ_seq on Twinning's persistent targets. The mechanism replicates
 (§1) but the AUC impact does not — exactly as the Δ_seq law predicts.
 
+**6b. Twinning-hunt (`twinning_hunt.py`, local) — a Δ_traj caveat.** A search for a within-Twinning
+*sequence-essential* positive tested low-autocorr change-event targets (dl_mcs/dl_cqi drop > δ):
+
+| target | pos | inst | seqC | shufC | Δ_seq | Δ_traj | gap (intact−row) |
+|---|---|---|---|---|---|---|---|
+| dl_mcs drop>2 | 0.205 | 0.596 | 0.704 | 0.633 | +0.108 | **+0.071** | **+0.002** |
+| dl_cqi drop>2 | 0.101 | 0.631 | 0.816 | 0.691 | +0.185 | **+0.125** | **−0.001** |
+| dl_mcs drop>1 | 0.252 | 0.595 | 0.698 | 0.630 | +0.103 | **+0.069** | **+0.001** |
+
+These are predictable and **Δ_traj-positive** (shuffle hurts) yet show **no fragmentation gap**.
+Reason: their order-dependence is a **last-step anchor** (a drop is defined relative to the latest
+step) which the *shuffle* destroys (Δ_traj > 0) but which **END-aligned row-level windowing
+preserves** (no gap). The fragmentation gap requires *consecutive-trajectory* dependence. Net: **no
+within-Twinning fragmentation-positive exists** (negative control strengthened), and **Δ_traj is a
+cheap partition-free screen that can over-predict — the run-level-vs-row-level control is the ground
+truth** (see SEQUENCE_INTEGRITY_THEORY.md "A failure mode of Δ_traj").
+
 ## Honest caveats
 
 - The `gap ≤ Δ_seq` bound is **false** (synthetic). Diagnostics are monotone, not bounds.
