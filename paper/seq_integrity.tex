@@ -5,6 +5,7 @@
 \documentclass[conference]{IEEEtran}
 
 \usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{url}
@@ -124,7 +125,7 @@ $\rightarrow$ fragmented windows.
 \code{step\_idx}: $1.0$ for intact, ${\sim}0$ for row-level on both datasets we study.
 
 \begin{table}[t]\centering\caption{Fragmentation audit (fraction of contiguous windows).}\label{tab:audit}
-\begin{tabular}{lccc}\toprule
+\begin{tabular}{lrrr}\toprule
 dataset & intact & random\_split & dirichlet \\\midrule
 ColO-RAN & $1.000$ & ${\sim}0$ & ${\sim}0$ \\
 Twinning & $1.0000$ & $0.0002$ & $0.0031$ \\\bottomrule
@@ -150,7 +151,7 @@ target, a real $0.025$ for a $5$-step-smoothed target ($\ll$ the LSTM's $0.082$)
 source's lag-1 autocorrelation is a pre-diagnostic (Table~\ref{tab:autocorr}).
 
 \begin{table}[t]\centering\caption{Source-column lag-1 autocorrelation (ColO-RAN).}\label{tab:autocorr}
-\begin{tabular}{lccc}\toprule
+\begin{tabular}{lrcc}\toprule
 source & autocorr & nature & $\dtraj$/gap \\\midrule
 tx\_brate\_dl & $0.984$ & run-rate & ${\sim}0$ \\
 dl\_buffer & $0.999$ & run-rate & ${\sim}0$ \\
@@ -173,10 +174,22 @@ $\dseq$ (Pearson $0.986$) and the $\text{gap}\le\dseq$ bound is falsified at hig
 (Table~\ref{tab:law}). The gap is monotone in $\dseq$ (Pearson $0.943$, Spearman $0.918$, OLS slope CI95
 $[0.706,1.113]$ excludes $0$) and cleaner in $\dtraj$ (Pearson $0.974$, Spearman $0.945$). BLER targets:
 gap $0.08$--$0.16$ ($5$-seed paired-bootstrap CIs exclude $0$); CQI/MCS/buffer/throughput: gap ${\sim}0$.
-\code{bler\_th10} reproduces the established ColO-RAN gap (intact $0.908$ / row $0.757$).
+\code{bler\_th10} reproduces the established ColO-RAN gap (intact $0.908$ / row $0.757$). The law and
+its $\dtraj$ refinement are shown in Fig.~\ref{fig:law}.
+
+\begin{figure*}[t]\centering
+\includegraphics[width=0.92\textwidth]{../artifacts/figures/seq_integrity_law.pdf}
+\caption{The fragmentation AUC gap (intact $-$ row-level) is a monotone function of the
+sequence-essentiality diagnostic. \textbf{(a)} vs.\ $\dseq$ (seq $-$ single-step LSTM), with the
+synthetic controlled backbone and the $\text{gap}=x$ line (the \emph{falsified} bound). \textbf{(b)} vs.\
+the order-isolating $\dtraj$ (seq $-$ shuffled-window LSTM): tighter ($\rho_s{=}0.95$) and pulls the
+persistent \code{brate\_med} deviator onto the origin. Order-free targets (CQI/MCS/buffer/throughput)
+cluster at $\text{gap}{\approx}0$; BLER targets rise with the diagnostic. Slopes $<1$ in (b) reflect
+$\dtraj \ge \text{gap}$ (it over-predicts; Sec.~\ref{sec:hunt}).}\label{fig:law}
+\end{figure*}
 
 \begin{table}[t]\centering\caption{ColO-RAN $\dseq$ law (11 targets).}\label{tab:law}
-\begin{tabular}{lccc}\toprule
+\begin{tabular}{lrrr}\toprule
 target & $\dseq$ & $\dtraj$ & gap \\\midrule
 buffer\_med & $0.013$ & $0.000$ & $+0.000$ \\
 mcs\_med & $0.039$ & $0.002$ & $+0.000$ \\
@@ -228,7 +241,7 @@ susceptibility often cannot be determined from the text---itself the finding mot
 recommendation. We do not assert any prior benchmark is flawed.
 
 \begin{table}[t]\centering\caption{Spot-audit by stated partition recipe.}\label{tab:atrisk}
-\begin{tabular}{p{3.4cm}p{2.0cm}p{1.7cm}}\toprule
+\begin{tabular}{p{3.0cm}p{1.95cm}p{2.25cm}}\toprule
 benchmark & stated partition & susceptibility \\\midrule
 Beijing air-quality FL~\cite{Hallak2025_FLForget} & entity (per station), windows post-partition & safe \\
 Mobile-net traffic FL~\cite{Pavlidis2024_FLMobile} & entity (per BS) & safe \\
