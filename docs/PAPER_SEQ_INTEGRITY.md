@@ -79,7 +79,11 @@ distribution over *labels/rows* is the de-facto FL-benchmark standard — codifi
 [Li et al., ICDE 2022] (label/feature/quantity skew, default α=0.5) and shipped as the default
 `DirichletPartitioner` in FL frameworks (Flower Datasets, FedML). It is statistically sound for
 **i.i.d.-sample** data (images, tabular rows). Our point is that time-series FL *inherits* this
-recipe and then adds a per-client windowing step, where it silently breaks.
+recipe and then adds a per-client windowing step, where it silently breaks. The "more heterogeneity
+helps" reading we dismantle is especially suspect because the **established FL norm is the opposite**:
+recent large-scale assessments find heterogeneity *harms* accuracy, with sharp drops past high skew
+[A Thorough Assessment of the Non-IID Data Impact, arXiv:2503.17070, 2025] — so an *inverted* curve
+should itself be treated as a red flag for an artifact.
 
 **(b) Windowing leakage in time series.** A known pitfall is generating sliding windows *before*
 the train/test split, leaking future context into training [e.g., "Hidden Leaks in Time Series
@@ -88,6 +92,17 @@ causality across the train/test boundary* in **centralized** pipelines (it infla
 that literature does not discuss federated client partitioning. Our pitfall is *within-training*,
 *federated-specific*, and *degrades* (not inflates) — it is about per-client **window integrity
 across clients**, orthogonal to train/test leakage.
+
+**(b′) Temporal-order ablation (our Δ_traj method has precedent).** Shuffling timesteps to probe a
+model's reliance on temporal order is an established technique — temporal-order-verification pretext
+tasks [Shuffle and Learn, Misra et al.] and segment-shuffle representation learning [Segment, Shuffle,
+and Stitch, NeurIPS 2024, arXiv:2405.20082], which notes that non-adjacent timesteps can carry strong
+dependencies. We do **not** claim the shuffle ablation as novel; we reuse it for a *new purpose* —
+predicting and screening for the federated fragmentation gap — and we show (Sections 5.4, 7) that the
+shuffle destroys *order* whereas row-level fragmentation destroys *consecutiveness*, so Δ_traj
+over-predicts for order-but-gap-robust targets. (Relatedly, attention's permutation-invariance, a
+known limitation for temporal-order modeling, is why our no-positional-encoding Transformer is
+order-blind, Section 5.3.)
 
 **(c) Temporal fragmentation noted as a deployment challenge.** Some FL works observe that local
 time-series can be "fragmented" and that this degrades feature extraction (e.g., unsupervised
@@ -176,8 +191,13 @@ gap-vs-Δ_traj panel is pending.]
 **5.3 Architecture invariance + sanity.** A no-sequence mean-pool MLP shows gap ≈ 0 even for
 high-Δ_seq BLER (max 0.025 for the aggregate target; order below the LSTM's 0.16) → the gap is
 sequence-specific. LSTM and GRU both learn the BLER trajectory (intact ≈ 0.90) and show the gap
-tracking Δ_seq. A small Transformer underfit in this small-data FL regime (intact ≈ MLP) and is
-excluded as uninformative, not counter-evidence.
+tracking Δ_seq. Our small Transformer has no positional encoding, so self-attention + mean-pooling is
+permutation-invariant — it is **order-blind by construction** (intact bler 0.69 ≈ MLP 0.66) and thus
+acts as a *second* no-sequence sanity: both order-blind models show a negligible BLER gap (MLP
++0.0001, Transformer +0.006), an order of magnitude below the order-using LSTM/GRU (+0.16 / +0.15) —
+two independent controls confirming the gap requires an order-using model. It is not an order-using
+sequence model; a positional-encoded Transformer is untested (attention's permutation-invariance
+impeding temporal-order modeling is a known limitation).
 
 **5.4 Twinning negative control.** On Open RAN Commercial Traffic Twinning (entity = UE; real Madrid
 LTE traffic twinned via Colosseum), the fragmentation mechanism replicates (audit intact 1.0 vs row
@@ -231,8 +251,10 @@ report the partition-then-window order explicitly, and report Δ_traj for the be
   row AUC (0.69/0.81) ≈ the ordered seqC (0.70/0.82) ≫ the shuffled (0.63/0.69). So **Δ_traj ≥ gap**
   empirically (it conflates order with consecutiveness); it is a cheap partition-free **screen**, not a
   perfect predictor, and the run-level-vs-row-level partition control is the ground truth.
-- Architecture coverage is LSTM + GRU + an MLP sanity; the Transformer underfit (small-data FL) and is
-  excluded, not treated as evidence either way.
+- Architecture coverage is LSTM + GRU (order-using, both confirm the law) + a mean-pool MLP and a
+  no-positional-encoding Transformer (both permutation-invariant → order-blind → gap ≈ 0, two
+  consistent no-sequence sanities). A *positional-encoded* Transformer is untested; we do not claim
+  the law over order-using attention models, only over the two recurrent models tested.
 - The Twinning AUC-impact null is a 1-seed smoke (mechanism audit + Δ_seq prediction carry it; 5-seed
   CI is straightforward hardening). ColO-RAN gaps are 5-seed paired bootstrap (n=5; CIs tight).
 - Partition client counts differ by mode (iid = 7 BS; run/row Dirichlet = 8) — immaterial to the
