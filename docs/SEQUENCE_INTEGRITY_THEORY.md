@@ -120,13 +120,17 @@ Change-event targets (`dl_mcs`/`dl_cqi` drop > δ, low autocorrelation) are pred
 0.70–0.82) and **Δ_traj-positive** (shuffling the window order hurts 0.07–0.13) — yet show **no
 fragmentation gap** (intact vs row +0.002 / −0.001 / +0.001).
 
-The reason: the within-window order these targets depend on is the **last-step anchor** (a drop is
-defined relative to the latest step), which the *shuffle* baseline destroys (Δ_traj > 0) but which
-**END-aligned row-level windowing preserves** (the latest available step is still placed last), so
-fragmentation does not hurt. The fragmentation gap specifically requires **consecutive-trajectory**
-dependence — the developing multi-step pattern that scattering destroys — which the shuffle and the
-fragmentation both destroy *for ColO-RAN BLER* (hence Δ_traj tracked the gap there, ρ=0.945), but
-which a last-step-anchored target does not have.
+The reason, read directly off the numbers (the row-partition AUC tracks the intact *ordered* seqC,
+**not** the shuffled shufC — dl_mcs drop: row 0.694 ≈ seqC 0.704 ≫ shufC 0.633; dl_cqi: 0.814 ≈
+0.816 ≫ 0.691): **row-level fragmentation preserves within-window ORDER** — each client's window is
+still sorted ascending by step, only with *gaps* — and destroys **only CONSECUTIVENESS** (the gaps),
+worth just seqC − row ≈ 0.003–0.010 for these targets. The **shuffle** baseline instead destroys
+ORDER entirely (shufC ≪ seqC), so Δ_traj = seqC − shufC measures the full **order-value** (0.07–0.13).
+A drop-event depends on order (the ascending trend / latest-step reference) but *tolerates gaps*, so
+its order-value ≫ its consecutiveness-value, i.e. **Δ_traj ≫ gap**. ColO-RAN BLER instead needs the
+*consecutive* channel-state trajectory (gap-sensitive), so gaps and shuffling destroy the same thing
+and Δ_traj tracked the gap there (ρ=0.945). In short: the **gap is the consecutiveness-value**, Δ_traj
+is the **order-value**, and they coincide only when the signal needs consecutiveness, not mere order.
 
 **Consequence (honest):** Δ_seq/Δ_traj **over-predict** the fragmentation gap for last-step-anchored
 targets; they are cheap, partition-free **screens** (a small Δ_traj is good evidence a benchmark is

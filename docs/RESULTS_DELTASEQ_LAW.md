@@ -106,12 +106,15 @@ diagnostic), consistent with low Δ_seq on Twinning's persistent targets. The me
 | dl_mcs drop>1 | 0.252 | 0.595 | 0.698 | 0.630 | +0.103 | **+0.069** | **+0.001** |
 
 These are predictable and **Δ_traj-positive** (shuffle hurts) yet show **no fragmentation gap**.
-Reason: their order-dependence is a **last-step anchor** (a drop is defined relative to the latest
-step) which the *shuffle* destroys (Δ_traj > 0) but which **END-aligned row-level windowing
-preserves** (no gap). The fragmentation gap requires *consecutive-trajectory* dependence. Net: **no
-within-Twinning fragmentation-positive exists** (negative control strengthened), and **Δ_traj is a
-cheap partition-free screen that can over-predict — the run-level-vs-row-level control is the ground
-truth** (see SEQUENCE_INTEGRITY_THEORY.md "A failure mode of Δ_traj").
+Reason (read off the numbers: row AUC tracks the ordered seqC, NOT the shuffled shufC): row-level
+windowing keeps each window sorted-ascending (only gappy), so it **preserves ORDER and destroys only
+CONSECUTIVENESS** (seqC − row ≈ 0.003–0.010 = the gap); the *shuffle* destroys ORDER entirely
+(Δ_traj = the full order-value 0.07–0.13). A drop-event needs order but tolerates gaps, so
+Δ_traj ≫ gap. ColO-RAN BLER needs the *consecutive* trajectory (gap-sensitive), so there Δ_traj
+tracked the gap. Net: **no within-Twinning fragmentation-positive exists** (negative control
+strengthened), and **Δ_traj ≥ gap empirically — a cheap partition-free screen that over-predicts; the
+run-level-vs-row-level control is the ground truth** (see SEQUENCE_INTEGRITY_THEORY.md "A failure mode
+of Δ_traj").
 
 ## Honest caveats
 

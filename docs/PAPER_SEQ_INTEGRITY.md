@@ -185,9 +185,10 @@ LTE traffic twinned via Colosseum), the fragmentation mechanism replicates (audi
 as the diagnostic predicts for Twinning's persistent targets. The mechanism is universal; the impact
 is task-conditional. A targeted hunt for a *within-Twinning* sequence-essential positive (channel
 drop-event targets) reinforces this and uncovers a diagnostic caveat: such targets are Δ_traj-positive
-(0.07–0.13) yet *still* show no fragmentation gap (+0.002), because their order-dependence is a
-**last-step anchor** that END-aligned row-level windowing preserves, not a consecutive trajectory
-(Section 7). Even Twinning's sequence-essential targets are fragmentation-robust.
+(0.07–0.13) yet *still* show no fragmentation gap (+0.002), because row-level windowing keeps each
+window sorted-ascending (only gappy) — so it **preserves order and destroys only consecutiveness**
+(the row AUC tracks the ordered seqC, not the shuffled baseline), and a drop-event needs order but
+tolerates gaps (Section 7). Even Twinning's sequence-essential targets are fragmentation-robust.
 
 ## 6. A Correct Partitioning Protocol
 
@@ -224,10 +225,12 @@ report the partition-then-window order explicitly, and report Δ_traj for the be
 - The Δ_seq/Δ_traj law is an **empirical** monotone diagnostic, not a proven bound (the synthetic
   super-linearity vs real sub-linearity shows the constant is data-dependent).
 - **Δ_traj over-predicts for last-step-anchored targets** (Twinning hunt): drop-event targets had
-  Δ_traj 0.07–0.13 but fragmentation gap ≈ 0, because the shuffle baseline destroys the last-step
-  anchor (Δ_traj > 0) whereas END-aligned row-level windowing preserves it (no gap). Δ_traj is a cheap
-  partition-free **screen**, not a perfect predictor; the run-level-vs-row-level partition control is
-  the ground truth. The fragmentation gap specifically requires *consecutive-trajectory* dependence.
+  Δ_traj 0.07–0.13 but fragmentation gap ≈ 0. The shuffle destroys within-window *order* (Δ_traj = the
+  order-value), whereas row-level windowing preserves order (windows stay sorted-ascending, only gappy)
+  and destroys only *consecutiveness* — the gap is the smaller consecutiveness-value, and indeed the
+  row AUC (0.69/0.81) ≈ the ordered seqC (0.70/0.82) ≫ the shuffled (0.63/0.69). So **Δ_traj ≥ gap**
+  empirically (it conflates order with consecutiveness); it is a cheap partition-free **screen**, not a
+  perfect predictor, and the run-level-vs-row-level partition control is the ground truth.
 - Architecture coverage is LSTM + GRU + an MLP sanity; the Transformer underfit (small-data FL) and is
   excluded, not treated as evidence either way.
 - The Twinning AUC-impact null is a 1-seed smoke (mechanism audit + Δ_seq prediction carry it; 5-seed
