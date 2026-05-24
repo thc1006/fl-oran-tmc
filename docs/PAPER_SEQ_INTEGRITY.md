@@ -240,6 +240,27 @@ the image/tabular Dirichlet convention onto a time series. Because the AUC impac
 symptom on an order-free target — which is exactly why the pitfall is easy to miss. **Recommendation:
 report the partition-then-window order explicitly, and report Δ_traj for the benchmark's target.**
 
+**A spot-audit of representative FL time-series benchmarks** (classifying by the partition recipe each
+*states*; a definitive verdict needs each paper's code, which most do not release at this granularity):
+
+| benchmark | stated partition | window-order stated? | susceptibility |
+|---|---|---|---|
+| FL forecasting on Beijing air-quality [arXiv:2510.21491] | **entity** ("each station is an independent client") | **yes** (windows built per-client, post-partition) | safe (intact) |
+| FL mobile-network traffic forecasting [arXiv:2412.04081] | **entity** (each base station = a client, "no pooling or Dirichlet") | no | safe (entity ⇒ intact) |
+| 5G base-station traffic forecasting (vperifan) | **entity** (per base station) | no | safe |
+| FL HAR (WISDM/PAMAP2/USC-HAD) | usually **entity** (per subject) | rarely | safe if per-subject |
+| ProFed [arXiv:2503.20618], NIID-Bench [Li et al. 2022] | **Dirichlet over rows** | n/a (image/tabular) | the convention's home — *unsafe when transplanted onto a pooled time series* |
+| ColO-RAN `fl_v7` (this work) | **Dirichlet over rows** of a pooled series | (we make it explicit) | **at-risk → manufactured the inverted-α artifact** |
+
+Two honest take-aways. (i) Well-designed *domain* FL-TS benchmarks predominantly partition by **entity**
+(station / base station / subject / meter) and are therefore **safe** — the artifact is not endemic to
+the field; it is the risk of **transplanting the generic image/tabular Dirichlet-over-rows convention
+onto a pooled time series** (as our `fl_v7` and any NIID-Bench-style algorithm benchmark on a pooled TS
+do). (ii) The partition-then-window **order is rarely reported** (the Beijing benchmark is a good-practice
+exception), so for many papers susceptibility **cannot be determined from the text** — which is itself
+the finding that motivates our reporting recommendation. We do not assert any specific prior benchmark is
+flawed; we classify recipes and flag the reporting gap.
+
 ## 7. Limitations and Threats to Validity
 
 - The Δ_seq/Δ_traj law is an **empirical** monotone diagnostic, not a proven bound (the synthetic
