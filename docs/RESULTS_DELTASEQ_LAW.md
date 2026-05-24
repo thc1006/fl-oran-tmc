@@ -87,8 +87,12 @@ single-step). ⇒ Δ_seq/Δ_traj are monotone **diagnostics**, not bounds.
   global-test gap but noted for full disclosure.
 - **LSTM + GRU** both learn the BLER trajectory (intact ~0.90) and show gap tracking Δ_seq
   (bler +0.16/+0.155, trend5 +0.08, brate/mcs ~0) → law is architecture-invariant.
-- **Transformer: underfit** in this small-data FL regime (intact bler 0.69 ≈ MLP 0.66, never
-  learned the trajectory) → honestly excluded as uninformative, not forced.
+- **Transformer: order-blind by construction** (corrected from "underfit"). Our TinyTransformer has
+  NO positional encoding, so self-attention + mean-pooling is permutation-invariant → it cannot use
+  temporal order at all (intact bler 0.69 ≈ MLP 0.66) → it is effectively a *second* no-sequence
+  sanity (gap ≈ 0, like the mean-pool MLP), not an order-using model. A positional-encoded Transformer
+  is untested here; attention's permutation-invariance impeding temporal-order modeling is a known
+  limitation in the literature.
 
 ## 6. Twinning AUC-impact — negative control — `twinning_auc_impact.py` (V100, 1-seed smoke)
 
@@ -121,7 +125,8 @@ of Δ_traj").
 - The `gap ≤ Δ_seq` bound is **false** (synthetic). Diagnostics are monotone, not bounds.
 - `brate_med` deviates under Δ_seq but is corrected by Δ_traj (run-rate vs trajectory).
 - `bler_trend5` MLP shows a 0.025 gap (smoothing injects some run-rate); still ≪ LSTM's 0.082.
-- Transformer underfit (small-data FL) — excluded, not evidence either way.
+- Transformer is order-blind (no positional encoding → permutation-invariant) — a second no-sequence
+  sanity, not an order-using model; a positional-encoded Transformer is untested.
 - Twinning AUC-impact is a 1-seed smoke (mechanism + diagnostic suffice; 5-seed CI is easy future hardening).
 
 ## Reproduce
