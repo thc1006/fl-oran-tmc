@@ -54,8 +54,12 @@ def panel(ax, x, gp, names, sy, xkey, xlabel):
     xs = np.linspace(0, lim, 50)
     ax.plot(xs, sl * xs + ic, c="tab:red", lw=1.3, alpha=0.7,
             label=f"OLS slope {sl:.2f}, $\\rho_s$={sp:.2f}")
+    # label only the two story points (the deviator + the low-BLER transition); dense clusters
+    # are color-coded (red BLER high, blue other low) and left unlabeled to avoid an unreadable blob
+    label = {"brate_med", "bler_trend5"}
     for n, xv, gv in zip(names, x, gp):
-        ax.annotate(n, (xv, gv), fontsize=5.5, xytext=(2, 2), textcoords="offset points")
+        if n in label:
+            ax.annotate(n, (xv, gv), fontsize=7, xytext=(5, -2), textcoords="offset points")
     ax.set_xlabel(xlabel); ax.set_xlim(-0.02, lim); ax.grid(alpha=0.2)
     return sl, (lo, hi), sp
 
