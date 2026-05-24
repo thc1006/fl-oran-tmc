@@ -1,0 +1,159 @@
+{
+  "config": {
+    "keep_run_frac": 0.3,
+    "seeds": "0,1,2,3,4",
+    "targets": "bler_k2,bler_k3,bler_k5",
+    "rounds": 50,
+    "smoke": false,
+    "parquet": "data/coloran_raw_unified.parquet",
+    "out": "artifacts/prea1/twinning/coloran_deltaseq_g1.json"
+  },
+  "targets": [
+    {
+      "name": "bler_k2",
+      "thr": 0.1,
+      "pos": 0.31,
+      "n_feats": 15,
+      "single_step": 0.7285,
+      "seq_central": 0.898,
+      "intact": 0.8985,
+      "row": 0.7645,
+      "delta_seq": 0.1695,
+      "gap": 0.1339,
+      "per_mode": {
+        "iid": 0.8981,
+        "run_dirichlet": 0.8988,
+        "dirichlet": 0.7737,
+        "random_split": 0.7554
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.8983,
+          0.8982,
+          0.8982,
+          0.898,
+          0.898
+        ],
+        "run_dirichlet": [
+          0.8991,
+          0.8984,
+          0.8989,
+          0.8988,
+          0.8986
+        ],
+        "dirichlet": [
+          0.7881,
+          0.7781,
+          0.7613,
+          0.7617,
+          0.779
+        ],
+        "random_split": [
+          0.7549,
+          0.7541,
+          0.7586,
+          0.7549,
+          0.7543
+        ]
+      }
+    },
+    {
+      "name": "bler_k3",
+      "thr": 0.1,
+      "pos": 0.31,
+      "n_feats": 15,
+      "single_step": 0.6876,
+      "seq_central": 0.8963,
+      "intact": 0.898,
+      "row": 0.7775,
+      "delta_seq": 0.2087,
+      "gap": 0.1205,
+      "per_mode": {
+        "iid": 0.8978,
+        "run_dirichlet": 0.8982,
+        "dirichlet": 0.8012,
+        "random_split": 0.7538
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.8978,
+          0.898,
+          0.8977,
+          0.8977,
+          0.8977
+        ],
+        "run_dirichlet": [
+          0.8976,
+          0.8986,
+          0.8981,
+          0.8983,
+          0.8982
+        ],
+        "dirichlet": [
+          0.7876,
+          0.8119,
+          0.7951,
+          0.8017,
+          0.8098
+        ],
+        "random_split": [
+          0.7494,
+          0.7536,
+          0.7617,
+          0.7512,
+          0.753
+        ]
+      }
+    },
+    {
+      "name": "bler_k5",
+      "thr": 0.1,
+      "pos": 0.311,
+      "n_feats": 15,
+      "single_step": 0.661,
+      "seq_central": 0.8935,
+      "intact": 0.8942,
+      "row": 0.7359,
+      "delta_seq": 0.2325,
+      "gap": 0.1583,
+      "per_mode": {
+        "iid": 0.8941,
+        "run_dirichlet": 0.8942,
+        "dirichlet": 0.7538,
+        "random_split": 0.718
+      },
+      "per_mode_seeds": {
+        "iid": [
+          0.8944,
+          0.8934,
+          0.894,
+          0.8946,
+          0.894
+        ],
+        "run_dirichlet": [
+          0.8939,
+          0.8943,
+          0.894,
+          0.8948,
+          0.8943
+        ],
+        "dirichlet": [
+          0.7324,
+          0.7712,
+          0.7571,
+          0.7595,
+          0.749
+        ],
+        "random_split": [
+          0.7204,
+          0.7145,
+          0.7153,
+          0.7168,
+          0.7228
+        ]
+      }
+    }
+  ],
+  "pearson_gap_deltaseq": 0.523,
+  "spearman_gap_deltaseq": 0.5
+}

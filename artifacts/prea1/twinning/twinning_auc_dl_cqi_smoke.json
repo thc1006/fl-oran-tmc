@@ -1,0 +1,54 @@
+{
+  "config": {
+    "target": "dl_cqi",
+    "quantile": 0.5,
+    "alpha": 1.0,
+    "smoke": true,
+    "rounds": 50
+  },
+  "thr": 10.75,
+  "test_pos_rate": 0.47845062613487244,
+  "n_feats": 14,
+  "results": {
+    "entity_ue": {
+      "mean": 0.7727,
+      "std": 0.0,
+      "seeds": [
+        0
+      ],
+      "aucs": [
+        0.7727
+      ]
+    },
+    "run_dirichlet": {
+      "mean": 0.784,
+      "std": 0.0,
+      "seeds": [
+        0
+      ],
+      "aucs": [
+        0.784
+      ]
+    },
+    "dirichlet": {
+      "mean": 0.7876,
+      "std": 0.0,
+      "seeds": [
+        0
+      ],
+      "aucs": [
+        0.7876
+      ]
+    },
+    "random_split": {
+      "mean": 0.784,
+      "std": 0.0,
+      "seeds": [
+        0
+      ],
+      "aucs": [
+        0.784
+      ]
+    }
+  }
+}

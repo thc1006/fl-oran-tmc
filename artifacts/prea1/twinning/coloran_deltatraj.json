@@ -1,0 +1,114 @@
+{
+  "targets": [
+    {
+      "name": "bler_th05",
+      "inst": 0.6827,
+      "seq_central": 0.9099,
+      "shuffle_central": 0.6847,
+      "delta_seq": 0.2273,
+      "delta_traj": 0.2252,
+      "gap": 0.152,
+      "seq_central_sweep_ref": 0.91
+    },
+    {
+      "name": "bler_th10",
+      "inst": 0.6803,
+      "seq_central": 0.9072,
+      "shuffle_central": 0.6822,
+      "delta_seq": 0.227,
+      "delta_traj": 0.2251,
+      "gap": 0.1518,
+      "seq_central_sweep_ref": 0.9073
+    },
+    {
+      "name": "bler_th20",
+      "inst": 0.6745,
+      "seq_central": 0.8959,
+      "shuffle_central": 0.6744,
+      "delta_seq": 0.2214,
+      "delta_traj": 0.2215,
+      "gap": 0.1488,
+      "seq_central_sweep_ref": 0.8959
+    },
+    {
+      "name": "bler_k2",
+      "inst": 0.7285,
+      "seq_central": 0.898,
+      "shuffle_central": 0.6981,
+      "delta_seq": 0.1695,
+      "delta_traj": 0.1999,
+      "gap": 0.1339,
+      "seq_central_sweep_ref": 0.898
+    },
+    {
+      "name": "bler_k3",
+      "inst": 0.6876,
+      "seq_central": 0.8962,
+      "shuffle_central": 0.6775,
+      "delta_seq": 0.2087,
+      "delta_traj": 0.2187,
+      "gap": 0.1205,
+      "seq_central_sweep_ref": 0.8963
+    },
+    {
+      "name": "bler_k5",
+      "inst": 0.6609,
+      "seq_central": 0.8935,
+      "shuffle_central": 0.6618,
+      "delta_seq": 0.2325,
+      "delta_traj": 0.2316,
+      "gap": 0.1583,
+      "seq_central_sweep_ref": 0.8935
+    },
+    {
+      "name": "bler_trend5",
+      "inst": 0.7785,
+      "seq_central": 0.9369,
+      "shuffle_central": 0.8771,
+      "delta_seq": 0.1584,
+      "delta_traj": 0.0598,
+      "gap": 0.0827,
+      "seq_central_sweep_ref": 0.937
+    },
+    {
+      "name": "cqi_med",
+      "inst": 0.7495,
+      "seq_central": 0.7976,
+      "shuffle_central": 0.797,
+      "delta_seq": 0.0481,
+      "delta_traj": 0.0005,
+      "gap": -0.011,
+      "seq_central_sweep_ref": 0.7977
+    },
+    {
+      "name": "mcs_med",
+      "inst": 0.8746,
+      "seq_central": 0.9139,
+      "shuffle_central": 0.9122,
+      "delta_seq": 0.0393,
+      "delta_traj": 0.0016,
+      "gap": 0.0002,
+      "seq_central_sweep_ref": 0.9138
+    },
+    {
+      "name": "buffer_med",
+      "inst": 0.9087,
+      "seq_central": 0.9218,
+      "shuffle_central": 0.9216,
+      "delta_seq": 0.013,
+      "delta_traj": 0.0001,
+      "gap": 0.0,
+      "seq_central_sweep_ref": 0.9218
+    },
+    {
+      "name": "brate_med",
+      "inst": 0.7973,
+      "seq_central": 0.9087,
+      "shuffle_central": 0.899,
+      "delta_seq": 0.1114,
+      "delta_traj": 0.0097,
+      "gap": -0.0075,
+      "seq_central_sweep_ref": 0.9085
+    }
+  ]
+}
