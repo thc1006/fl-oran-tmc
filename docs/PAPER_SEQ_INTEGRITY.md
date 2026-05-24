@@ -193,9 +193,11 @@ high-Δ_seq BLER (max 0.025 for the aggregate target; order below the LSTM's 0.1
 sequence-specific. LSTM and GRU both learn the BLER trajectory (intact ≈ 0.90) and show the gap
 tracking Δ_seq. Our small Transformer has no positional encoding, so self-attention + mean-pooling is
 permutation-invariant — it is **order-blind by construction** (intact bler 0.69 ≈ MLP 0.66) and thus
-acts as a *second* no-sequence sanity (gap ≈ 0), not an order-using sequence model; a
-positional-encoded Transformer is untested (attention's permutation-invariance impeding temporal-order
-modeling is a known limitation).
+acts as a *second* no-sequence sanity: both order-blind models show a negligible BLER gap (MLP
++0.0001, Transformer +0.006), an order of magnitude below the order-using LSTM/GRU (+0.16 / +0.15) —
+two independent controls confirming the gap requires an order-using model. It is not an order-using
+sequence model; a positional-encoded Transformer is untested (attention's permutation-invariance
+impeding temporal-order modeling is a known limitation).
 
 **5.4 Twinning negative control.** On Open RAN Commercial Traffic Twinning (entity = UE; real Madrid
 LTE traffic twinned via Colosseum), the fragmentation mechanism replicates (audit intact 1.0 vs row
