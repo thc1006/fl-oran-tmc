@@ -21,11 +21,12 @@ per-client windows are no longer real trajectories. We show that this *sequence-
 can manufacture a striking but spurious finding — that *more* client heterogeneity *improves*
 accuracy — in a federated O-RAN slice-SLA benchmark (ColO-RAN), and we dismantle it. The fragmentation
 itself is universal (a deterministic consequence of the partition-then-window recipe, confirmed on two
-real RAN datasets), but its impact on accuracy is **task-conditional**: it degrades AUC only when the
-prediction target is *sequence-essential*. We introduce a cheap, partition-free diagnostic, **Δ_traj**
+real RAN datasets), but its impact on accuracy is **task-conditional**: it degrades AUC substantially
+only when the prediction target is *sequence-essential* (a small order-invariant residual remains for
+window-aggregate targets, Section 4). We introduce a cheap, partition-free diagnostic, **Δ_traj**
 — the AUC an intact sequence model gains from temporal *order* over an order-shuffled baseline — and
 show the fragmentation AUC gap is a monotone function of it (Spearman 0.95 across 11 ColO-RAN targets;
-0.99 in a controlled synthetic study). The artifact is architecture-invariant for sequence models
+Spearman 1.00 / Pearson 0.99 in a controlled synthetic study). The artifact is architecture-invariant for sequence models
 (LSTM, GRU) and absent for a no-sequence model, confirming it is sequence-specific. We give a corrected
 partitioning protocol (partition by entity/run; synthesise heterogeneity with *run-level* Dirichlet)
 and recommend Δ_traj as a pre-submission screen. On a second real dataset (Open RAN Commercial Traffic
@@ -167,8 +168,10 @@ sequence-essentiality as the causal driver.
 split. The fragmentation gap is monotone in Δ_seq (Pearson 0.943, Spearman 0.918, OLS slope CI95
 [0.706, 1.113] excludes 0) and cleaner in Δ_traj (Pearson 0.974, Spearman 0.945). BLER targets:
 gap 0.08–0.16 (5-seed paired-bootstrap CIs exclude 0); CQI/MCS/buffer/throughput targets: gap ≈ 0.
-The point target `bler_th10` reproduces the established ColO-RAN gap (intact 0.91 / row 0.71). Δ_traj
-pulls the lone deviator (`brate_med`, persistent) onto the line. [Figure: gap vs Δ_seq/Δ_traj.]
+The point target `bler_th10` reproduces the established ColO-RAN gap (intact 0.908 / row 0.757,
+gap +0.152, consistent with the original ~0.91/~0.75). Δ_traj pulls the lone deviator (`brate_med`,
+persistent) onto the line. [Figure: `artifacts/prea1/twinning/deltaseq_law.pdf` — gap vs Δ_seq; a
+gap-vs-Δ_traj panel is pending.]
 
 **5.3 Architecture invariance + sanity.** A no-sequence mean-pool MLP shows gap ≈ 0 even for
 high-Δ_seq BLER (max 0.025 for the aggregate target; order below the LSTM's 0.16) → the gap is
